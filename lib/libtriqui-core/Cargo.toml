@@ -1,0 +1,55 @@
+[package]
+name = "libtriqui-core"
+version = "0.1.0"
+description = "TalentRankIQ domain core: SQLite persistence, rubric ranking, embedding pipeline, and CV import — shared by the Tauri GUI and the libtriqui-cli headless binary."
+authors = ["oaltun"]
+edition = "2021"
+rust-version = "1.82"
+
+[lib]
+name = "libtriqui_core"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+log = "0.4"
+regex = "1"
+uuid = { version = "1", features = ["v4"] }
+sha2 = "0.10"
+chrono = { version = "0.4", features = ["serde"] }
+
+# Domain persistence (SQLite, bundled so no system lib needed) + CV text extraction
+rusqlite = { version = "0.32", features = ["bundled"] }
+zip = "2"
+pdf-extract = "0.7"
+
+# specta Type derives must match the GUI's pinned version (bindings generation)
+specta = { version = "=2.0.0-rc.22", features = ["derive", "serde_json"] }
+
+# CV text extraction (legacy .doc and other formats via anydoc)
+libcvparser = { path = "../libcvparser" }
+# The gui<->cli wire contract: shared DTOs (types.rs is a re-export of it).
+libtriqui-client = { path = "../libtriqui-client" }
+
+# ikapp.yaml config + shared libmodelcaller client / ONNX cache layout
+libconfigreader = { path = "../libconfigreader" }
+# System-capacity budget: cascade wave scaling + the `holding` state
+# (libsyscap design; M5c)
+libsyscap = { path = "../libsyscap" }
+libmodelcallerclient = { path = "../libmodelcallerclient" }
+libmodelstorage = { path = "../libmodelstorage" }
+libembedrank = { path = "../libembedrank" }
+libtokenizer = { path = "../libtokenizer" }
+# gui judge stage: hand-rolled pairwise-judge inference over stored vectors
+# (production-safe: no burn, parity re-verified on artifact load)
+libjudge = { path = "../libjudge" }
+# In-process engine: the libmodelcaller JSONL loop runs inside the host process
+# (the gui ships no libmodelcaller binary), and the ORT wrapper runs in-process
+# too — on a dedicated thread, so the gui is a single binary with no spawned
+# children.
+libmodelcaller = { path = "../libmodelcaller" }
+libtriqui-license = { path = "../libtriqui-license" }
+
+[dev-dependencies]
+# RUST_LOG visibility for the in-process engine probe test
+env_logger = "0.11"

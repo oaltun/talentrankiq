@@ -1,0 +1,36 @@
+[package]
+name = "libtriqui-cli"
+version = "0.1.0"
+description = "Headless TalentRankIQ library: inspect the SQLite store, rank/prewarm jobs, toggle likes, and serve the gui (in-process via InProcessServe — thin gui pattern). Drives libtriqui-core."
+authors = ["oaltun"]
+edition = "2021"
+rust-version = "1.82"
+
+[dependencies]
+libtriqui-core = { path = "../libtriqui-core" }
+libtriqui-client = { path = "../libtriqui-client" }
+libmodelcallerclient = { path = "../libmodelcallerclient" }
+libmodelstorage = { path = "../libmodelstorage" }
+# syscap/engine sections for the cascade runner + system_budget command
+libconfigreader = { path = "../libconfigreader" }
+# System-capacity budget: cascade wave scaling, `holding` state, the
+# `system_budget` command (libsyscap design; M5c)
+libsyscap = { path = "../libsyscap" }
+# Model downloads run in-process (no libmodeldownloader binary in the gui path)
+libmodeldownloader = { path = "../libmodeldownloader" }
+libtokenizer = { path = "../libtokenizer" }
+libembedrank = { path = "../libembedrank" }
+
+log = "0.4"
+env_logger = "0.11"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.32", features = ["bundled"] }
+uuid = { version = "1", features = ["v4"] }
+
+# Watched CV directories: auto-import new CVs as they appear (serve side).
+notify = "8"
+
+# Platform Documents/home dirs for the default per-job CV directory root
+# (`~/Documents/jobs` on Linux/macOS, the Known Folder equivalent on Windows).
+dirs = "6"

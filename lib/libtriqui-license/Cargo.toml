@@ -1,0 +1,16 @@
+[package]
+name = "libtriqui-license"
+version = "0.1.0"
+edition = "2021"
+description = "Judge license verification for TalentRankIQ (ELv2). Ed25519-signed license files."
+license = "Elastic-2.0"
+
+[dependencies]
+ed25519-dalek = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+specta = { version = "=2.0.0-rc.22", features = ["derive", "serde_json"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "2"
+base64 = "0.23.1"
+dirs = "7.0.0"

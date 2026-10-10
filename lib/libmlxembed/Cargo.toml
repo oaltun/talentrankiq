@@ -1,0 +1,43 @@
+[package]
+name = "libmlxembed"
+version = "0.1.0"
+edition = "2021"
+description = "MLX/Metal embedding runtime for the engine's accelerated backend (design 15 §15.5.3): the qwen3 and gemma3_text encoder slices on mlxcel-core primitives, one binary, no Python, no subprocess."
+license = "Apache-2.0"
+
+[lib]
+name = "libmlxembed"
+path = "src/lib.rs"
+
+# MLX exists only on macOS. The dependency is target-scoped so a Windows or
+# Linux build never sees it, never runs its cmake, and never needs the Metal
+# toolchain (design 15 §15.5.0).
+#
+# It is also OPT-IN (`--features mlx`) and not merely target-scoped: a build
+# of this crate compiles MLX from source (~2m40s, ~2.1 GB under `target/`) on
+# first use, and `libbuild` discovers every crate under `lib/` — so an always-on
+# dependency would tax every `dev.py` run on this laptop for an arm that is not
+# the default backend. The checkpoint-semantics tests, which are where the
+# design's hard-won rules live, build and run with no MLX at all.
+[target.'cfg(target_os = "macos")'.dependencies]
+serde_json = "1.0"
+log = "0.4"
+# The engine's tokenizer, so both arms produce identical ids from identical
+# text. A second tokenizer here would make every parity number a measurement
+# of tokenizer drift instead of of the model.
+libtokenizer = { path = "../libtokenizer" }
+mlxcel-core = { path = "../../vendor/mlxcel/src/lib/mlxcel-core", optional = true, features = [
+    "metal",
+    "accelerate",
+] }
+
+[dev-dependencies]
+# Same version the engine's libtokenizer resolves, so the parity gate feeds
+# the ids the engine would feed.
+tokenizers = { version = "0.21", default-features = false, features = ["onig"] }
+serde_json = "1.0"
+
+[features]
+default = []
+# The accelerated arm. Off by default; see the dependency note above.
+mlx = ["dep:mlxcel-core"]

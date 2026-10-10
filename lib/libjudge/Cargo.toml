@@ -1,0 +1,21 @@
+[package]
+name = "libjudge"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+anyhow = "1"
+# Row-parallel scoring: the tournament is millions of independent rows
+# (bench design 15.13) — the per-row math is unchanged, only the driver.
+rayon = "1"
+zip = "0.6"
+libtokenizer = { path = "../libtokenizer" }
+libcvevidence = { path = "../libcvevidence" }
+libcvparser = { path = "../libcvparser" }
+
+[dev-dependencies]
+tempfile = "3"

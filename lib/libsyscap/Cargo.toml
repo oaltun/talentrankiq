@@ -1,0 +1,21 @@
+[package]
+name = "libsyscap"
+version = "0.1.0"
+edition = "2021"
+description = "Host capability + live-load budget: what the machine has, what it is doing right now, and how much of it this process may use (clamped to ikapp.yaml engine caps, never raised)."
+
+[dependencies]
+libconfigreader = { path = "../libconfigreader" }
+serde = { version = "1", features = ["derive"] }
+sysinfo = "0.34"
+# For the fallback warning in `mem`: a wrong memory reading is the kind of
+# thing that must be visible in the log, not silent.
+log = "0.4"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+# sysinfo dropped its battery module (0.34); this is the maintained
+# CoreBattery/IOKit wrapper it used internally.
+starship-battery = "0.10"
+
+[target.'cfg(target_os = "macos")'.dependencies]

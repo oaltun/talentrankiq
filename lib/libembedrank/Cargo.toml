@@ -1,0 +1,13 @@
+[package]
+name = "libembedrank"
+version = "0.1.0"
+edition = "2021"
+description = "Shared chunked embedding + retrieval-aggregation logic used by both bench and gui (contract-lib pattern)."
+
+[dependencies]
+libtokenizer = { path = "../libtokenizer" }
+thiserror = "2"
+log = "0.4"
+
+[dev-dependencies]
+serde_json = "1"

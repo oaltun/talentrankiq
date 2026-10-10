@@ -1,0 +1,191 @@
+// Copyright 2025-2026 Lablup Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! Pure-Rust wrappers around frequently reused MLX FFI entry points.
+//!
+//! These helpers keep small pointer-shaping and scalar-materialization logic
+//! outside the `cxx::bridge` root so the FFI boundary stays focused on raw
+//! bindings instead of policy code.
+
+use crate::ffi;
+use cxx::UniquePtr;
+
+/// Safe wrapper to concatenate two arrays along an axis.
+///
+/// Used by: cache state machines, Mamba/Jamba/Nemotron-H SSM paths, Qwen VL,
+/// Gemma3n multimodal helpers, Phi3V vision path, assorted shared model code.
+pub fn concatenate(a: &ffi::MlxArray, b: &ffi::MlxArray, axis: i32) -> UniquePtr<ffi::MlxArray> {
+    let ptrs: [*const ffi::MlxArray; 2] = [a as *const ffi::MlxArray, b as *const ffi::MlxArray];
+    // SAFETY: both pointers are borrowed from live references and remain valid
+    // for the duration of the FFI call.
+    unsafe { ffi::concatenate(&ptrs, axis) }
+}
+
+/// Safe wrapper to concatenate any non-empty list of arrays along an axis.
+///
+/// Keeping the inputs as references makes their lifetime cover the FFI call
+/// and lets callers build one constant-depth concatenate node instead of a
+/// left-deep chain of binary nodes.
+///
+/// # Panics
+///
+/// Panics when `arrays` is empty because MLX concatenate requires at least one
+/// input array.
+pub fn concatenate_many(arrays: &[&ffi::MlxArray], axis: i32) -> UniquePtr<ffi::MlxArray> {
+    assert!(
+        !arrays.is_empty(),
+        "concatenate_many requires at least one input"
+    );
+    let ptrs: Vec<*const ffi::MlxArray> = arrays
+        .iter()
+        .map(|array| *array as *const ffi::MlxArray)
+        .collect();
+    // SAFETY: every pointer is borrowed from a live reference in `arrays`, so
+    // all pointees remain valid for the full duration of the FFI call.
+    unsafe { ffi::concatenate(&ptrs, axis) }
+}
+
+/// Stack arrays along a new axis from raw MLX pointers.
+///
+/// Used by: shared MoE helpers and model implementations that already manage
+/// their own pointer collections.
+pub fn stack(ptrs: &[*const ffi::MlxArray], axis: i32) -> UniquePtr<ffi::MlxArray> {
+    unsafe { ffi::stack(ptrs, axis) }
+}
+
+/// Stack arrays along a new axis from owned MLX buffers.
+///
+/// Used by: quantized MoE expert packing and vision position helper paths.
+pub fn stack_owned(arrays: &[UniquePtr<ffi::MlxArray>], axis: i32) -> UniquePtr<ffi::MlxArray> {
+    let ptrs: Vec<*const ffi::MlxArray> = arrays
+        .iter()
+        .map(|array| array.as_ref().unwrap() as *const ffi::MlxArray)
+        .collect();
+    unsafe { ffi::stack(&ptrs, axis) }
+}
+
+/// Multiply an array by a scalar by materializing the scalar once as MLX data.
+///
+/// Used by: shared softcap helpers, Gemma/DeepSeek/MiniCPM scaling, vision
+/// merge paths, and other policy code that needs scalar broadcasting.
+pub fn multiply_scalar(a: &ffi::MlxArray, scalar: f32) -> UniquePtr<ffi::MlxArray> {
+    // Use input dtype for scalar to avoid float32 type promotion
+    let a_dtype = ffi::array_dtype(a);
+    let scalar_array = ffi::full_f32(&[1], scalar, a_dtype);
+    ffi::multiply(a, &scalar_array)
+}
+
+/// Divide an array by a scalar by materializing the scalar once as MLX data.
+///
+/// Used by: shared softcap helpers and model families with output scaling.
+pub fn divide_scalar(a: &ffi::MlxArray, scalar: f32) -> UniquePtr<ffi::MlxArray> {
+    let a_dtype = ffi::array_dtype(a);
+    let scalar_array = ffi::full_f32(&[1], scalar, a_dtype);
+    ffi::divide(a, &scalar_array)
+}
+
+/// Walsh–Hadamard Transform along the last axis (B0 spike — TurboQuant KV cache compression).
+///
+/// Applies an orthonormal Hadamard transform to the last axis of `x`, scaled by
+/// `1/sqrt(N)` where `N` is the size of the last axis. This is the "graph-only"
+/// path the spike validates: it delegates to the MLX-native `hadamard_transform`
+/// op which dispatches to the platform's optimized backend (Metal kernel on
+/// Apple Silicon, the same one used by community Hadamard-quantization codepaths
+/// upstream).
+///
+/// **Supported head_dim**: powers of 2 only — `{64, 128, 256}` covers the
+/// production model matrix in mlxcel. The MLX op also accepts `m * 2^k` for
+/// `m ∈ {12, 20, 28}` (i.e. `{80, 96, 192, …}`) but uses a different
+/// normalization for those, so the involution `wht(wht(x)) ≈ x` does not hold
+/// — they are intentionally out of scope per the issue body's "Out of scope"
+/// statement and current model coverage.
+///
+/// This is the foundational op that the asymmetric KV compression sub-issues
+/// (B2 onward) compose with random sign flips to form the structured rotation
+/// `D2 · H · D1 · x`. The sign-flip wiring is intentionally out of scope here.
+///
+/// # Panics
+///
+/// Panics if the last axis size is 0 or not a power of 2. The MLX C++ side
+/// throws `std::invalid_argument` for unsupported sizes, but the cxx-generated
+/// extern is `noexcept` so an unguarded thrown exception aborts the process via
+/// `std::terminate`. Validating in Rust gives callers a recoverable panic with
+/// a clear message instead. (Production models all use power-of-2 head_dims so
+/// this path is unreachable in normal usage; the guard exists so future B2
+/// integration can rely on a sane error contract.)
+///
+/// Used by: TurboQuant cache compression (planned: cache::turbo, sub-– under).
+pub fn wht(x: &ffi::MlxArray) -> UniquePtr<ffi::MlxArray> {
+    let shape = ffi::array_shape(x);
+    let last = shape.last().copied().unwrap_or(0);
+    assert!(
+        last > 0 && (last as u32).is_power_of_two(),
+        "wht: last axis must be a non-zero power of 2; got shape={shape:?}"
+    );
+    ffi::hadamard_transform(x)
+}
+
+/// Walsh–Hadamard Transform along the last axis with an explicit scale.
+///
+/// [`wht`] leaves the scale to MLX, which applies `1/sqrt(N)` and makes the
+/// transform orthonormal and an involution. That is the right choice when the
+/// rotated values are quantized by a codebook computed on the rotated
+/// distribution, which is what the TurboQuant KV cache does today, and callers
+/// who want it should keep using [`wht`].
+///
+/// An explicit scale exists for the case the orthonormal factor cannot be
+/// carried for free. Block-scaled low-precision formats store one scale per
+/// block, and what that scale can represent decides where the factor belongs:
+///
+/// - `mxfp8` and `mxfp4` scales are `E8M0`, powers of two. `1/sqrt(N)` is a
+///   power of two only when `log2(N)` is even, so head_dim 64 (`1/8`) and 256
+///   (`1/16`) fold exactly while 128 (`2^-3.5`) does not, and applying it to the
+///   data there costs a rounding step the block scale could have absorbed.
+/// - `nvfp4` carries an `FP8` block scale and an `FP32` per-tensor global scale,
+///   so a non-power-of-two factor can be absorbed by the global scale at the
+///   cost of range.
+/// - `fp8` `E4M3` saturates at 448. An unscaled transform (`scale = 1.0`) grows
+///   magnitudes by up to `sqrt(N)`, 11.3x at head_dim 128, so the scale and the
+///   saturation check have to be chosen together.
+///
+/// The scale is passed through to MLX unchanged; this function adds only the
+/// same power-of-two guard as [`wht`]. Note that `wht_scaled(x, s)` is an
+/// involution only for `s = 1/sqrt(N)`.
+///
+/// To reproduce the default exactly, compute the factor the way MLX does:
+/// `(1.0f64 / (n as f64).sqrt()) as f32`. MLX takes `std::sqrt` on an `int`,
+/// which resolves to the `double` overload and narrows once at the end, so an
+/// `f32` square root can land one ulp away when `log2(N)` is odd, head_dim 128
+/// included.
+///
+/// # Panics
+///
+/// Panics if the last axis size is 0 or not a power of 2, and if `scale` is not
+/// finite. Both are for the reason given on [`wht`]: the cxx extern is
+/// `noexcept`, so an MLX throw would abort the process instead of unwinding. A
+/// NaN scale does not throw at all, it silently fills the output with NaN,
+/// which a shape or dtype check cannot see.
+pub fn wht_scaled(x: &ffi::MlxArray, scale: f32) -> UniquePtr<ffi::MlxArray> {
+    let shape = ffi::array_shape(x);
+    let last = shape.last().copied().unwrap_or(0);
+    assert!(
+        last > 0 && (last as u32).is_power_of_two(),
+        "wht_scaled: last axis must be a non-zero power of 2; got shape={shape:?}"
+    );
+    assert!(
+        scale.is_finite(),
+        "wht_scaled: scale must be finite; got {scale}"
+    );
+    ffi::hadamard_transform_scaled(x, scale)
+}

@@ -1,0 +1,22 @@
+# Rust
+**/target
+
+# JS / Tauri
+node_modules
+dist
+dist-ssr
+*.local
+*.local.*
+jscpd-report
+
+# Models / artifacts (never ship purchased judge artifacts here)
+*.onnx
+*.safe
+
+# OS / editor
+.DS_Store
+.idea
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.sw?

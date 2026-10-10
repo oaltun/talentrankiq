@@ -1,0 +1,5 @@
+[package]
+name = "libmodelstorage"
+version = "0.1.0"
+edition = "2021"
+description = "Shared contract for ONNX model cache layout and path resolution. Used by libmodeldownloader (writer) and libmodelcaller (reader)."

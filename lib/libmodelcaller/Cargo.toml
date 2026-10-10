@@ -1,0 +1,40 @@
+[package]
+name = "libmodelcaller"
+version = "0.1.0"
+edition = "2021"
+description = "ONNX inference orchestrator (stdio JSONL loop, run in-process by every consumer — there is no libmodelcaller binary)."
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+log = "0.4"
+libmodelstorage = { path = "../libmodelstorage" }
+libconfigreader = { path = "../libconfigreader" }
+libcvevidence = { path = "../libcvevidence" }
+# Unset engine caps resolve from the live machine budget (no ORT fallback)
+libsyscap = { path = "../libsyscap" }
+# In-process auto-download (no libmodeldownloader binary exists)
+libmodeldownloader = { path = "../libmodeldownloader" }
+# The ORT wrapper runs in-process on a dedicated thread (see wrapper.rs)
+libonnxwrapperrs = { path = "../libonnxwrapperrs" }
+# The Metal arm of the backend ladder (design 15 §15.5.3).
+#
+# On macOS the `mlx` feature is ON: "Metal by default on macOS" is the whole
+# point, and a host that has to be told to enable it would put the rung behind
+# a flag nobody flips. Off macOS the feature is absent, so `AVAILABLE` is
+# false, the ladder serves every model on the ONNX CPU EP, and nothing compiles
+# MLX or links Metal. The cost on macOS is a first build that cmake-compiles
+# MLX from source (~2m40s, ~2.1 GB under target/, cached afterwards).
+[target.'cfg(target_os = "macos")'.dependencies]
+libmlxembed = { path = "../libmlxembed", features = ["mlx"] }
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+libmlxembed = { path = "../libmlxembed" }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

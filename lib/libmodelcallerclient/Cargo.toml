@@ -1,0 +1,33 @@
+[package]
+name = "libmodelcallerclient"
+version = "0.1.0"
+edition = "2021"
+description = "Shared stdio-JSONL client to the libmodelcaller inference backend. Used by both bench and the gui so the client-side of the libmodelcaller protocol lives in one place (contract-lib pattern)."
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+log = "0.4"
+base64 = "0.22"
+libconfigreader = { path = "../libconfigreader" }
+# In-process engine (feature `inprocess`): the libmodelcaller JSONL loop runs
+# inside the host process, so there is no libmodelcaller binary to spawn. Through
+# it (libonnxwrapperrs) this links ONNX Runtime — enabled by bench/judgetrainer,
+# while libtriqui-core constructs the loop itself.
+libmodelcaller = { path = "../libmodelcaller", optional = true }
+
+[features]
+# Re-exposes `ModelCallerClient::new_test()` outside `#[cfg(test)]` builds so
+# downstream crates (e.g. bench) can construct disconnected clients in their own
+# test modules.
+test-helpers = []
+# Adds [`ModelCallerClient::spawn_inprocess`]: runs the libmodelcaller JSONL loop
+# on a thread inside the host process. No libmodelcaller binary exists anymore —
+# bench and judgetrainer enable this; libtriqui-core keeps its bespoke engine
+# wiring and constructs the loop itself.
+inprocess = ["dep:libmodelcaller"]
+
+[dev-dependencies]
+# in-memory duplex for the `over` transport test (gui's in-process engine)
+libtriqui-client = { path = "../libtriqui-client" }

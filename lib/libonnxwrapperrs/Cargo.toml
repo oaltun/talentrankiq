@@ -1,0 +1,46 @@
+[package]
+name = "libonnxwrapperrs"
+version = "0.1.0"
+edition = "2024"
+description = "ONNX Runtime wrapper — the only component that links ORT. Spoken to via stdio JSONL."
+
+[dependencies]
+ort = { version = "2.0.0-rc.13", default-features = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+libtokenizer = { path = "../libtokenizer" }
+sysinfo = "0.34"
+# For the memory reading in `probe` (libsyscap::mem), not for the policy.
+libsyscap = { path = "../libsyscap" }
+libc = "0.2"
+log = "0.4"
+ndarray = "0.17"
+
+# On Apple Silicon the CoreML execution provider is compiled in by default
+# (design 15 §15.5): it is the rung that can move a batched embed off the
+# CPU without a second model zoo. `engine.exec_provider: auto` still means
+# CPU-only; the provider is a config choice, and `load` reports which one won.
+# Target-scoped so linux/windows builds do not pull a macOS framework.
+[target.'cfg(target_os = "macos")'.dependencies]
+ort = { version = "2.0.0-rc.13", default-features = true, features = ["coreml"] }
+
+[features]
+default = []
+xnnpack = ["ort/xnnpack"]
+cuda = ["ort/cuda"]
+tensorrt = ["ort/tensorrt"]
+coreml = ["ort/coreml"]
+directml = ["ort/directml"]
+openvino = ["ort/openvino"]
+rocm = ["ort/rocm"]
+
+[profile.dev]
+opt-level = 0
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

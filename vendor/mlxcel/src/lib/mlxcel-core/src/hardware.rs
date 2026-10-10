@@ -1,0 +1,2103 @@
+// Copyright 2025-2026 Lablup Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! Runtime Apple Silicon generation detection.
+//!
+//! Detects chip generation, GPU core count, memory bandwidth, and Neural
+//! Accelerator availability (M5+) at runtime via `sysctlbyname`. Results are
+//! cached in a `OnceLock` so detection runs exactly once per process.
+
+use std::sync::OnceLock;
+
+// ── CUDA compute capability ───────────────────────────────────────────────────
+
+// The CUDA side of "what machine is this?" lives in [`crate::cuda_arch`] and is
+// re-exported here so there is a single hardware-facing module to ask, whether
+// the answer comes from `sysctlbyname` on Apple Silicon or from MLX's cached
+// CUDA device attributes. It is a separate file because the architecture-list
+// parser and its coverage rules carry their own unit tests and would otherwise
+// push this module well past the size where it stays readable.
+//
+// Nothing here feeds [`HardwareCapabilities`]: that struct is built by
+// [`detect_hardware`], which runs from [`apply_metal_ops_per_buffer_default`]
+// at the very top of `main`, and probing a CUDA device from there would move
+// device initialisation ahead of the environment defaults that must be set
+// before MLX touches the GPU. The capability probe stays lazy and separate.
+pub use crate::cuda_arch::{
+    ArchCoverage, ArchVariant, CudaArchEntry, CudaArchMismatch, TRACE_ARCH_ENV, arch_list_coverage,
+    compiled_cuda_architectures, cuda_arch_mismatch, cuda_arch_startup_summary,
+    cuda_compute_capability, enforce_cuda_arch_compatibility, entry_coverage,
+    parse_cuda_arch_entry, parse_cuda_arch_list, trace_arch_enabled, trace_arch_once,
+};
+pub use crate::cuda_graph_budget::{
+    AppliedCudaGraphBudget, CudaGraphBudget, GB10_GRAPH_BUDGET, GB10_RAISED_BUDGET_MODEL_TYPES,
+    ModelGraphShape, applied_cuda_graph_budget, apply_cuda_graph_budget_default,
+    cuda_graph_budget_default, cuda_graph_budget_startup_summary, model_graph_shape_from_config,
+    model_graph_shape_from_dir,
+};
+
+// ── Public types ──────────────────────────────────────────────────────────────
+
+/// Apple Silicon chip generation detected at runtime.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum AppleSiliconGen {
+    M1,
+    M2,
+    M3,
+    M4,
+    M5,
+    Unknown,
+}
+
+impl AppleSiliconGen {
+    /// Returns true for chips that have a Neural Accelerator (M5+).
+    #[inline]
+    pub fn has_neural_accelerator(self) -> bool {
+        matches!(self, AppleSiliconGen::M5)
+    }
+
+    /// Whether this generation runs an affine-quantized projection at `M >= 2`
+    /// as one wide pass rather than as narrow per-position passes.
+    ///
+    /// This is MLX's `use_qmv_wide` predicate (`mode != "affine" || arch_gen
+    /// >= 15` in `mlx/backend/metal/quantized.cpp`) reduced to the part that
+    /// depends only on the chip: Apple GPU generation 15 and newer, which is
+    /// M3, M4 and M5. Generation 13 (M1, M2) has no such path and runs a
+    /// verify block as `K` narrow passes whose cost grows with the block.
+    ///
+    /// That difference is what decides whether a speculative verify round pays
+    /// for itself, so it is the discriminator behind the B=1 MTP gate
+    /// (`mtp_b1_default` in the `mlxcel` crate); see `docs/benchmarks.md` for
+    /// the round-cost measurements that order the generations by it.
+    ///
+    /// `Unknown` reads false, which is deliberate in both directions it
+    /// covers: a non-Apple GPU (CUDA / GB10), where a K-wide verify does not
+    /// amortize at all (issue #638), and an Apple generation newer than the
+    /// enumerated ones, which `parse_silicon_gen` also maps to `Unknown`. Both
+    /// decline rather than assume. Extend the enum when a new Apple generation
+    /// ships; this carries the same staleness contract as
+    /// [`Self::has_neural_accelerator`].
+    #[inline]
+    pub fn wide_quantized_projections(self) -> bool {
+        matches!(
+            self,
+            AppleSiliconGen::M3 | AppleSiliconGen::M4 | AppleSiliconGen::M5
+        )
+    }
+
+    /// Returns the expected Metal GPU family version (3 for M1–M4, 4 for M5+).
+    #[inline]
+    pub fn metal_version(self) -> u32 {
+        match self {
+            AppleSiliconGen::M5 => 4,
+            _ => 3,
+        }
+    }
+}
+
+impl std::fmt::Display for AppleSiliconGen {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AppleSiliconGen::M1 => write!(f, "M1"),
+            AppleSiliconGen::M2 => write!(f, "M2"),
+            AppleSiliconGen::M3 => write!(f, "M3"),
+            AppleSiliconGen::M4 => write!(f, "M4"),
+            AppleSiliconGen::M5 => write!(f, "M5"),
+            AppleSiliconGen::Unknown => write!(f, "Unknown"),
+        }
+    }
+}
+
+/// Which vendor made the GPU this process will run on.
+///
+/// Kept separate from [`AppleSiliconGen`] on purpose. That enum answers "which
+/// Apple Silicon generation", and twelve call sites across the VLM loaders,
+/// `models/sanitize.rs` and `drafter/dflash/drafter.rs` read its `Unknown`
+/// variant as "this is not Apple Silicon" in order to gate a bf16 to f16 weight
+/// conversion. Adding a vendor variant there would flip all eleven to true on
+/// that vendor and silently enable the conversion, which is the same shape of
+/// defect issue #1803 removed one layer down, where `!metal::is_available()`
+/// was read as "CUDA" because only two backends existed.
+///
+/// `#[non_exhaustive]` so a future vendor does not break a downstream `match`.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GpuVendor {
+    Apple,
+    Nvidia,
+    Amd,
+    /// No GPU, or one this build does not identify.
+    Unknown,
+}
+
+/// Which GPU backend MLX resolved for this process.
+///
+/// The Rust view of `mlxcel::GpuKernelBackend` (issue #1803). Read this rather
+/// than inferring the backend from which `device_info()` keys are present: the
+/// ROCm backend publishes `compute_capability_major`/`minor` from the `gfx`
+/// target, so key presence says "AMD looks like CUDA", which is the misreport
+/// this type exists to stop.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GpuBackendKind {
+    /// No GPU backend, or one this build does not know.
+    None,
+    Metal,
+    Cuda,
+    Rocm,
+}
+
+impl GpuBackendKind {
+    /// Every variant, in declaration order.
+    ///
+    /// Crates downstream of this one cannot `match` exhaustively on a
+    /// `#[non_exhaustive]` enum, so adding a variant gives them no compile
+    /// error. They walk this list in a test instead: the WebUI catalog checks
+    /// that every kind reads its own registry column (issue #1886). The const
+    /// block below fails the build when a variant is missing from the list.
+    pub const ALL: [GpuBackendKind; 4] = [
+        GpuBackendKind::None,
+        GpuBackendKind::Metal,
+        GpuBackendKind::Cuda,
+        GpuBackendKind::Rocm,
+    ];
+}
+
+// Compile-time guard for `GpuBackendKind::ALL`. The match has no wildcard, so a
+// new variant fails to compile here until it has an arm, and each arm reads its
+// own variant's slot of `ALL`. The arm for a fifth variant reads `ALL[4]`,
+// which fails to compile (`unconditional_panic`) until `ALL` gains that entry.
+// The loop then rejects a list that is out of order, repeats a variant, or has
+// an arm reading another variant's slot.
+const _: () = {
+    const fn slot(kind: GpuBackendKind) -> GpuBackendKind {
+        match kind {
+            GpuBackendKind::None => GpuBackendKind::ALL[0],
+            GpuBackendKind::Metal => GpuBackendKind::ALL[1],
+            GpuBackendKind::Cuda => GpuBackendKind::ALL[2],
+            GpuBackendKind::Rocm => GpuBackendKind::ALL[3],
+        }
+    }
+    let mut position = 0;
+    while position < GpuBackendKind::ALL.len() {
+        let kind = GpuBackendKind::ALL[position];
+        assert!(
+            kind as usize == position && slot(kind) as usize == position,
+            "GpuBackendKind::ALL must list every variant once, in declaration order"
+        );
+        position += 1;
+    }
+};
+
+/// The GPU backend MLX resolved, probed once per process.
+#[must_use]
+pub fn gpu_backend_kind() -> GpuBackendKind {
+    static KIND: OnceLock<GpuBackendKind> = OnceLock::new();
+    *KIND.get_or_init(|| match crate::ffi::gpu_backend_kind() {
+        1 => GpuBackendKind::Metal,
+        2 => GpuBackendKind::Cuda,
+        3 => GpuBackendKind::Rocm,
+        // 0 is `None`; anything else is a bridge the Rust side does not know
+        // yet, which is also "no backend I can report on".
+        _ => GpuBackendKind::None,
+    })
+}
+
+/// A quantization mode, as MLX names it.
+///
+/// The closed set MLX's `string_to_quantization_mode` parses; the string form
+/// is [`QuantMode::as_str`], which matches
+/// [`crate::layers::SUPPORTED_QUANTIZATION_MODES`] entry for entry (a test
+/// holds the two together).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum QuantMode {
+    Affine,
+    Mxfp4,
+    Mxfp8,
+    Nvfp4,
+}
+
+impl QuantMode {
+    /// Every mode, in the order of `SUPPORTED_QUANTIZATION_MODES`.
+    pub const ALL: [QuantMode; 4] = [
+        QuantMode::Affine,
+        QuantMode::Mxfp4,
+        QuantMode::Mxfp8,
+        QuantMode::Nvfp4,
+    ];
+
+    /// The mode string MLX parses (`"affine"`, `"mxfp4"`, `"mxfp8"`, `"nvfp4"`).
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            QuantMode::Affine => "affine",
+            QuantMode::Mxfp4 => "mxfp4",
+            QuantMode::Mxfp8 => "mxfp8",
+            QuantMode::Nvfp4 => "nvfp4",
+        }
+    }
+
+    /// Parse an MLX mode string. Exact comparison, like
+    /// [`crate::layers::validate_quantization_mode`]: `None` for anything MLX
+    /// itself would not parse.
+    #[must_use]
+    pub fn from_mlx_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|mode| mode.as_str() == name)
+    }
+}
+
+impl std::fmt::Display for QuantMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Whether a backend can run a [`QuantMode`], and if not, what to do about it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QuantModeSupport {
+    /// The backend has kernels for this mode; load it as the checkpoint ships.
+    Native,
+    /// No kernels for this mode, but a load-time conversion to the named mode
+    /// (which is `Native` on the same backend) keeps the model runnable.
+    ConvertTo(QuantMode),
+    /// No kernels and no conversion: the load must fail with a message.
+    Unsupported,
+}
+
+impl GpuBackendKind {
+    /// Human-readable backend name for load messages.
+    #[must_use]
+    pub const fn display_name(self) -> &'static str {
+        match self {
+            GpuBackendKind::None => "CPU (no GPU backend)",
+            GpuBackendKind::Metal => "Metal",
+            GpuBackendKind::Cuda => "CUDA",
+            GpuBackendKind::Rocm => "ROCm",
+        }
+    }
+
+    /// The backend quantization capability table (issue #1806).
+    ///
+    /// This is the one place that answers "can this backend run mode M
+    /// natively?". Load-time policy consults it through
+    /// [`quant_mode_support`] (the NVFP4 repack route in the binary crate's
+    /// `models/sanitize.rs`, and the per-layer guard in
+    /// [`crate::layers`]); nothing else may key a quantization decision on a
+    /// build feature.
+    ///
+    /// Rows, and the evidence behind each:
+    ///
+    /// - Metal, CUDA: every mode native. This is the behavior before the table
+    ///   existed, and it must not change.
+    /// - `None` (a CPU-only build, or ROCm with no visible device): every mode
+    ///   native, because MLX's CPU backend implements all four
+    ///   (`mlx/backend/cpu/quantized.cpp` handles the group-16 E4M3 scale that
+    ///   NVFP4 needs). Also unchanged.
+    /// - ROCm: affine native. mxfp8 and mxfp4 native after the scale-type and
+    ///   `gather_qmm` fixes in `patches-rocm/LOCAL_FIXES.md` (items 8, 10, 11),
+    ///   measured against a dequantized f32 reference and on
+    ///   gpt-oss-20b-MXFP4-Q4 (lablup/mlxcel#1818). For mxfp4 the committed
+    ///   evidence is `tests/rocm_mxfp4_quant.rs` (#1808): GPU `quantize`,
+    ///   `quantized_matmul` and `gather_qmm` against CPU references, each
+    ///   seen to fail with its overlay fix reverted while #1808 was worked.
+    ///   For mxfp8 it is `models::switch_layers::mxfp_tests` in the `mlxcel`
+    ///   crate (#1807): `gather_qmm` sorted and unsorted and
+    ///   `quantized_matmul` against a host-decoded reference, the gather cases
+    ///   seen to fail with item 10 reverted, plus a vendor FP8 block
+    ///   checkpoint requantized to mxfp8 at load and traced against the CPU
+    ///   device (`docs/benchmark_results/rocm-fp8-block-gfx1151-2026-09-30.md`).
+    ///   NVFP4 converts to affine: the ROCm qmv dispatch implements group
+    ///   sizes 32, 64 and 128 only and throws for NVFP4's 16, and there is no
+    ///   E4M3 block-scale path.
+    #[must_use]
+    pub const fn quant_mode_support(self, mode: QuantMode) -> QuantModeSupport {
+        match (self, mode) {
+            (GpuBackendKind::Rocm, QuantMode::Nvfp4) => {
+                QuantModeSupport::ConvertTo(QuantMode::Affine)
+            }
+            (GpuBackendKind::Rocm, QuantMode::Affine | QuantMode::Mxfp4 | QuantMode::Mxfp8) => {
+                QuantModeSupport::Native
+            }
+            (GpuBackendKind::None | GpuBackendKind::Metal | GpuBackendKind::Cuda, _) => {
+                QuantModeSupport::Native
+            }
+        }
+    }
+}
+
+/// [`GpuBackendKind::quant_mode_support`] for the backend MLX resolved in this
+/// process.
+#[must_use]
+pub fn quant_mode_support(mode: QuantMode) -> QuantModeSupport {
+    gpu_backend_kind().quant_mode_support(mode)
+}
+
+/// Hardware capabilities detected at runtime.
+#[derive(Debug, Clone)]
+pub struct HardwareCapabilities {
+    /// Which vendor made the GPU. Ask [`HardwareCapabilities::is_apple_silicon`]
+    /// rather than comparing `silicon_gen` when the question is "is this Apple".
+    pub vendor: GpuVendor,
+    /// Apple Silicon chip generation. `Unknown` on every non-Apple vendor.
+    pub silicon_gen: AppleSiliconGen,
+    /// Number of GPU cores (performance cluster logical CPUs as a proxy).
+    pub gpu_core_count: u32,
+    /// True for M5+ chips which have a dedicated Neural Accelerator.
+    pub has_neural_accelerator: bool,
+    /// Metal GPU family version (3 for M1–M4, 4 for M5+).
+    pub metal_version: u32,
+    /// True when running on macOS 26.2+ (required to use the Neural Accelerator).
+    pub macos_supports_na: bool,
+    /// Approximate memory bandwidth in GB/s (estimated from chip generation).
+    pub memory_bandwidth_gbps: f64,
+    /// Unified memory size in GB.
+    ///
+    /// Apple only. Left at 0 on every other vendor on purpose: it is the third
+    /// step of `resolve_available_memory`, and filling it from device memory
+    /// would change what that walk returns on CUDA and ROCm. Read
+    /// [`HardwareCapabilities::device_memory_bytes`] for device memory.
+    pub unified_memory_gb: u32,
+    /// Device name as the backend reports it ("AMD Radeon Graphics", "NVIDIA
+    /// GB10"), or empty when the backend publishes none.
+    pub device_name: String,
+    /// Architecture string as the running backend spells it, or `None` when
+    /// this build did not probe one.
+    ///
+    /// `None` on macOS even though Metal publishes an architecture: detection
+    /// runs before MLX's environment defaults are applied there, so it reads
+    /// sysctl rather than initialising the device. Read `silicon_gen` for the
+    /// Apple generation.
+    ///
+    /// Each backend has its own vocabulary and they are not comparable:
+    /// `gfx1151` on ROCm, `sm_89` on CUDA, an Apple GPU family string on
+    /// Metal. Treating this as a `gfx` target is exactly the cross-vendor
+    /// confusion #1805 exists to remove, so code that means the HIP target
+    /// reads [`crate::rocm_arch::device_gfx_target`], which is `None` off
+    /// ROCm and normalized. This field is for reporting.
+    pub device_architecture: Option<String>,
+    /// Total device memory in bytes, or 0 when the backend does not publish
+    /// it. On a UMA host, Apple or an AMD carve-out, this is the unified pool
+    /// rather than a separate VRAM figure.
+    pub device_memory_bytes: u64,
+}
+
+impl Default for HardwareCapabilities {
+    fn default() -> Self {
+        Self {
+            vendor: GpuVendor::Unknown,
+            silicon_gen: AppleSiliconGen::Unknown,
+            gpu_core_count: 0,
+            has_neural_accelerator: false,
+            metal_version: 3,
+            macos_supports_na: false,
+            memory_bandwidth_gbps: 0.0,
+            unified_memory_gb: 0,
+            device_name: String::new(),
+            device_architecture: None,
+            device_memory_bytes: 0,
+        }
+    }
+}
+
+impl HardwareCapabilities {
+    /// True when this is Apple Silicon.
+    ///
+    /// This is the predicate twelve call sites use to decide whether to convert
+    /// bf16 weights to f16 (the VLM loaders, `models/sanitize.rs` and
+    /// `drafter/dflash/drafter.rs`). It reads `silicon_gen` rather than
+    /// `vendor` so that adding a vendor cannot change what those sites do:
+    /// a new vendor leaves `silicon_gen` at `Unknown` and the answer stays
+    /// false. `gpu_vendor_does_not_imply_apple_silicon` pins that.
+    #[must_use]
+    pub fn is_apple_silicon(&self) -> bool {
+        self.silicon_gen != AppleSiliconGen::Unknown
+    }
+}
+
+// ── Process-level singleton ───────────────────────────────────────────────────
+
+static HARDWARE_CAPABILITIES: OnceLock<HardwareCapabilities> = OnceLock::new();
+
+/// Return a reference to the cached `HardwareCapabilities`.
+///
+/// Detection runs at most once per process; subsequent calls return the cached
+/// result immediately.
+#[inline]
+pub fn get_hardware() -> &'static HardwareCapabilities {
+    HARDWARE_CAPABILITIES.get_or_init(detect_hardware)
+}
+
+/// True only on M5-class Apple Silicon whose Neural Accelerator is driven by
+/// the running macOS (Metal GPU Family 4).
+///
+/// This is the gate for M5-Max-specific numerical workarounds. The M5 Max NAx
+/// GEMM kernels can fuse a lazy float32/float16 graph into NaN within a single
+/// Metal command buffer; code that builds such graphs (the Mamba2/SSM mixers)
+/// forces an intermediate `eval` boundary, but only when this returns true. On
+/// every other chip that eval boundary is pure throughput loss, so it is
+/// skipped. See CLAUDE.md "Apple Silicon precision".
+#[inline]
+pub fn is_m5_neural_accelerator() -> bool {
+    let hw = get_hardware();
+    hw.has_neural_accelerator && hw.macos_supports_na
+}
+
+/// The `MLX_MAX_OPS_PER_BUFFER` default to apply for an Apple Silicon class, or
+/// `None` to leave MLX's built-in default in place.
+///
+/// `MLX_MAX_OPS_PER_BUFFER` caps how many ops MLX batches into one Metal command
+/// buffer before committing it. On pre-M5 Apple Silicon (Metal GPU family 3) the
+/// default cap is small enough that high-op-density decode (Gemma3n: AltUp
+/// 4-plane, LAUREL, per-layer input gating, dual norms) stalls the GPU at
+/// command-buffer boundaries; raising the cap to 1000 closes that dispatch-gap
+/// idle and recovers +11 to 13% decode throughput on M1 Ultra (see
+/// docs/benchmark_results/gemma3n-decode-profile.md, #329/#345).
+///
+/// The lever is hardware-specific, so it is gated:
+/// - M1 through M4 (no Neural Accelerator, Metal family 3): apply 1000.
+/// - M5+ (has Neural Accelerator): leave MLX's default. The same sweep is flat
+///   on M5 Max (within run-to-run noise, no plateau) and an earlier M5 study
+///   recorded larger buffers as slower, so raising it offers no gain and risks a
+///   regression (docs/benchmark_results/gemma3n-decode-profile-m5max.md, #358).
+/// - Unknown (non-Apple, e.g. CUDA): leave untouched; this is a Metal command
+///   buffer scheduling knob, irrelevant off Apple GPUs.
+///
+/// The gain is most pronounced on Gemma3n's dense high-op-density stack; the MoE
+/// decode sweep was flat (#268), so other families are expected neutral, not
+/// regressed. This is a default only: an explicit `MLX_MAX_OPS_PER_BUFFER` in the
+/// environment always wins (see [`apply_metal_ops_per_buffer_default`]).
+#[must_use]
+pub fn metal_ops_per_buffer_default(
+    r#gen: AppleSiliconGen,
+    has_neural_accelerator: bool,
+) -> Option<u32> {
+    if r#gen != AppleSiliconGen::Unknown && !has_neural_accelerator {
+        Some(1000)
+    } else {
+        None
+    }
+}
+
+/// Apply the hardware-gated [`metal_ops_per_buffer_default`] to the process
+/// environment, unless `MLX_MAX_OPS_PER_BUFFER` is already set.
+///
+/// Call this once, early in `main()`, before any MLX op runs and before spawning
+/// threads: MLX reads `MLX_MAX_OPS_PER_BUFFER` when it commits command buffers,
+/// and setting an environment variable is only sound while the process is
+/// effectively single-threaded. An operator-set `MLX_MAX_OPS_PER_BUFFER` (any
+/// value) is always respected.
+pub fn apply_metal_ops_per_buffer_default() {
+    if std::env::var_os("MLX_MAX_OPS_PER_BUFFER").is_some() {
+        return;
+    }
+    let hw = get_hardware();
+    if let Some(value) = metal_ops_per_buffer_default(hw.silicon_gen, hw.has_neural_accelerator) {
+        // SAFETY: set_var mutates the process-global environment and is unsound
+        // only if another thread reads or writes the environment concurrently.
+        // Per this function's documented contract, all in-tree callers invoke it
+        // once at the top of `main` right after CLI parsing (src/main.rs,
+        // src/bin/mlx_server.rs, src/bin/bench_decode.rs), before any model load,
+        // MLX op, or worker thread touches the environment, so no other thread is
+        // accessing it here.
+        unsafe { std::env::set_var("MLX_MAX_OPS_PER_BUFFER", value.to_string()) };
+    }
+}
+
+/// The per-command-buffer input budget to use during decode steps on an Apple
+/// Silicon class, or `None` to leave decode on MLX's device default.
+///
+/// MLX commits a Metal command buffer when either its op count passes
+/// `MLX_MAX_OPS_PER_BUFFER` or its input budget passes `MLX_MAX_MB_PER_BUFFER`
+/// (`command_buffer_needs_commit` in `mlx/backend/metal/device.cpp`). The budget
+/// is not bytes: MLX sums `array::data_size()`, an element count, over the
+/// distinct input arrays and compares `count >> 20` against the cap, which it
+/// defaults to 40-50 per device class. Once [`metal_ops_per_buffer_default`]
+/// lifts the op cap to 1000, the input budget is the one that binds during
+/// decode, because every token reads the whole weight set: a 4-bit 7B model
+/// packs its weights into about 1.1G `u32` elements, so the default 50 commits a
+/// buffer every one to two layers (about 23 per token on command-r7b), and each
+/// commit leaves the GPU idle for tens of microseconds before the next buffer
+/// starts. A bf16 checkpoint counts eight times as many elements per layer and
+/// commits more often still.
+///
+/// Measured on M1 Ultra, 500-token prompt, 128 generated tokens, three
+/// interleaved runs per cell, decode at MLX's default versus 1000: command-r7b
+/// 4-bit +7%, Llama 3.1 8B 4-bit +5.6%, Qwen2.5 7B 4-bit +8%, Gemma 3n E4B +3%,
+/// Granite 4.0 H Tiny +10%, Qwen3-30B-A3B +20%, Mixtral 8x7B +21%, Llama 3.1
+/// 8B bf16 +17%, Gemma 3 4B flat. See
+/// docs/benchmark_results/metal-mb-per-buffer-m1ultra-2026-09-21.md.
+///
+/// The value applies to decode only. The same budget during prefill keeps a
+/// whole prompt's activations alive until the buffer completes: at 1000 the
+/// peak for a 2048-token prompt went from 6.0 to 12.6 GB on Qwen2.5 7B and from
+/// 19.8 to 36.2 GB on Qwen3-30B-A3B, and prefill throughput lost up to 2.7%.
+/// [`crate::DecodeCommandBufferBudget`] applies it around pipelined decode only
+/// (the generate loops and the server's lookahead decode) and leaves prefill
+/// and synchronous decode steps on the device default: a step that encodes
+/// and then waits loses its CPU-encode / GPU-execute overlap in one large
+/// buffer.
+///
+/// Gated like [`metal_ops_per_buffer_default`]: the input budget only binds
+/// once the op cap is raised, which happens only on M1 through M4. M5+ was not
+/// measured and keeps MLX's default in both phases.
+#[must_use]
+pub fn metal_decode_mb_per_buffer_default(
+    r#gen: AppleSiliconGen,
+    has_neural_accelerator: bool,
+) -> Option<u32> {
+    metal_ops_per_buffer_default(r#gen, has_neural_accelerator).map(|_| 1000)
+}
+
+/// Environment variable that sets the decode-step input budget explicitly.
+/// `0`, `off`, `false` or `no` disables the decode switch; a positive integer
+/// replaces the hardware default. Ignored when `MLX_MAX_MB_PER_BUFFER` is set.
+pub const DECODE_MB_PER_BUFFER_ENV: &str = "MLXCEL_DECODE_MB_PER_BUFFER";
+
+/// Resolve the decode-step input budget from the two environment variables
+/// and the hardware default. Pure, so the precedence is unit-testable.
+///
+/// An operator-set `MLX_MAX_MB_PER_BUFFER` wins over everything: it pins the
+/// budget for prefill and decode alike, and a decode-only switch on top of it
+/// would silently override the value the operator chose. Otherwise
+/// `MLXCEL_DECODE_MB_PER_BUFFER` decides, and an unparseable value falls back
+/// to the hardware default.
+#[must_use]
+pub fn resolve_decode_mb_per_buffer(
+    mlx_max_mb_per_buffer: Option<&str>,
+    decode_override: Option<&str>,
+    hardware_default: Option<u32>,
+) -> Option<u32> {
+    if mlx_max_mb_per_buffer.is_some() {
+        return None;
+    }
+    let Some(value) = decode_override.map(str::trim).filter(|v| !v.is_empty()) else {
+        return hardware_default;
+    };
+    if matches!(
+        value.to_ascii_lowercase().as_str(),
+        "0" | "off" | "false" | "no"
+    ) {
+        return None;
+    }
+    value
+        .parse::<u32>()
+        .ok()
+        .filter(|n| *n > 0)
+        .or(hardware_default)
+}
+
+/// The decode-step input budget for this process, resolved once. See
+/// [`metal_decode_mb_per_buffer_default`] and [`resolve_decode_mb_per_buffer`].
+#[must_use]
+pub fn decode_mb_per_buffer() -> Option<u32> {
+    static CACHED: OnceLock<Option<u32>> = OnceLock::new();
+    *CACHED.get_or_init(|| {
+        let hw = get_hardware();
+        resolve_decode_mb_per_buffer(
+            std::env::var("MLX_MAX_MB_PER_BUFFER").ok().as_deref(),
+            std::env::var(DECODE_MB_PER_BUFFER_ENV).ok().as_deref(),
+            metal_decode_mb_per_buffer_default(hw.silicon_gen, hw.has_neural_accelerator),
+        )
+    })
+}
+
+/// Lowest input row count at which an affine projection whose scales share the
+/// input's dtype (f16 or bf16) runs as `dequantize` + dense matmul instead of
+/// `quantized_matmul`, on the Apple generations where that was measured to be
+/// no slower (issues #1994, #2001). bf16-scale models at 1024 / 2048 rows:
+/// Qwen3 1.7B +15.1% / +18.0%, Qwen3-30B-A3B +5.5% / +4.4%, Gemma 4 12B +3.0% /
+/// +3.2%, Gemma 4 E4B +0.9% / +1.9%, Gemma 3 4B +0.5% / +0.8%.
+///
+/// Measured on M1 Ultra through `mlxcel-bench-decode` (prefill change, dense
+/// path on vs off, one binary): at 1024 rows Llama 3.1 8B +10.0%, command-r7b
+/// +7.7%, Phi-3 mini +10.2%, Qwen2.5 7B +1.5%, Gemma 2 2B +0.6%, Mixtral 8x7B
+/// +0.6%; at 2048 rows +13.5%, +10.2%, +12.5%, +3.9%, +1.0%, +1.2%. Below 1024
+/// the models split: at 512 rows Llama, command-r and Phi-3 gain 4 to 6% while
+/// Qwen2.5 loses 3.1% and Gemma 2 1.3%, and at 384 rows Qwen2.5 loses 11%. 1024
+/// is the lowest row count with no measured regression; a per-shape threshold
+/// could recover the 512 to 768 gains later. Prefill peak memory grows 0.1 to
+/// 0.6 GB. See docs/benchmark_results/prefill-dense-gemm-m1ultra-2026-09-27.md.
+pub const PREFILL_DENSE_GEMM_MIN_ROWS: i64 = 1024;
+
+/// Environment variable that sets the dense-GEMM prefill row threshold on any
+/// backend. `0`, `off`, `false` or `no` disables it; a positive integer
+/// replaces the hardware default.
+pub const PREFILL_DENSE_GEMM_ENV: &str = "MLXCEL_PREFILL_DEQUANT_MIN_M";
+
+/// Hardware default for [`PREFILL_DENSE_GEMM_MIN_ROWS`]: on for M1 only.
+///
+/// Measured on M1 Ultra (the gain above) and M5 Max, where the dense path is
+/// slower at every size tried: Llama 3.1 8B -12.1% / -3.7% / -0.9% at 512 /
+/// 1024 / 2048 rows, Qwen2.5 7B -14.4% / -2.8% / +0.3%, Phi-3 mini -13.8% /
+/// -2.5% / -0.2%, with +0.5 to 0.8 GB of peak memory, so M5 stays off. M2
+/// through M4 differ in GPU microarchitecture and were not measured, and later
+/// or non-Apple devices report `Unknown`; they keep `quantized_matmul` until a
+/// measurement adds them here. On ROCm there is nothing to add: the dense path
+/// is only eligible where `quantized_matmul` already runs the same dequantize +
+/// hipBLASLt GEMM (#2081), which it does with a cached dequantized weight.
+#[must_use]
+pub fn prefill_dense_gemm_min_rows_default(r#gen: AppleSiliconGen) -> Option<i64> {
+    (r#gen == AppleSiliconGen::M1).then_some(PREFILL_DENSE_GEMM_MIN_ROWS)
+}
+
+/// Resolve the dense-GEMM prefill row threshold from
+/// [`PREFILL_DENSE_GEMM_ENV`] and the hardware default. Pure, so the
+/// precedence is unit-testable. An unparseable value keeps the default.
+#[must_use]
+pub fn resolve_prefill_dense_gemm_min_rows(
+    env_value: Option<&str>,
+    hardware_default: Option<i64>,
+) -> Option<i64> {
+    let Some(value) = env_value.map(str::trim).filter(|v| !v.is_empty()) else {
+        return hardware_default;
+    };
+    if matches!(
+        value.to_ascii_lowercase().as_str(),
+        "0" | "off" | "false" | "no"
+    ) {
+        return None;
+    }
+    value
+        .parse::<i64>()
+        .ok()
+        .filter(|n| *n > 0)
+        .or(hardware_default)
+}
+
+/// The dense-GEMM prefill row threshold for this process, resolved once.
+#[must_use]
+pub fn prefill_dense_gemm_min_rows() -> Option<i64> {
+    static CACHED: OnceLock<Option<i64>> = OnceLock::new();
+    *CACHED.get_or_init(|| {
+        resolve_prefill_dense_gemm_min_rows(
+            std::env::var(PREFILL_DENSE_GEMM_ENV).ok().as_deref(),
+            prefill_dense_gemm_min_rows_default(get_hardware().silicon_gen),
+        )
+    })
+}
+
+/// The `MLX_CUDA_GRAPH_CACHE_SIZE` default to apply on a CUDA build, or `None`
+/// off CUDA.
+///
+/// MLX's CUDA backend keeps an LRU cache of captured CUDA graphs keyed by graph
+/// shape, and its built-in capacity default is 400
+/// (`mlx/backend/cuda/device.cpp`). `mlx/backend/cuda/lru_cache.h` also keeps a
+/// lifetime miss counter that is never reset (not on hits, not on trim) and
+/// throws a fatal `std::runtime_error("Cache thrashing is happening ...")` once
+/// that counter passes `2 * capacity`, i.e. 800 lifetime misses at the default.
+/// A long-lived, shape-diverse CUDA server crosses that threshold over its
+/// lifetime, and speculative or batched decode reaches it fastest: the draft and
+/// verify phases, multiplied across varying batch sizes and sequence-length
+/// buckets, produce many distinct graph shapes. The throw is a process death,
+/// not a request-level error, so it drops every in-flight request (issue #818).
+///
+/// Raising the cap to 2000 was validated to eliminate the crash (13/13 requests
+/// across multiple bursts on GB10). 2000 is an LRU capacity cap, not a
+/// preallocation, so it only costs memory as distinct graph shapes actually
+/// accumulate. This is a default only: an operator-set `MLX_CUDA_GRAPH_CACHE_SIZE`
+/// (any value) always wins (see [`apply_cuda_graph_cache_default`]). The variable
+/// is read only by MLX's CUDA backend, so it is a harmless no-op when the runtime
+/// device is CPU.
+///
+/// Tracking (issue #821): the upstream behavior is written up in
+/// `docs/upstream/mlx-cuda-graph-cache-lifetime-miss-abort.md`. Raising the cap
+/// only buys a proportionally larger lifetime budget, so it is a delay, not a
+/// fix. Removal condition: once an upstream fix lands that stops punishing a
+/// large lifetime working set (a windowed miss rate, or a non-fatal report) and
+/// the MLX pin in `src/lib/mlx-cpp/CMakeLists.txt` moves past it, this default
+/// can be lowered back toward MLX's own 400 or dropped entirely.
+#[must_use]
+pub fn cuda_graph_cache_default() -> Option<u32> {
+    #[cfg(feature = "cuda")]
+    {
+        Some(2000)
+    }
+    #[cfg(not(feature = "cuda"))]
+    {
+        None
+    }
+}
+
+/// Apply the [`cuda_graph_cache_default`] to the process environment, unless
+/// `MLX_CUDA_GRAPH_CACHE_SIZE` is already set.
+///
+/// Call this once, early in `main()`, before any MLX op runs and before spawning
+/// threads: MLX reads `MLX_CUDA_GRAPH_CACHE_SIZE` when it first sizes the CUDA
+/// graph cache, and setting an environment variable is only sound while the
+/// process is effectively single-threaded. An operator-set
+/// `MLX_CUDA_GRAPH_CACHE_SIZE` (any value) is always respected.
+pub fn apply_cuda_graph_cache_default() {
+    if std::env::var_os("MLX_CUDA_GRAPH_CACHE_SIZE").is_some() {
+        return;
+    }
+    if let Some(value) = cuda_graph_cache_default() {
+        // SAFETY: set_var mutates the process-global environment and is unsound
+        // only if another thread reads or writes the environment concurrently.
+        // Per this function's documented contract, all in-tree callers invoke it
+        // once at the top of `main` right after CLI parsing (src/main.rs,
+        // src/bin/mlx_server.rs, src/bin/bench_decode.rs,
+        // src/bin/speculative_bench.rs), before any model load, MLX op, or worker
+        // thread touches the environment, so no other thread is accessing it here.
+        unsafe { std::env::set_var("MLX_CUDA_GRAPH_CACHE_SIZE", value.to_string()) };
+    }
+}
+
+// ── Detection ─────────────────────────────────────────────────────────────────
+
+/// The `MLX_CUDA_SDPA_CACHE_SIZE` default to apply on a CUDA build, or `None`
+/// off CUDA.
+///
+/// MLX's CUDA backend caches cuDNN SDPA execution plans in an LRU keyed by the
+/// exact query, key, value and mask shapes and strides
+/// (`mlx/backend/cuda/scaled_dot_product_attention.cpp`, capacity 256 by
+/// default), built on the same `lru_cache.h` as the graph cache, so it carries
+/// the same lifetime miss counter and the same fatal `Cache thrashing` throw
+/// once lifetime misses pass `2 * capacity` (512 at MLX's default). Every
+/// distinct prompt length that prefills through cuDNN is one miss per attention
+/// layer class, so a long-lived server crosses 512 on prompt diversity alone;
+/// a multi-row speculative verify used to cross it in a few hundred rounds
+/// before its small-query calls were routed away from cuDNN (issue #1799,
+/// where a 400-token Laguna DFlash run at block 2 aborted on it). Raised to
+/// 2000 for the same reasons and with the same caveats as
+/// [`cuda_graph_cache_default`]: an LRU cap, not a preallocation; a larger
+/// lifetime budget, not a fix; an operator-set value always wins.
+#[must_use]
+pub fn cuda_sdpa_cache_default() -> Option<u32> {
+    #[cfg(feature = "cuda")]
+    {
+        Some(2000)
+    }
+    #[cfg(not(feature = "cuda"))]
+    {
+        None
+    }
+}
+
+/// Apply the [`cuda_sdpa_cache_default`] to the process environment, unless
+/// `MLX_CUDA_SDPA_CACHE_SIZE` is already set. Same contract as
+/// [`apply_cuda_graph_cache_default`]: once, early in `main()`, before any MLX
+/// op and before spawning threads.
+pub fn apply_cuda_sdpa_cache_default() {
+    if std::env::var_os("MLX_CUDA_SDPA_CACHE_SIZE").is_some() {
+        return;
+    }
+    if let Some(value) = cuda_sdpa_cache_default() {
+        // SAFETY: same argument as `apply_cuda_graph_cache_default`: every
+        // in-tree caller invokes this once at the top of `main` right after
+        // CLI parsing (src/main.rs, src/bin/mlx_server.rs,
+        // src/bin/bench_decode.rs, src/bin/speculative_bench.rs), before any
+        // model load, MLX op, or worker thread touches the environment, so no
+        // other thread is accessing it here.
+        unsafe { std::env::set_var("MLX_CUDA_SDPA_CACHE_SIZE", value.to_string()) };
+    }
+}
+
+/// Detect hardware capabilities by querying the OS at runtime.
+///
+/// On non-macOS platforms this always returns [`HardwareCapabilities::default`].
+pub fn detect_hardware() -> HardwareCapabilities {
+    #[cfg(target_os = "macos")]
+    {
+        detect_hardware_macos()
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        detect_hardware_gpu()
+    }
+}
+
+/// Detection off macOS, where the vendor comes from the resolved MLX backend
+/// and the device strings come from `device_info()`.
+///
+/// Everything Apple-specific stays at its default: `silicon_gen` `Unknown`, no
+/// Neural Accelerator, and `unified_memory_gb` 0 so `resolve_available_memory`
+/// keeps the order it had on CUDA before this function existed. What it adds
+/// is the vendor tag plus the three device strings the ROCm backend publishes
+/// and nothing previously read (issue #1805).
+#[cfg(not(target_os = "macos"))]
+fn detect_hardware_gpu() -> HardwareCapabilities {
+    let backend = gpu_backend_kind();
+    let vendor = match backend {
+        GpuBackendKind::Metal => GpuVendor::Apple,
+        GpuBackendKind::Cuda => GpuVendor::Nvidia,
+        GpuBackendKind::Rocm => GpuVendor::Amd,
+        GpuBackendKind::None => GpuVendor::Unknown,
+    };
+    if vendor == GpuVendor::Unknown {
+        // No device to describe; asking for its name would just return "".
+        return HardwareCapabilities::default();
+    }
+    let architecture = crate::ffi::gpu_architecture(0);
+    HardwareCapabilities {
+        vendor,
+        device_name: crate::ffi::gpu_device_name(0),
+        // Empty means no device at index 0. `None` says that; "" would read as
+        // an architecture named nothing at every consumer.
+        device_architecture: (!architecture.is_empty()).then_some(architecture),
+        device_memory_bytes: crate::ffi::gpu_total_memory(0) as u64,
+        ..HardwareCapabilities::default()
+    }
+}
+
+// ── macOS implementation ──────────────────────────────────────────────────────
+
+#[cfg(target_os = "macos")]
+mod platform {
+    use std::os::raw::{c_char, c_int, c_void};
+
+    // sysctlbyname(3) is in <sys/sysctl.h> — link against libSystem automatically.
+    unsafe extern "C" {
+        fn sysctlbyname(
+            name: *const c_char,
+            oldp: *mut c_void,
+            oldlenp: *mut usize,
+            newp: *mut c_void,
+            newlen: usize,
+        ) -> c_int;
+    }
+
+    /// Read a NUL-terminated string sysctl value.
+    pub fn sysctl_string(name: &str) -> Option<String> {
+        let c_name = std::ffi::CString::new(name).ok()?;
+        // First call: query required buffer length.
+        let mut len: usize = 0;
+        // SAFETY: `c_name` is a valid NUL-terminated C string. We pass null for
+        // `oldp` with a valid `&mut len` to query the required buffer size.
+        // `newp` is null and `newlen` is 0 (read-only).
+        let rc = unsafe {
+            sysctlbyname(
+                c_name.as_ptr(),
+                std::ptr::null_mut(),
+                &mut len,
+                std::ptr::null_mut(),
+                0,
+            )
+        };
+        if rc != 0 || len == 0 {
+            return None;
+        }
+        // Second call: fill buffer.
+        let mut buf = vec![0u8; len];
+        // SAFETY: `buf` is a valid, writable buffer of `len` bytes. `len` is
+        // updated by the kernel to reflect the actual bytes written (at most
+        // the original buffer size).
+        let rc = unsafe {
+            sysctlbyname(
+                c_name.as_ptr(),
+                buf.as_mut_ptr() as *mut c_void,
+                &mut len,
+                std::ptr::null_mut(),
+                0,
+            )
+        };
+        if rc != 0 {
+            return None;
+        }
+        // Truncate to the actual length returned by the kernel (may be shorter
+        // than the original allocation if the value shrank between calls).
+        buf.truncate(len);
+        // Trim trailing NUL bytes.
+        while buf.last() == Some(&0) {
+            buf.pop();
+        }
+        String::from_utf8(buf).ok()
+    }
+
+    /// Read a `u64` sysctl value.
+    pub fn sysctl_u64(name: &str) -> Option<u64> {
+        let c_name = std::ffi::CString::new(name).ok()?;
+        let mut value: u64 = 0;
+        let mut len = std::mem::size_of::<u64>();
+        // SAFETY: `c_name` is a valid NUL-terminated C string. `value` is a
+        // properly aligned `u64` with `len` set to its exact size. The kernel
+        // writes at most `len` bytes into `value`.
+        let rc = unsafe {
+            sysctlbyname(
+                c_name.as_ptr(),
+                &mut value as *mut u64 as *mut c_void,
+                &mut len,
+                std::ptr::null_mut(),
+                0,
+            )
+        };
+        if rc != 0 || len != std::mem::size_of::<u64>() {
+            return None;
+        }
+        Some(value)
+    }
+
+    /// Read a `u32` sysctl value.
+    pub fn sysctl_u32(name: &str) -> Option<u32> {
+        let c_name = std::ffi::CString::new(name).ok()?;
+        let mut value: u32 = 0;
+        let mut len = std::mem::size_of::<u32>();
+        // SAFETY: `c_name` is a valid NUL-terminated C string. `value` is a
+        // properly aligned `u32` with `len` set to its exact size. The kernel
+        // writes at most `len` bytes into `value`.
+        let rc = unsafe {
+            sysctlbyname(
+                c_name.as_ptr(),
+                &mut value as *mut u32 as *mut c_void,
+                &mut len,
+                std::ptr::null_mut(),
+                0,
+            )
+        };
+        if rc != 0 || len != std::mem::size_of::<u32>() {
+            return None;
+        }
+        Some(value)
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn detect_hardware_macos() -> HardwareCapabilities {
+    use platform::{sysctl_string, sysctl_u32, sysctl_u64};
+
+    // ── Chip generation ───────────────────────────────────────────────────────
+    let brand = sysctl_string("machdep.cpu.brand_string").unwrap_or_default();
+    let silicon_gen = parse_silicon_gen(&brand);
+
+    // ── GPU core count ────────────────────────────────────────────────────────
+    // `hw.perflevel0.logicalcpu` is the performance-cluster CPU count, which
+    // closely correlates with GPU core count on Apple Silicon.
+    let gpu_core_count = sysctl_u32("hw.perflevel0.logicalcpu").unwrap_or(0);
+
+    // ── Unified memory ────────────────────────────────────────────────────────
+    let mem_bytes = sysctl_u64("hw.memsize").unwrap_or(0);
+    let unified_memory_gb = (mem_bytes / (1024 * 1024 * 1024)) as u32;
+
+    // ── macOS version ─────────────────────────────────────────────────────────
+    let macos_version_str = sysctl_string("kern.osproductversion").unwrap_or_default();
+    let (macos_major, macos_minor) = parse_macos_version(&macos_version_str);
+    // Neural Accelerator API requires macOS 26.2+
+    let macos_supports_na = (macos_major > 26) || (macos_major == 26 && macos_minor >= 2);
+
+    // ── Derived fields ────────────────────────────────────────────────────────
+    let has_neural_accelerator = silicon_gen.has_neural_accelerator();
+    let metal_version = silicon_gen.metal_version();
+    let memory_bandwidth_gbps = estimate_bandwidth(silicon_gen, unified_memory_gb);
+
+    HardwareCapabilities {
+        // macOS only ever runs the Metal backend here, so the vendor is not a
+        // probe result. `silicon_gen` still carries the generation, and
+        // `is_apple_silicon()` still reads that field rather than this one.
+        vendor: GpuVendor::Apple,
+        silicon_gen,
+        gpu_core_count,
+        has_neural_accelerator,
+        metal_version,
+        macos_supports_na,
+        memory_bandwidth_gbps,
+        unified_memory_gb,
+        // Both of these come from sysctl rather than from MLX `device_info()`,
+        // because this function runs at the top of `main`, before the
+        // environment defaults MLX reads are applied, and probing the device
+        // here would move device initialisation ahead of them. On a SoC the
+        // chip brand is the device name a reader wants anyway, and the
+        // architecture is left unreported rather than guessed.
+        device_name: brand,
+        device_architecture: None,
+        // Unified memory: on Apple Silicon the GPU pool is host RAM.
+        device_memory_bytes: mem_bytes,
+    }
+}
+
+/// Parse Apple Silicon generation from the CPU brand string.
+///
+/// Examples:
+/// - `"Apple M1"` → `M1`
+/// - `"Apple M4 Max"` → `M4`
+/// - `"Apple M5 Pro"` → `M5`
+#[cfg(any(target_os = "macos", test))]
+fn parse_silicon_gen(brand: &str) -> AppleSiliconGen {
+    // Look for "Apple M<n>" pattern anywhere in the string.
+    if let Some(pos) = brand.find("Apple M") {
+        let rest = &brand[pos + "Apple M".len()..];
+        // Extract the full generation number (handles multi-digit like M10+).
+        let gen_str: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+        match gen_str.as_str() {
+            "1" => AppleSiliconGen::M1,
+            "2" => AppleSiliconGen::M2,
+            "3" => AppleSiliconGen::M3,
+            "4" => AppleSiliconGen::M4,
+            "5" => AppleSiliconGen::M5,
+            _ => AppleSiliconGen::Unknown,
+        }
+    } else {
+        AppleSiliconGen::Unknown
+    }
+}
+
+/// Parse `"major.minor[.patch]"` version strings.
+///
+/// Returns `(major, minor)`. Returns `(0, 0)` on parse failure.
+#[cfg(any(target_os = "macos", test))]
+fn parse_macos_version(version: &str) -> (u32, u32) {
+    let mut parts = version.split('.');
+    let major = parts
+        .next()
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(0);
+    let minor = parts
+        .next()
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(0);
+    (major, minor)
+}
+
+/// Return approximate memory bandwidth in GB/s based on chip generation and
+/// memory configuration.  Values are midpoints from Apple's published specs
+/// for the base chip variant at the given memory size.
+#[cfg(target_os = "macos")]
+fn estimate_bandwidth(r#gen: AppleSiliconGen, memory_gb: u32) -> f64 {
+    match r#gen {
+        AppleSiliconGen::M1 => {
+            if memory_gb > 16 {
+                400.0 // M1 Max / Ultra
+            } else {
+                68.25 // M1 base / Pro
+            }
+        }
+        AppleSiliconGen::M2 => {
+            if memory_gb > 24 {
+                800.0 // M2 Ultra
+            } else if memory_gb > 16 {
+                400.0 // M2 Max
+            } else {
+                100.0 // M2 base / Pro
+            }
+        }
+        AppleSiliconGen::M3 => {
+            if memory_gb > 36 {
+                800.0 // M3 Ultra
+            } else if memory_gb > 18 {
+                400.0 // M3 Max
+            } else {
+                100.0 // M3 base / Pro
+            }
+        }
+        AppleSiliconGen::M4 => {
+            if memory_gb > 64 {
+                800.0 // M4 Ultra
+            } else if memory_gb > 32 {
+                546.0 // M4 Max
+            } else {
+                120.0 // M4 base / Pro
+            }
+        }
+        AppleSiliconGen::M5 => {
+            // Estimated; update once Apple publishes official specs.
+            if memory_gb > 64 { 1000.0 } else { 150.0 }
+        }
+        AppleSiliconGen::Unknown => 0.0,
+    }
+}
+
+// ── KV cache memory estimation ────────────────────────────────────────────────
+
+/// The pre-allocation step used by [`KVCache`](crate::cache::KVCache).
+///
+/// All buffer allocations are rounded up to the next multiple of this value so
+/// that the estimated reservation matches what the runtime actually allocates.
+pub const KV_CACHE_ALLOC_STEP: u64 = 256;
+
+/// Estimate the KV-cache memory reservation in bytes.
+///
+/// The formula is:
+/// ```text
+/// num_layers × 2 (K + V) × num_kv_heads × head_dim × elem_bytes
+///     × round_up(ctx_len, 256) × batch
+/// ```
+///
+/// `ctx_len` is rounded up to the next multiple of [`KV_CACHE_ALLOC_STEP`]
+/// (256) to match the actual buffer pre-allocation performed by
+/// [`KVCache`](crate::cache::KVCache).
+///
+/// # Arguments
+/// * `num_layers`  — number of transformer layers.
+/// * `num_kv_heads` — number of KV attention heads (may be < `num_heads` for GQA/MQA).
+/// * `head_dim`    — per-head dimension (usually `hidden_size / num_heads`).
+/// * `elem_bytes`  — bytes per element: 2 for FP16/BF16, 1 for INT8 KV.
+/// * `ctx_len`     — requested context length in tokens.
+/// * `batch`       — batch size (typically 1 for interactive generation).
+///
+/// # Examples
+/// ```
+/// use mlxcel_core::hardware::kv_cache_bytes;
+///
+/// // 32-layer, 8-head GQA model, 128-dim heads, FP16, 8K context, batch 1.
+/// let bytes = kv_cache_bytes(32, 8, 128, 2, 8192, 1);
+/// // ctx_len rounded to 8192 (already a multiple of 256).
+/// // 32 × 2 × 8 × 128 × 2 × 8192 × 1 = 1_073_741_824 (1 GiB)
+/// assert_eq!(bytes, 1_073_741_824);
+/// ```
+#[must_use]
+pub fn kv_cache_bytes(
+    num_layers: u64,
+    num_kv_heads: u64,
+    head_dim: u64,
+    elem_bytes: u64,
+    ctx_len: u64,
+    batch: u64,
+) -> u64 {
+    // Round ctx_len up to the next multiple of KV_CACHE_ALLOC_STEP so the
+    // estimate matches the actual buffer reservation.
+    let rounded_ctx =
+        ctx_len.saturating_add(KV_CACHE_ALLOC_STEP - 1) / KV_CACHE_ALLOC_STEP * KV_CACHE_ALLOC_STEP;
+
+    num_layers
+        .saturating_mul(2) // K and V
+        .saturating_mul(num_kv_heads)
+        .saturating_mul(head_dim)
+        .saturating_mul(elem_bytes)
+        .saturating_mul(rounded_ctx)
+        .saturating_mul(batch)
+}
+
+/// Model architecture parameters needed to compute KV cache memory.
+///
+/// Passed to [`kv_cache_bytes_from_params`] to avoid long argument lists and
+/// to give the unified estimator a single stable entry point.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KvCacheParams {
+    /// Number of transformer layers.
+    pub num_layers: u64,
+    /// Number of KV attention heads (may be < `num_heads` for GQA/MQA).
+    pub num_kv_heads: u64,
+    /// Per-head dimension (`hidden_size / num_heads`).
+    pub head_dim: u64,
+    /// `true` when INT8 KV cache is active (`--cache-type-k int8` /
+    /// `--cache-type-v int8` / `--kv-cache-mode int8`).  INT8 storage halves
+    /// `elem_bytes` relative to FP16.
+    pub int8_kv: bool,
+    /// Requested context length in tokens.
+    pub ctx_len: u64,
+    /// Batch size (typically 1 for interactive generation).
+    pub batch: u64,
+}
+
+impl KvCacheParams {
+    /// Create params with `int8_kv = false` and `batch = 1`.
+    pub fn new(num_layers: u64, num_kv_heads: u64, head_dim: u64, ctx_len: u64) -> Self {
+        Self {
+            num_layers,
+            num_kv_heads,
+            head_dim,
+            int8_kv: false,
+            ctx_len,
+            batch: 1,
+        }
+    }
+}
+
+/// Compute KV-cache memory reservation from a [`KvCacheParams`] struct.
+///
+/// `elem_bytes` is derived from `params.int8_kv`: `1` for INT8, `2` for FP16/BF16.
+///
+/// # Examples
+/// ```
+/// use mlxcel_core::hardware::{KvCacheParams, kv_cache_bytes_from_params};
+///
+/// let params = KvCacheParams {
+///     num_layers: 32,
+///     num_kv_heads: 8,
+///     head_dim: 128,
+///     int8_kv: false,
+///     ctx_len: 8192,
+///     batch: 1,
+/// };
+/// let bytes = kv_cache_bytes_from_params(&params);
+/// assert_eq!(bytes, 1_073_741_824); // 1 GiB
+/// ```
+#[must_use]
+pub fn kv_cache_bytes_from_params(params: &KvCacheParams) -> u64 {
+    let elem_bytes = if params.int8_kv { 1 } else { 2 };
+    kv_cache_bytes(
+        params.num_layers,
+        params.num_kv_heads,
+        params.head_dim,
+        elem_bytes,
+        params.ctx_len,
+        params.batch,
+    )
+}
+
+// ── Quantization recommendation ───────────────────────────────────────────────
+
+/// Recommended quantization mode for a given hardware + model combination.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub enum QuantRecommendation {
+    /// 8-bit integer quantization — best throughput on M5 Neural Accelerator.
+    Int8 { reason: &'static str },
+    /// 4-bit affine quantization — best balance of speed and memory footprint.
+    Int4Affine { reason: &'static str },
+    /// FP16 (no quantization) — for small models that fit comfortably in memory.
+    Fp16 { reason: &'static str },
+}
+
+impl QuantRecommendation {
+    /// Short label used in CLI output (e.g. `"int8"`, `"int4"`, `"fp16"`).
+    pub fn label(&self) -> &'static str {
+        match self {
+            QuantRecommendation::Int8 { .. } => "int8",
+            QuantRecommendation::Int4Affine { .. } => "int4",
+            QuantRecommendation::Fp16 { .. } => "fp16",
+        }
+    }
+
+    /// Human-readable rationale returned by the recommendation engine.
+    pub fn reason(&self) -> &'static str {
+        match self {
+            QuantRecommendation::Int8 { reason }
+            | QuantRecommendation::Int4Affine { reason }
+            | QuantRecommendation::Fp16 { reason } => reason,
+        }
+    }
+}
+
+/// Recommend the optimal quantization mode for a given model and hardware.
+///
+/// The decision tree is:
+/// 1. **M5 with Neural Accelerator + enough memory for 8-bit**: prefer INT8.
+///    The M5 NA delivers ~2x compute throughput for INT8 vs FP16, making 8-bit
+///    quantized models strictly faster when they fit in unified memory.
+/// 2. **4-bit headroom**: prefer INT4 affine — best latency-per-memory trade-off
+///    on all other Apple Silicon generations.
+/// 3. **Fallback**: INT4 is also recommended when memory is tight (8-bit would
+///    not fit), so we never recommend FP16 unless the model is tiny enough that
+///    no quantization is needed.
+///
+/// # Arguments
+/// * `model_params_billions` — approximate model parameter count in billions.
+/// * `available_memory_gb` — total unified memory in GB (`unified_memory_gb`
+///   from [`HardwareCapabilities`]).
+/// * `hw` — hardware capabilities from [`get_hardware`].
+/// * `kv_cache_headroom_bytes` — KV cache memory reservation in bytes. When
+///   `None`, falls back to a conservative 2 GiB default for backward
+///   compatibility. Pass the result of [`kv_cache_bytes`] or
+///   [`kv_cache_bytes_from_params`] when model architecture info is available.
+pub fn recommend_quantization(
+    model_params_billions: f64,
+    available_memory_gb: u32,
+    hw: &HardwareCapabilities,
+    kv_cache_headroom_bytes: Option<u64>,
+) -> QuantRecommendation {
+    // Rough memory footprints (parameters only — add KV cache headroom):
+    //   FP16: ~2 bytes/param  →  model_params_billions * 2 GB
+    //   INT8: ~1 byte/param   →  model_params_billions * 1 GB
+    //   INT4: ~0.5 bytes/param →  model_params_billions * 0.5 GB
+    //
+    // KV headroom is computed from model architecture when available; fall back
+    // to a conservative 2 GiB constant for callers that do not supply it.
+    const FALLBACK_KV_HEADROOM_GB: u32 = 2;
+    let kv_headroom_gb = match kv_cache_headroom_bytes {
+        Some(bytes) => {
+            // Convert bytes → GiB, rounding up so the headroom is never
+            // under-estimated (1 GiB = 1_073_741_824 bytes).
+            bytes.div_ceil(1_073_741_824) as u32
+        }
+        None => FALLBACK_KV_HEADROOM_GB,
+    };
+
+    let mem_fp16_gb = (model_params_billions * 2.0).ceil() as u32 + kv_headroom_gb;
+    let mem_8bit_gb = (model_params_billions * 1.0).ceil() as u32 + kv_headroom_gb;
+    let mem_4bit_gb = (model_params_billions * 0.5).ceil() as u32 + kv_headroom_gb;
+
+    // M5 Neural Accelerator path: 2x INT8 throughput over FP16.
+    if hw.has_neural_accelerator && hw.macos_supports_na {
+        if mem_8bit_gb <= available_memory_gb {
+            return QuantRecommendation::Int8 {
+                reason: "M5 NA delivers 2x throughput for INT8 vs FP16",
+            };
+        }
+        // NA still helps with INT4 on M5 for models too large for 8-bit.
+        if mem_4bit_gb <= available_memory_gb {
+            return QuantRecommendation::Int4Affine {
+                reason: "M5 NA available but 8-bit exceeds memory; 4-bit recommended",
+            };
+        }
+    }
+
+    // Non-M5 or macOS < 26.2: FP16 if small enough, else INT4.
+    if mem_fp16_gb <= available_memory_gb {
+        return QuantRecommendation::Fp16 {
+            reason: "Model fits in memory as FP16; no quantization needed",
+        };
+    }
+
+    if mem_4bit_gb <= available_memory_gb {
+        return QuantRecommendation::Int4Affine {
+            reason: "Best balance of speed and memory on this hardware",
+        };
+    }
+
+    // Even 4-bit is tight — still recommend it as the only viable option.
+    QuantRecommendation::Int4Affine {
+        reason: "Memory constrained; 4-bit required to fit model",
+    }
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_brand_strings() {
+        assert_eq!(parse_silicon_gen("Apple M1"), AppleSiliconGen::M1);
+        assert_eq!(parse_silicon_gen("Apple M2 Pro"), AppleSiliconGen::M2);
+        assert_eq!(parse_silicon_gen("Apple M3 Max"), AppleSiliconGen::M3);
+        assert_eq!(parse_silicon_gen("Apple M4"), AppleSiliconGen::M4);
+        assert_eq!(parse_silicon_gen("Apple M5 Pro"), AppleSiliconGen::M5);
+        assert_eq!(parse_silicon_gen("Intel Core i9"), AppleSiliconGen::Unknown);
+        assert_eq!(parse_silicon_gen(""), AppleSiliconGen::Unknown);
+        // Multi-digit generation should not mis-parse as single digit.
+        assert_eq!(parse_silicon_gen("Apple M10 Pro"), AppleSiliconGen::Unknown);
+    }
+
+    #[test]
+    fn parse_macos_versions() {
+        assert_eq!(parse_macos_version("14.5"), (14, 5));
+        assert_eq!(parse_macos_version("26.2.0"), (26, 2));
+        assert_eq!(parse_macos_version("26.2"), (26, 2));
+        assert_eq!(parse_macos_version("27.0"), (27, 0));
+        assert_eq!(parse_macos_version(""), (0, 0));
+    }
+
+    #[test]
+    fn neural_accelerator_flag() {
+        assert!(!AppleSiliconGen::M4.has_neural_accelerator());
+        assert!(AppleSiliconGen::M5.has_neural_accelerator());
+        assert!(!AppleSiliconGen::Unknown.has_neural_accelerator());
+    }
+
+    #[test]
+    fn wide_quantized_projection_flag_splits_at_generation_15() {
+        // Generation 13 runs a verify block as narrow per-position passes.
+        assert!(!AppleSiliconGen::M1.wide_quantized_projections());
+        assert!(!AppleSiliconGen::M2.wide_quantized_projections());
+        // Generation 15+ takes the one wide pass at `M >= 2`.
+        assert!(AppleSiliconGen::M3.wide_quantized_projections());
+        assert!(AppleSiliconGen::M4.wide_quantized_projections());
+        assert!(AppleSiliconGen::M5.wide_quantized_projections());
+        // Non-Apple and not-yet-enumerated Apple parts decline rather than
+        // assume; on CUDA a K-wide verify does not amortize at all (#638).
+        assert!(!AppleSiliconGen::Unknown.wide_quantized_projections());
+    }
+
+    #[test]
+    fn wide_quantized_projections_is_weaker_than_neural_accelerator() {
+        // The B=1 MTP gate moved from `has_neural_accelerator` to this
+        // predicate (issue #1217). That is only safe if it is strictly more
+        // permissive: no generation may lose a capability the old gate
+        // granted, so every NA generation must also read wide here. This is
+        // the property that lets the gate change on M3 Ultra evidence alone
+        // without touching what M1/M2 hosts do.
+        for chip in [
+            AppleSiliconGen::M1,
+            AppleSiliconGen::M2,
+            AppleSiliconGen::M3,
+            AppleSiliconGen::M4,
+            AppleSiliconGen::M5,
+            AppleSiliconGen::Unknown,
+        ] {
+            assert!(
+                !chip.has_neural_accelerator() || chip.wide_quantized_projections(),
+                "{chip} has a Neural Accelerator but does not read as wide-projection",
+            );
+        }
+    }
+
+    #[test]
+    fn ops_per_buffer_default_gates_on_hardware_class() {
+        // Pre-M5 Apple Silicon (Metal family 3) raises the command-buffer op cap
+        // to close dispatch-gap idle (#329/#345). M5+ is flat (#358) and an
+        // earlier study saw it slower, so it stays on MLX's default; non-Apple
+        // (Unknown) is untouched.
+        assert_eq!(
+            metal_ops_per_buffer_default(AppleSiliconGen::M1, false),
+            Some(1000)
+        );
+        assert_eq!(
+            metal_ops_per_buffer_default(AppleSiliconGen::M2, false),
+            Some(1000)
+        );
+        assert_eq!(
+            metal_ops_per_buffer_default(AppleSiliconGen::M3, false),
+            Some(1000)
+        );
+        assert_eq!(
+            metal_ops_per_buffer_default(AppleSiliconGen::M4, false),
+            Some(1000)
+        );
+        assert_eq!(
+            metal_ops_per_buffer_default(AppleSiliconGen::M5, true),
+            None
+        );
+        assert_eq!(
+            metal_ops_per_buffer_default(AppleSiliconGen::Unknown, false),
+            None
+        );
+    }
+
+    #[test]
+    fn decode_mb_per_buffer_default_follows_the_ops_default_gate() {
+        // The input budget only binds once the op cap is raised, so the two
+        // defaults must apply on exactly the same hardware. Decoupling them
+        // would either leave M1-M4 decode committing a buffer every layer or
+        // raise the budget where nothing was measured (M5+, non-Apple).
+        for (r#gen, na) in [
+            (AppleSiliconGen::M1, false),
+            (AppleSiliconGen::M2, false),
+            (AppleSiliconGen::M3, false),
+            (AppleSiliconGen::M4, false),
+            (AppleSiliconGen::M5, true),
+            (AppleSiliconGen::Unknown, false),
+        ] {
+            let ops = metal_ops_per_buffer_default(r#gen, na);
+            let mb = metal_decode_mb_per_buffer_default(r#gen, na);
+            assert_eq!(ops.is_some(), mb.is_some(), "{gen:?} na={na}");
+        }
+        assert_eq!(
+            metal_decode_mb_per_buffer_default(AppleSiliconGen::M1, false),
+            Some(1000)
+        );
+    }
+
+    #[test]
+    fn operator_mlx_max_mb_per_buffer_disables_the_decode_switch() {
+        // An explicit MLX_MAX_MB_PER_BUFFER pins both phases; the decode switch
+        // must not override it, whatever MLXCEL_DECODE_MB_PER_BUFFER says.
+        assert_eq!(
+            resolve_decode_mb_per_buffer(Some("50"), None, Some(1000)),
+            None
+        );
+        assert_eq!(
+            resolve_decode_mb_per_buffer(Some("50"), Some("2000"), Some(1000)),
+            None
+        );
+    }
+
+    #[test]
+    fn prefill_dense_gemm_default_is_m1_only() {
+        assert_eq!(
+            prefill_dense_gemm_min_rows_default(AppleSiliconGen::M1),
+            Some(PREFILL_DENSE_GEMM_MIN_ROWS)
+        );
+        for other in [
+            AppleSiliconGen::M2,
+            AppleSiliconGen::M3,
+            AppleSiliconGen::M4,
+            AppleSiliconGen::M5,
+            AppleSiliconGen::Unknown,
+        ] {
+            assert_eq!(
+                prefill_dense_gemm_min_rows_default(other),
+                None,
+                "{other:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn prefill_dense_gemm_env_overrides_and_disables() {
+        let d = Some(PREFILL_DENSE_GEMM_MIN_ROWS);
+        assert_eq!(resolve_prefill_dense_gemm_min_rows(None, d), d);
+        assert_eq!(resolve_prefill_dense_gemm_min_rows(Some(""), d), d);
+        assert_eq!(
+            resolve_prefill_dense_gemm_min_rows(Some("512"), d),
+            Some(512)
+        );
+        assert_eq!(
+            resolve_prefill_dense_gemm_min_rows(Some("512"), None),
+            Some(512)
+        );
+        for off in ["0", "off", "FALSE", "no"] {
+            assert_eq!(
+                resolve_prefill_dense_gemm_min_rows(Some(off), d),
+                None,
+                "{off}"
+            );
+        }
+        assert_eq!(resolve_prefill_dense_gemm_min_rows(Some("junk"), d), d);
+        assert_eq!(resolve_prefill_dense_gemm_min_rows(Some("-3"), None), None);
+    }
+
+    #[test]
+    fn decode_mb_per_buffer_env_overrides_and_disables() {
+        assert_eq!(
+            resolve_decode_mb_per_buffer(None, None, Some(1000)),
+            Some(1000)
+        );
+        assert_eq!(resolve_decode_mb_per_buffer(None, None, None), None);
+        assert_eq!(
+            resolve_decode_mb_per_buffer(None, Some("400"), Some(1000)),
+            Some(400)
+        );
+        // An explicit value applies even where the hardware default is off.
+        assert_eq!(
+            resolve_decode_mb_per_buffer(None, Some("400"), None),
+            Some(400)
+        );
+        for off in ["0", "off", "OFF", "false", "no", " 0 "] {
+            assert_eq!(
+                resolve_decode_mb_per_buffer(None, Some(off), Some(1000)),
+                None,
+                "{off}"
+            );
+        }
+        // Unparseable or empty falls back to the hardware default.
+        assert_eq!(
+            resolve_decode_mb_per_buffer(None, Some("lots"), Some(1000)),
+            Some(1000)
+        );
+        assert_eq!(
+            resolve_decode_mb_per_buffer(None, Some(""), Some(1000)),
+            Some(1000)
+        );
+    }
+
+    #[test]
+    fn cuda_sdpa_cache_default_matches_build_feature() {
+        #[cfg(feature = "cuda")]
+        assert_eq!(cuda_sdpa_cache_default(), Some(2000));
+        #[cfg(not(feature = "cuda"))]
+        assert_eq!(cuda_sdpa_cache_default(), None);
+    }
+
+    #[test]
+    fn cuda_graph_cache_default_matches_build_feature() {
+        // The CUDA graph-cache default is a compile-time gate: a `cuda`-feature
+        // build raises the LRU capacity to 2000 so long-lived, shape-diverse
+        // decode does not hit MLX's fatal "Cache thrashing" throw at the default
+        // capacity 400 (issue #818); every other build leaves MLX's default in
+        // place and the CUDA-only variable is never touched.
+        #[cfg(feature = "cuda")]
+        assert_eq!(cuda_graph_cache_default(), Some(2000));
+        #[cfg(not(feature = "cuda"))]
+        assert_eq!(cuda_graph_cache_default(), None);
+    }
+
+    #[test]
+    fn metal_version_by_gen() {
+        assert_eq!(AppleSiliconGen::M1.metal_version(), 3);
+        assert_eq!(AppleSiliconGen::M4.metal_version(), 3);
+        assert_eq!(AppleSiliconGen::M5.metal_version(), 4);
+    }
+
+    #[test]
+    fn macos_na_threshold() {
+        // Boundary conditions for "macOS 26.2+" check.
+        assert!(!{
+            let (maj, min) = parse_macos_version("26.1");
+            (maj > 26) || (maj == 26 && min >= 2)
+        });
+        assert!({
+            let (maj, min) = parse_macos_version("26.2");
+            (maj > 26) || (maj == 26 && min >= 2)
+        });
+        assert!({
+            let (maj, min) = parse_macos_version("27.0");
+            (maj > 26) || (maj == 26 && min >= 2)
+        });
+    }
+
+    #[test]
+    fn detect_hardware_does_not_panic() {
+        // Just verify detection runs without panicking on the current machine.
+        let caps = detect_hardware();
+        // We cannot assert specific values (depends on the test runner's hardware),
+        // but the enum must be one of the valid variants.
+        let _ = format!("{}", caps.silicon_gen);
+        let _ = caps.has_neural_accelerator;
+    }
+
+    #[test]
+    fn get_hardware_returns_same_instance() {
+        let a = get_hardware();
+        let b = get_hardware();
+        // Pointer equality — same cached allocation.
+        assert!(std::ptr::eq(a, b));
+    }
+
+    // ── recommend_quantization tests ──────────────────────────────────────────
+
+    fn make_hw(has_na: bool, macos_supports_na: bool, memory_gb: u32) -> HardwareCapabilities {
+        HardwareCapabilities {
+            silicon_gen: if has_na {
+                AppleSiliconGen::M5
+            } else {
+                AppleSiliconGen::M4
+            },
+            gpu_core_count: 10,
+            has_neural_accelerator: has_na,
+            metal_version: if has_na { 4 } else { 3 },
+            macos_supports_na,
+            memory_bandwidth_gbps: 150.0,
+            unified_memory_gb: memory_gb,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn recommends_int8_on_m5_with_sufficient_memory() {
+        // 7B model needs ~7 GB for INT8 + 2 GB headroom = 9 GB.
+        // 32 GB memory gives ample headroom → INT8.
+        let hw = make_hw(true, true, 32);
+        let rec = recommend_quantization(7.0, 32, &hw, None);
+        assert_eq!(
+            rec,
+            QuantRecommendation::Int8 {
+                reason: "M5 NA delivers 2x throughput for INT8 vs FP16",
+            }
+        );
+        assert_eq!(rec.label(), "int8");
+    }
+
+    #[test]
+    fn recommends_int4_on_m5_when_8bit_too_large() {
+        // 70B model: INT8 needs 70 + 2 = 72 GB, exceeds 64 GB.
+        // INT4 needs 35 + 2 = 37 GB — fits in 64 GB → INT4.
+        let hw = make_hw(true, true, 64);
+        let rec = recommend_quantization(70.0, 64, &hw, None);
+        assert_eq!(
+            rec,
+            QuantRecommendation::Int4Affine {
+                reason: "M5 NA available but 8-bit exceeds memory; 4-bit recommended",
+            }
+        );
+    }
+
+    #[test]
+    fn recommends_fp16_on_m4_with_small_model() {
+        // 1B model: FP16 needs 2 + 2 = 4 GB, fits in 24 GB → FP16.
+        let hw = make_hw(false, false, 24);
+        let rec = recommend_quantization(1.0, 24, &hw, None);
+        assert_eq!(
+            rec,
+            QuantRecommendation::Fp16 {
+                reason: "Model fits in memory as FP16; no quantization needed",
+            }
+        );
+        assert_eq!(rec.label(), "fp16");
+    }
+
+    #[test]
+    fn recommends_int4_on_m4_with_large_model() {
+        // 8B model: FP16 needs 16 + 2 = 18 GB, exceeds 16 GB.
+        // INT4 needs 4 + 2 = 6 GB, fits → INT4.
+        let hw = make_hw(false, false, 16);
+        let rec = recommend_quantization(8.0, 16, &hw, None);
+        assert_eq!(
+            rec,
+            QuantRecommendation::Int4Affine {
+                reason: "Best balance of speed and memory on this hardware",
+            }
+        );
+    }
+
+    #[test]
+    fn recommends_int4_on_m5_without_na_os_support() {
+        // M5 hardware but macOS < 26.2: NA path skipped, falls through to FP16/INT4.
+        let hw = make_hw(true, false, 32);
+        let rec = recommend_quantization(7.0, 32, &hw, None);
+        // 7B FP16 = 14 + 2 = 16 GB, fits in 32 GB → FP16 (no NA).
+        assert_eq!(
+            rec,
+            QuantRecommendation::Fp16 {
+                reason: "Model fits in memory as FP16; no quantization needed",
+            }
+        );
+    }
+
+    #[test]
+    fn recommends_int4_on_memory_constrained_m5() {
+        // 30B model on 16 GB M5: INT8 = 30 + 2 = 32 GB (too big), INT4 = 15 + 2 = 17 GB (too big).
+        let hw = make_hw(true, true, 16);
+        let rec = recommend_quantization(30.0, 16, &hw, None);
+        assert_eq!(
+            rec,
+            QuantRecommendation::Int4Affine {
+                reason: "Memory constrained; 4-bit required to fit model",
+            }
+        );
+        assert_eq!(rec.label(), "int4");
+    }
+
+    #[test]
+    fn reason_accessor_works() {
+        let rec = QuantRecommendation::Int8 {
+            reason: "test reason",
+        };
+        assert_eq!(rec.reason(), "test reason");
+    }
+
+    // ── kv_cache_bytes tests ──────────────────────────────────────────────────
+
+    #[test]
+    fn kv_cache_dense_mha() {
+        // Dense MHA: 32 layers, 32 kv_heads, 128 head_dim, FP16, 8K ctx, batch 1.
+        // ctx_len 8192 is already a multiple of 256 — no rounding needed.
+        // 32 × 2 × 32 × 128 × 2 × 8192 × 1 = 4_294_967_296 bytes (4 GiB)
+        let bytes = kv_cache_bytes(32, 32, 128, 2, 8192, 1);
+        assert_eq!(bytes, 4_294_967_296);
+    }
+
+    #[test]
+    fn kv_cache_gqa_fewer_kv_heads() {
+        // GQA: 32 layers, 8 kv_heads (e.g. Llama-3 8B), 128 head_dim, FP16, 8K ctx, batch 1.
+        // 32 × 2 × 8 × 128 × 2 × 8192 × 1 = 1_073_741_824 bytes (1 GiB)
+        let bytes = kv_cache_bytes(32, 8, 128, 2, 8192, 1);
+        assert_eq!(bytes, 1_073_741_824);
+    }
+
+    #[test]
+    fn kv_cache_long_context_128k() {
+        // 32 layers, 8 kv_heads, 128 head_dim, FP16, 128K ctx, batch 1.
+        // ctx_len 131072 is a multiple of 256 — no rounding.
+        // 32 × 2 × 8 × 128 × 2 × 131_072 × 1 = 17_179_869_184 bytes (16 GiB)
+        let bytes = kv_cache_bytes(32, 8, 128, 2, 131_072, 1);
+        assert_eq!(bytes, 17_179_869_184);
+    }
+
+    #[test]
+    fn kv_cache_int8_half_memory() {
+        // INT8 KV (elem_bytes = 1) should be exactly half of FP16 (elem_bytes = 2).
+        let fp16 = kv_cache_bytes(32, 8, 128, 2, 8192, 1);
+        let int8 = kv_cache_bytes(32, 8, 128, 1, 8192, 1);
+        assert_eq!(int8 * 2, fp16);
+    }
+
+    #[test]
+    fn kv_cache_256_token_rounding() {
+        // ctx_len not a multiple of 256 must be rounded up.
+        // ctx_len = 257 → rounded = 512.
+        let bytes_257 = kv_cache_bytes(1, 1, 1, 1, 257, 1);
+        let bytes_512 = kv_cache_bytes(1, 1, 1, 1, 512, 1);
+        // rounded_ctx for 257 should be 512 → same result as passing 512 directly.
+        assert_eq!(bytes_257, bytes_512);
+
+        // ctx_len = 256 → no rounding (already aligned).
+        let bytes_256 = kv_cache_bytes(1, 1, 1, 1, 256, 1);
+        assert_eq!(bytes_256, 512_u64); // num_layers=1 * K+V=2 * kv_heads=1 * head_dim=1 * elem=1 * 256 * batch=1
+
+        // ctx_len = 255 → rounds up to 256.
+        let bytes_255 = kv_cache_bytes(1, 1, 1, 1, 255, 1);
+        assert_eq!(bytes_255, bytes_256);
+
+        // ctx_len = 1 → rounds up to 256.
+        let bytes_1 = kv_cache_bytes(1, 1, 1, 1, 1, 1);
+        assert_eq!(bytes_1, bytes_256);
+    }
+
+    #[test]
+    fn kv_cache_from_params_fp16() {
+        let params = KvCacheParams {
+            num_layers: 32,
+            num_kv_heads: 8,
+            head_dim: 128,
+            int8_kv: false,
+            ctx_len: 8192,
+            batch: 1,
+        };
+        // elem_bytes = 2 for FP16.
+        assert_eq!(
+            kv_cache_bytes_from_params(&params),
+            kv_cache_bytes(32, 8, 128, 2, 8192, 1)
+        );
+    }
+
+    #[test]
+    fn kv_cache_from_params_int8() {
+        let params = KvCacheParams {
+            num_layers: 32,
+            num_kv_heads: 8,
+            head_dim: 128,
+            int8_kv: true,
+            ctx_len: 8192,
+            batch: 1,
+        };
+        // elem_bytes = 1 for INT8 → half of FP16.
+        let expected = kv_cache_bytes(32, 8, 128, 1, 8192, 1);
+        assert_eq!(kv_cache_bytes_from_params(&params), expected);
+    }
+
+    #[test]
+    fn kv_cache_new_constructor() {
+        // KvCacheParams::new sets int8_kv=false, batch=1.
+        let params = KvCacheParams::new(32, 8, 128, 8192);
+        assert!(!params.int8_kv);
+        assert_eq!(params.batch, 1);
+        assert_eq!(
+            kv_cache_bytes_from_params(&params),
+            kv_cache_bytes(32, 8, 128, 2, 8192, 1)
+        );
+    }
+
+    // ── recommend_quantization with computed KV headroom ─────────────────────
+
+    #[test]
+    fn recommend_quant_uses_computed_kv_headroom() {
+        // A 7B FP16 model needs 14 GB for weights.
+        // With a 2 GB flat headroom (None), it fits in 16 GB: 14 + 2 = 16 GB.
+        // With a 4 GB computed headroom, it does NOT fit in 16 GB: 14 + 4 = 18 GB → INT4.
+        let hw = make_hw(false, false, 16);
+
+        // Flat headroom (None = 2 GB) → FP16 fits.
+        let rec_flat = recommend_quantization(7.0, 16, &hw, None);
+        assert_eq!(
+            rec_flat,
+            QuantRecommendation::Fp16 {
+                reason: "Model fits in memory as FP16; no quantization needed",
+            }
+        );
+
+        // Computed headroom: 4 GiB (passes as bytes) → FP16 no longer fits → INT4.
+        let kv_headroom_bytes: u64 = 4 * 1_073_741_824; // 4 GiB
+        let rec_computed = recommend_quantization(7.0, 16, &hw, Some(kv_headroom_bytes));
+        assert_eq!(
+            rec_computed,
+            QuantRecommendation::Int4Affine {
+                reason: "Best balance of speed and memory on this hardware",
+            }
+        );
+    }
+
+    #[test]
+    fn recommend_quant_long_context_tightens_headroom() {
+        // 8B model (FP16 = 16 GB) on 24 GB M4.
+        // Short context (8K): KV headroom = 1 GiB → FP16 total = 17 GB, fits.
+        // Long context (128K): KV headroom = 16 GiB → FP16 total = 32 GB, does NOT fit
+        //   → decision flips from FP16 to INT4.
+        let hw = make_hw(false, false, 24);
+
+        // 8K ctx, 32 layers, 8 kv_heads, 128 head_dim, FP16 KV.
+        // kv_cache_bytes(32, 8, 128, 2, 8192, 1) = 1_073_741_824 bytes = 1 GiB.
+        // headroom_gb = ceil(1 GiB / 1 GiB) = 1 GB.
+        // mem_fp16_gb = ceil(8 * 2) + 1 = 17 GB ≤ 24 GB → FP16.
+        let kv_8k = kv_cache_bytes(32, 8, 128, 2, 8_192, 1);
+        let rec_8k = recommend_quantization(8.0, 24, &hw, Some(kv_8k));
+        assert_eq!(
+            rec_8k,
+            QuantRecommendation::Fp16 {
+                reason: "Model fits in memory as FP16; no quantization needed",
+            }
+        );
+
+        // 128K ctx — KV headroom balloons to 16 GiB.
+        // kv_cache_bytes(32, 8, 128, 2, 131_072, 1) = 17_179_869_184 bytes = 16 GiB.
+        // headroom_gb = ceil(16 GiB / 1 GiB) = 16 GB.
+        // mem_fp16_gb = 16 + 16 = 32 GB > 24 GB → can't use FP16.
+        // mem_4bit_gb = ceil(8 * 0.5) + 16 = 20 GB ≤ 24 GB → INT4.
+        let kv_128k = kv_cache_bytes(32, 8, 128, 2, 131_072, 1);
+        let rec_128k = recommend_quantization(8.0, 24, &hw, Some(kv_128k));
+        assert!(
+            matches!(rec_128k, QuantRecommendation::Int4Affine { .. }),
+            "Expected INT4 for 128K context on tight memory, got: {:?}",
+            rec_128k
+        );
+    }
+
+    /// No vendor other than Apple may make `is_apple_silicon()` true.
+    ///
+    /// That predicate gates a bf16 to f16 weight conversion at eleven call
+    /// sites (the VLM loaders, `models/sanitize.rs`,
+    /// `drafter/dflash/drafter.rs`). If a vendor ever answers true here, those
+    /// sites start converting weights on hardware where bf16 is native, the
+    /// output changes, and nothing else fails: the code compiles, and the gate
+    /// stays green wherever that vendor's checkpoints are absent. Hence a test
+    /// rather than a comment.
+    #[test]
+    fn gpu_vendor_does_not_imply_apple_silicon() {
+        for vendor in [GpuVendor::Nvidia, GpuVendor::Amd, GpuVendor::Unknown] {
+            let hw = HardwareCapabilities {
+                vendor,
+                ..Default::default()
+            };
+            assert!(
+                !hw.is_apple_silicon(),
+                "{vendor:?} must not be reported as Apple Silicon; \
+                 is_apple_silicon() gates the bf16 to f16 weight conversion"
+            );
+        }
+        // The Apple arm is decided by `silicon_gen`, not by the vendor tag, so
+        // an Apple tag with no generation is still not Apple Silicon.
+        let tagged_but_ungenerationed = HardwareCapabilities {
+            vendor: GpuVendor::Apple,
+            ..Default::default()
+        };
+        assert!(!tagged_but_ungenerationed.is_apple_silicon());
+        let real_apple = HardwareCapabilities {
+            vendor: GpuVendor::Apple,
+            silicon_gen: AppleSiliconGen::M1,
+            ..Default::default()
+        };
+        assert!(real_apple.is_apple_silicon());
+    }
+
+    #[test]
+    fn the_detected_vendor_agrees_with_the_resolved_backend() {
+        // The vendor is read off the backend MLX resolved, not guessed from
+        // which `device_info()` keys are present. Those two can disagree: the
+        // ROCm backend publishes `compute_capability_major`/`minor`, so key
+        // presence alone says "AMD is CUDA" (issue #1805).
+        let hw = get_hardware();
+        let expected = match gpu_backend_kind() {
+            GpuBackendKind::Metal => GpuVendor::Apple,
+            GpuBackendKind::Cuda => GpuVendor::Nvidia,
+            GpuBackendKind::Rocm => GpuVendor::Amd,
+            GpuBackendKind::None => GpuVendor::Unknown,
+        };
+        assert_eq!(
+            hw.vendor,
+            expected,
+            "backend {:?} must report vendor {expected:?}",
+            gpu_backend_kind()
+        );
+    }
+
+    #[test]
+    fn the_architecture_string_is_never_empty_and_never_a_gfx_claim() {
+        // Every backend publishes an `architecture`, each in its own
+        // vocabulary: `gfx1151`, `sm_89`, an Apple GPU family string. The
+        // field carries whichever one this backend speaks, and "" is never a
+        // value, only `None`.
+        let hw = get_hardware();
+        if let Some(arch) = hw.device_architecture.as_deref() {
+            assert!(!arch.is_empty(), "an empty architecture must be None");
+        }
+        // Only ROCm has a gfx target. A CUDA host reporting `sm_89` here must
+        // not make `device_gfx_target()` answer, which is the misreading that
+        // sent AMD down the CUDA path in the first place.
+        if gpu_backend_kind() != GpuBackendKind::Rocm {
+            assert_eq!(
+                crate::rocm_arch::device_gfx_target(),
+                None,
+                "only ROCm has a gfx target, whatever `architecture` says"
+            );
+        }
+    }
+
+    #[test]
+    fn unified_memory_stays_apple_only() {
+        // `resolve_available_memory` reads this field at step 3. Filling it
+        // from device memory off Apple would change what that walk returns on
+        // CUDA and ROCm, which #1805 put out of scope; `device_memory_bytes`
+        // is the field that carries device memory instead.
+        let hw = get_hardware();
+        if hw.vendor != GpuVendor::Apple {
+            assert_eq!(
+                hw.unified_memory_gb, 0,
+                "unified_memory_gb must stay 0 off Apple; read device_memory_bytes instead"
+            );
+        }
+    }
+
+    // --- Quantization capability table (issue #1806) ---
+
+    #[test]
+    fn quant_mode_names_match_the_mlx_mode_allowlist() {
+        let names: Vec<&str> = QuantMode::ALL.iter().map(|m| m.as_str()).collect();
+        assert_eq!(names, crate::layers::SUPPORTED_QUANTIZATION_MODES);
+        for mode in QuantMode::ALL {
+            assert_eq!(QuantMode::from_mlx_name(mode.as_str()), Some(mode));
+            assert_eq!(mode.to_string(), mode.as_str());
+        }
+        // Exact, like MLX's own parser.
+        assert_eq!(QuantMode::from_mlx_name("NVFP4"), None);
+        assert_eq!(QuantMode::from_mlx_name(" affine"), None);
+        assert_eq!(QuantMode::from_mlx_name(""), None);
+    }
+
+    /// Metal, CUDA and the no-GPU column must report every mode native: that is
+    /// the behavior before the table existed, and the table must not change it.
+    #[test]
+    fn quant_table_keeps_metal_cuda_and_cpu_native() {
+        for backend in [
+            GpuBackendKind::None,
+            GpuBackendKind::Metal,
+            GpuBackendKind::Cuda,
+        ] {
+            for mode in QuantMode::ALL {
+                assert_eq!(
+                    backend.quant_mode_support(mode),
+                    QuantModeSupport::Native,
+                    "{backend:?} {mode}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn quant_table_rocm_row() {
+        let rocm = GpuBackendKind::Rocm;
+        assert_eq!(
+            rocm.quant_mode_support(QuantMode::Affine),
+            QuantModeSupport::Native
+        );
+        assert_eq!(
+            rocm.quant_mode_support(QuantMode::Mxfp8),
+            QuantModeSupport::Native
+        );
+        assert_eq!(
+            rocm.quant_mode_support(QuantMode::Mxfp4),
+            QuantModeSupport::Native
+        );
+        assert_eq!(
+            rocm.quant_mode_support(QuantMode::Nvfp4),
+            QuantModeSupport::ConvertTo(QuantMode::Affine)
+        );
+    }
+
+    /// Structural rules over the whole table, walking `GpuBackendKind::ALL` so
+    /// a new backend kind is covered the moment it exists: affine is native
+    /// everywhere (it is every conversion's last resort), and a conversion
+    /// target is itself native on the same backend, so no conversion chains.
+    #[test]
+    fn quant_table_conversions_land_on_native_modes() {
+        for backend in GpuBackendKind::ALL {
+            assert_eq!(
+                backend.quant_mode_support(QuantMode::Affine),
+                QuantModeSupport::Native,
+                "{backend:?} must run affine natively"
+            );
+            assert!(!backend.display_name().is_empty());
+            for mode in QuantMode::ALL {
+                if let QuantModeSupport::ConvertTo(target) = backend.quant_mode_support(mode) {
+                    assert_ne!(target, mode, "{backend:?} {mode} converts to itself");
+                    assert_eq!(
+                        backend.quant_mode_support(target),
+                        QuantModeSupport::Native,
+                        "{backend:?} {mode} converts to {target}, which is not native there"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn quant_mode_support_reads_the_running_backend() {
+        for mode in QuantMode::ALL {
+            assert_eq!(
+                quant_mode_support(mode),
+                gpu_backend_kind().quant_mode_support(mode)
+            );
+        }
+    }
+}
