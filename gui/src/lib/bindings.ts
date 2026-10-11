@@ -336,7 +336,7 @@ async exportResultsCsv(jobId: string, outPath: string) : Promise<Result<ResultsC
     else return { status: "error", error: e  as any };
 }
 },
-async sortJob(jobId: string) : Promise<Result<TalentRankIQItem[], DomainError>> {
+async sortJob(jobId: string) : Promise<Result<TriqiItem[], DomainError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("sort_job", { jobId }) };
 } catch (e) {
@@ -443,7 +443,7 @@ async candidateNeighbors(jobId: string, candidateId: string, query: string | nul
  * Apply staged feedback (a reordered triqui + a desired liked-id set) to the learned
  * vectors, persist liked flags, then re-rank and return the new triqui.
  */
-async applyFeedback(jobId: string, orderedCandidateIds: string[], likedCandidateIds: string[]) : Promise<Result<TalentRankIQItem[], DomainError>> {
+async applyFeedback(jobId: string, orderedCandidateIds: string[], likedCandidateIds: string[]) : Promise<Result<TriqiItem[], DomainError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("apply_feedback", { jobId, orderedCandidateIds, likedCandidateIds }) };
 } catch (e) {
@@ -454,7 +454,7 @@ async applyFeedback(jobId: string, orderedCandidateIds: string[], likedCandidate
 /**
  * Zero the learned feedback vectors + clear liked flags, then re-rank.
  */
-async resetFeedback(jobId: string) : Promise<Result<TalentRankIQItem[], DomainError>> {
+async resetFeedback(jobId: string) : Promise<Result<TriqiItem[], DomainError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("reset_feedback", { jobId }) };
 } catch (e) {
@@ -604,6 +604,14 @@ async tryModel(slug: string) : Promise<Result<TryModelResult, string>> {
 async listVettedEmbedders() : Promise<Result<VettedEmbeddersResponse, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_vetted_embedders") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async judgeLicenseStatus() : Promise<Result<LicenseStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("judge_license_status") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1016,7 +1024,7 @@ rubric: RubricQuestion[];
  * shows each score as `points / max_points × 100`, so it reads the
  * Average out of 100 and does not need this capacity as a caption.
  */
-rubric_capacity?: number; triqui: TalentRankIQItem[]; cv_imported: number; cv_failed: number; importing: boolean }
+rubric_capacity?: number; triqui: TriqiItem[]; cv_imported: number; cv_failed: number; importing: boolean }
 /**
  * One row in the Jobs list — precomputed facts (no status enum).
  */
@@ -1059,6 +1067,10 @@ nudge?: string | null;
  */
 rank?: RankState }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
+/**
+ * Human-readable status for the UI.
+ */
+export type LicenseStatus = { Licensed: { customer: string; expires_at: string; artifacts: string[] } } | { Invalid: { reason: string } } | "NotFound"
 /**
  * Which kind of model an operation targets.
  */
@@ -1220,27 +1232,6 @@ backend?: string | null;
  */
 activity?: Activity | null }
 /**
- * A ranked triqui row (no extracted text — fetched on overlay open).
- */
-export type TalentRankIQItem = { id: string; file_name: string; file_type: FileType; extraction_status: ExtractionStatus; rank: number; 
-/**
- * Total rubric points. None until ranked.
- */
-points?: number | null; 
-/**
- * Sum of question max-points (the rubric capacity). None until ranked.
- */
-points_max?: number | null; 
-/**
- * Whether the user has liked this CV (feedback signal).
- */
-liked?: boolean; 
-/**
- * When the user last opened this CV in the inspector (read/unread
- * marking; NULL = unread).
- */
-viewed_at?: string | null }
-/**
  * Backend-derived snapshot of the system-capacity budget (libsyscap):
  * how much of the machine this serve may use right now. `holding: true`
  * (verdict `hold`) is the only state the gui must surface — a visible
@@ -1290,6 +1281,27 @@ loadavg_1: number; mem_available_bytes: number; mem_total_bytes: number;
  */
 on_battery?: boolean | null }
 /**
+ * A ranked triqui row (no extracted text — fetched on overlay open).
+ */
+export type TriqiItem = { id: string; file_name: string; file_type: FileType; extraction_status: ExtractionStatus; rank: number; 
+/**
+ * Total rubric points. None until ranked.
+ */
+points?: number | null; 
+/**
+ * Sum of question max-points (the rubric capacity). None until ranked.
+ */
+points_max?: number | null; 
+/**
+ * Whether the user has liked this CV (feedback signal).
+ */
+liked?: boolean; 
+/**
+ * When the user last opened this CV in the inspector (read/unread
+ * marking; NULL = unread).
+ */
+viewed_at?: string | null }
+/**
  * Result of the "try model" benchmark.
  */
 export type TryModelResult = { 
@@ -1309,7 +1321,7 @@ pairs: CosinePair[];
  * CV labels (short descriptions for the matrix).
  */
 labels: string[] }
-export type VettedEmbedder = { slug: string; name: string; memory_mb: number; dim: number; max_context_window: number; best_map: number | null; best_ndcg10: number | null; ms_per_observation: number | null; downloaded: boolean }
+export type VettedEmbedder = { slug: string; name: string; memory_mb: number; dim: number; max_context_window: number; downloaded: boolean }
 export type VettedEmbeddersResponse = { embedders: VettedEmbedder[]; system_ram_mb: number; recommended_slug: string }
 
 /** tauri-specta globals **/

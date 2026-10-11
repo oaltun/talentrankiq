@@ -3,13 +3,13 @@
 Local-first desktop app for ranking applicant CVs against job advertisements.
 Everything runs on-device (Tauri + Rust + React); no CV data leaves the machine.
 
-![platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-blue)
-![rust](https://img.shields.io/badge/rust-+-libs-orange)
-![react](https://img.shields.io/badge/react-19-blue)
+![platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue)
+![rust](https://img.shields.io/badge/rust-%2B%20libs-orange)
+![react](https://img.shields.io/badge/react-gray)
 
 ## What it does
 
-- Import a batch of CVs (PDF/DOCX) into a job bundle and parse them locally.
+- Import a batch of CVs (PDF/DOCX/TXT) into a job bundle and parse them locally.
 - Write a job ad + configurable rubric (rankable criteria); the pipeline turns
   both into per-space rubric vectors.
 - Watch the CV directory for new files and re-rank incrementally — no re-embed
@@ -63,8 +63,7 @@ Judge artifacts are **not** part of this repository. Artifacts are purchased and
 
 ## Build & run
 
-Prerequisites: Rust (stable), Node ≥ 20, and the platform toolchain for Tauri
-(macOS: Xcode CLT + webkit2gtk on Linux).
+Prerequisites: Rust (stable), Node ≥ 20, and the platform toolchain for Tauri.
 
 ```sh
 cd gui
