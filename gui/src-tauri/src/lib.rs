@@ -140,6 +140,15 @@ pub fn run() {
                 }
             }
 
+            // Set platform-appropriate model cache directory:
+            // macOS: ~/Library/Caches/com.talentrankiq.triqui/models
+            // Windows: %LOCALAPPDATA%\com.talentrankiq.triqui\models
+            // Linux: ~/.cache/talentrankiq/models
+            if let Ok(cache_dir) = app.path().app_cache_dir() {
+                let model_dir = cache_dir.join("models");
+                std::env::set_var("TRIQI_MODEL_DIR", model_dir.to_string_lossy().to_string());
+            }
+
             // Spawn the serve loop now so its CV-dir watchers and the engine
             // status events are live before the frontend asks for anything.
             // The engine itself is NOT started here — the frontend calls

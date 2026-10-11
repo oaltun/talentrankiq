@@ -1,4 +1,7 @@
-model_dir: "~/.cache/ik/models"
+# model_dir: platform-specific cache dir set at runtime via TRIQI_MODEL_DIR env var
+# macOS: ~/Library/Caches/com.talentrankiq.triqui/models
+# Windows: %LOCALAPPDATA%\com.talentrankiq.triqui\models
+# Linux: ~/.cache/talentrankiq/models
 verbose: false
 revision: main
 gui_idle_unload_secs: 300

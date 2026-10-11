@@ -96,7 +96,7 @@ fn expand_home(path: &str) -> PathBuf {
     PathBuf::from(path)
 }
 
-/// Model cache root: env `TRIQI_MODEL_DIR` > config `model_dir` > `~/.cache/ik/models`.
+/// Model cache root: env `TRIQI_MODEL_DIR` > config `model_dir` > `~/.cache/talentrankiq/models`.
 pub fn model_dir() -> PathBuf {
     if let Ok(p) = std::env::var("TRIQI_MODEL_DIR") {
         if !p.is_empty() {
@@ -108,7 +108,7 @@ pub fn model_dir() -> PathBuf {
             return cfg.model_dir;
         }
     }
-    expand_home("~/.cache/ik/models")
+    expand_home("~/.cache/talentrankiq/models")
 }
 
 /// ONNX model revision (HF tag/branch/commit) used for cache resolution.
