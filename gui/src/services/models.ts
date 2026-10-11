@@ -320,3 +320,31 @@ export function useModelDownloadProgress() {
 
   return { get, clear }
 }
+
+interface ModelDownloadCompleteEvent {
+  slug: string
+  path: string
+}
+
+/** Listen for `model-download-complete` events and show a toast with the save path. */
+export function useModelDownloadCompleteToast() {
+  useEffect(() => {
+    let unlisten: (() => void) | null = null
+    listen<ModelDownloadCompleteEvent>('model-download-complete', event => {
+      const { path } = event.payload
+      toast.success('Model downloaded', {
+        description: `Saved to ${path}`,
+      })
+    })
+      .then(fn => {
+        unlisten = fn
+      })
+      .catch(err =>
+        console.error('Failed to listen for download complete', err)
+      )
+
+    return () => {
+      unlisten?.()
+    }
+  }, [])
+}

@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use crate::cli::StdioArgs;
 use crate::error::{ModelError, Result};
 use crate::model_registry::{
-    format_document, format_query, unknown_usage_err, Registry, ResolvedModel,
+    format_document, format_query, unknown_usage_err, ModelArtifact, Registry, ResolvedModel,
 };
 use crate::protocol::Envelope;
 use crate::wrapper::Wrapper;
@@ -498,20 +498,27 @@ fn model_onnx_path_exists(state: &State, model: &str) -> bool {
 /// `<slug>/repo/`, or the Metal artifact under `<mlx-slug>/<revision>/`.
 fn model_artifact_path(state: &State, record: &ResolvedModel, runtime: Runtime) -> Result<PathBuf> {
     match runtime {
-        Runtime::Ort => model_onnx_path(state, &record.slug),
+        Runtime::Ort => {
+            // Find the ONNX artifact (prefer q4 if multiple)
+            let _art = record
+                .artifacts
+                .iter()
+                .find(|a| a.backend == libconfigreader::Backend::Ort)
+                .ok_or_else(|| ModelError::load_err(format!("{} has no ONNX artifact", record.slug)))?;
+            model_onnx_path(state, &record.slug)
+        }
         Runtime::Mlx => {
-            let variant = record.mlx.as_ref().ok_or_else(|| {
-                ModelError::load_err(format!("{} has no mlx variant", record.slug))
-            })?;
-            let dir =
-                libmodelstorage::slug_dir(&state.model_dir, &variant.slug).join(&state.revision);
-            // The safetensors are the artifact; their absence is what "not
-            // downloaded" means here, since there is no single file to stat.
+            let variant = record
+                .artifacts
+                .iter()
+                .find(|a| a.backend == libconfigreader::Backend::Mlx)
+                .ok_or_else(|| ModelError::load_err(format!("{} has no mlx variant", record.slug)))?;
+            let dir = libmodelstorage::slug_dir(&state.model_dir, &record.slug).join(&state.revision);
             if !libmodelstorage::local_size(&dir.join("model.safetensors")).is_some() {
                 if state.auto_download {
-                    auto_download_mlx(state, variant)?;
+                    auto_download_mlx(state, &record.slug, variant)?;
                 } else {
-                    return Err(ModelError::no_model(&variant.slug));
+                    return Err(ModelError::no_model(&record.slug));
                 }
             }
             Ok(dir)
@@ -529,7 +536,11 @@ fn resolve_runtime_setting(
     if !setting.allows_mlx() {
         return Ok(Runtime::Ort);
     }
-    if record.mlx.is_none() {
+    let has_mlx = record
+        .artifacts
+        .iter()
+        .any(|a| a.backend == libconfigreader::Backend::Mlx);
+    if !has_mlx {
         log::debug!(
             "backend: {} has no mlx variant declared; serving it on ort",
             record.slug
@@ -585,11 +596,12 @@ pub fn variant_status(
     let present = match runtime {
         Runtime::Ort => onnx_exists(model_dir, slug, revision),
         Runtime::Mlx => {
-            let variant = record
-                .mlx
-                .as_ref()
+            let _variant = record
+                .artifacts
+                .iter()
+                .find(|a| a.backend == libconfigreader::Backend::Mlx)
                 .ok_or_else(|| ModelError::no_model(slug))?;
-            let dir = libmodelstorage::slug_dir(model_dir, &variant.slug).join(revision);
+            let dir = libmodelstorage::slug_dir(model_dir, slug).join(revision);
             libmodelstorage::local_size(&dir.join("model.safetensors")).is_some()
         }
     };
@@ -602,15 +614,15 @@ pub fn variant_status(
 /// Fetch the Metal artifact. Repo mode with `Artifact::Mlx`, not URL mode:
 /// an MLX checkpoint is a safetensors file (or shards) plus a config and a
 /// tokenizer, planned from the repo listing rather than named by a url.
-fn auto_download_mlx(state: &State, variant: &crate::cli::MlxArtifact) -> Result<()> {
+fn auto_download_mlx(state: &State, model_slug: &str, variant: &ModelArtifact) -> Result<()> {
     log::info!(
         "auto-downloading MLX artifact '{}' from {}",
-        variant.slug,
+        variant.quantization,
         variant.source
     );
     let cli = libmodeldownloader::cli::Cli {
         config: None,
-        model: Some(variant.slug.clone()),
+        model: Some(model_slug.to_string()),
         source: Some(variant.source.clone()),
         url: None,
         slug: None,
@@ -619,7 +631,7 @@ fn auto_download_mlx(state: &State, variant: &crate::cli::MlxArtifact) -> Result
         force: false,
         dry_run: false,
         files: vec![],
-        extra_files: vec![],
+        extra_files: variant.extra_files.clone(),
         artifact: libmodeldownloader::cli::Artifact::Mlx,
         verbose: state.verbose,
         logfile: None,
@@ -627,10 +639,10 @@ fn auto_download_mlx(state: &State, variant: &crate::cli::MlxArtifact) -> Result
     libmodeldownloader::Downloader::run(cli).map_err(|e| {
         ModelError::load_err(format!(
             "modeldownloader failed for mlx artifact '{}': {e}",
-            variant.slug
+            variant.quantization
         ))
     })?;
-    log::info!("auto-download complete for '{}'", variant.slug);
+    log::info!("auto-download complete for '{}'", model_slug);
     Ok(())
 }
 
@@ -646,9 +658,13 @@ fn auto_download(state: &State, record: &ResolvedModel) -> Result<()> {
     // siblings into `<slug>/repo/` — the layout `resolve_onnx` prefers.
     // In-process library call: the gui binary needs no modeldownloader
     // executable (thin gui pattern, `gui/design/app1/thin-gui.md`).
-    let mut req =
-        libmodeldownloader::UrlDownload::new(&record.onnx_url, &record.slug, state.model_dir.clone());
-    for extra in &record.extra_files {
+    let onnx_art = record
+        .artifacts
+        .iter()
+        .find(|a| a.backend == libconfigreader::Backend::Ort)
+        .ok_or_else(|| ModelError::load_err(format!("{} has no ONNX artifact", record.slug)))?;
+    let mut req = libmodeldownloader::UrlDownload::new(&onnx_art.url, &record.slug, state.model_dir.clone());
+    for extra in &onnx_art.extra_files {
         req.extra_files.push(extra.clone());
     }
     libmodeldownloader::download_url(req, |ev| match ev {
@@ -910,7 +926,12 @@ fn cmd_embed(state: &mut State, payload: &Value) -> Result<Value> {
         // late-interaction model: wrapper skips pooling, applies the
         // projection chain from the model dir, returns token vectors.
         opts["multi_vector"] = json!(true);
-        opts["projection_files"] = json!(record.extra_files);
+        let onnx_art = record
+            .artifacts
+            .iter()
+            .find(|a| a.backend == libconfigreader::Backend::Ort)
+            .ok_or_else(|| ModelError::load_err(format!("{} has no ONNX artifact", record.slug)))?;
+        opts["projection_files"] = json!(onnx_art.extra_files);
     }
 
     let (runtime, arm_handle) = state.arm_session(session)?;

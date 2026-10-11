@@ -27,6 +27,7 @@ import {
   useRemoveEmbedder,
   useSetDefaultEmbedder,
   useModelDownloadProgress,
+  useModelDownloadCompleteToast,
   useModelVariants,
   fetchModelVariants,
   downloadEmbedder,
@@ -225,6 +226,7 @@ function EmbeddingPane() {
   const remove = useRemoveEmbedder()
   const setDefault = useSetDefaultEmbedder()
   const progress = useModelDownloadProgress()
+  useModelDownloadCompleteToast()
 
   const defaultSlug: string | null = prefs?.embedding_model ?? null
 

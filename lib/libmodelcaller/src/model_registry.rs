@@ -10,22 +10,25 @@ pub struct FamilyDef {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ModelArtifact {
+    pub backend: libconfigreader::Backend,
+    pub quantization: String,
+    pub source: String,
+    pub url: String,
+    #[serde(default)]
+    pub extra_files: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ModelDef {
     pub slug: String,
     pub family: String,
     pub kind: String,
     pub dim: u32,
     pub max_context_window: u32,
-    pub source: String,
-    pub onnx_url: String,
-    #[serde(default)]
-    pub extra_files: Vec<String>,
+    pub artifacts: Vec<ModelArtifact>,
     #[serde(default)]
     pub multi_vector: bool,
-    /// The Metal-backend variant declared on this model in `ikapp.yaml`
-    /// (`models[].mlx`). Mirrors `libconfigreader::ModelDef::mlx`.
-    #[serde(default)]
-    pub mlx: Option<crate::cli::MlxArtifact>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -54,17 +57,18 @@ impl Registry {
                 kind: m.kind.clone(),
                 dim: m.dim,
                 max_context_window: m.max_context_window,
-                source: m.source.clone(),
-                onnx_url: m.onnx_url.clone(),
-                extra_files: m.extra_files.clone(),
+                artifacts: m
+                    .artifacts
+                    .iter()
+                    .map(|a| ModelArtifact {
+                        backend: a.backend.clone(),
+                        quantization: a.quantization.clone(),
+                        source: a.source.clone(),
+                        url: a.url.clone(),
+                        extra_files: a.extra_files.clone(),
+                    })
+                    .collect(),
                 multi_vector: m.multi_vector,
-                mlx: m
-                    .mlx
-                    .as_ref()
-                    .map(|v| crate::cli::MlxArtifact {
-                        slug: v.slug.clone(),
-                        source: v.source.clone(),
-                    }),
             })
             .collect();
         Registry { models, families }
@@ -78,16 +82,10 @@ impl Registry {
             kind: m.kind.clone(),
             dim: m.dim,
             max_context_window: m.max_context_window,
-            source: m.source.clone(),
-            onnx_url: m.onnx_url.clone(),
-            extra_files: m.extra_files.clone(),
+            artifacts: m.artifacts.clone(),
             multi_vector: m.multi_vector,
             family: m.family.clone(),
             usage,
-            mlx: m.mlx.as_ref().map(|v| crate::cli::MlxArtifact {
-                slug: v.slug.clone(),
-                source: v.source.clone(),
-            }),
         })
     }
 
@@ -131,23 +129,11 @@ pub struct ResolvedModel {
     pub kind: String,
     pub dim: u32,
     pub max_context_window: u32,
-    /// hf source (`hf:<org>/<repo>`) kept for registry parity with
-    /// `ModelDef`; downloads go through `onnx_url` (URL mode) instead.
-    #[allow(dead_code)]
-    pub source: String,
-    pub onnx_url: String,
-    /// repo-relative files fetched alongside the onnx (projection weights)
-    pub extra_files: Vec<String>,
-    /// multi-vector (late interaction) model: embed returns token vectors
+    pub artifacts: Vec<ModelArtifact>,
     pub multi_vector: bool,
     #[allow(dead_code)]
     pub family: String,
     pub usage: String,
-    /// The Metal-backend variant of this model, when the config declares one
-    /// (`ikapp.yaml` `models[].mlx`). `None` means this model has no MLX
-    /// artifact, so the ladder keeps it on ONNX even where the arm exists —
-    /// which is why the scout needs no port (design 15 §15.5.3).
-    pub mlx: Option<crate::cli::MlxArtifact>,
 }
 
 pub fn format_query(text: &str, usage: &str) -> String {

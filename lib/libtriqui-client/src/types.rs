@@ -965,6 +965,13 @@ pub struct ModelDownloadProgress {
     pub total: Option<u64>,
 }
 
+/// Completion payload emitted when an ONNX model download finishes.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct ModelDownloadComplete {
+    pub slug: String,
+    pub path: String,
+}
+
 /// One ONNX embedder from `ikapp.yaml` `gui_embedders`, enriched with on-disk state.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct GuiEmbedder {

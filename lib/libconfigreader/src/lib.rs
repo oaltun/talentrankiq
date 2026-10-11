@@ -482,45 +482,30 @@ pub struct ModelDef {
     pub kind: String,
     pub dim: u32,
     pub max_context_window: u32,
-    pub source: String,
-    pub onnx_url: String,
-    /// Additional repo-relative files downloaded alongside the ONNX into the
-    /// model dir (paths preserved, e.g. `1_Dense/model.safetensors`). Used for
-    /// weights the runtime needs but the ONNX graph does not contain (e.g.
-    /// ColBERT projection layers applied by onnxwrapperrs post-forward).
-    #[serde(default)]
-    pub extra_files: Vec<String>,
+    /// Model artifacts (variants). At least one required.
+    pub artifacts: Vec<ModelArtifact>,
     /// Multi-vector (late interaction / ColBERT) model: `embed` returns one
     /// vector per token (dim = per-token size) instead of one pooled vector
     /// per text. Projection weights from `extra_files` are applied by
     /// onnxwrapperrs. See bench/bench1/design/17-late-interaction.md.
     #[serde(default)]
     pub multi_vector: bool,
-    /// The same weights as an MLX-quantized safetensors checkpoint, used when
-    /// the active backend is `mlx` (design 15 §15.5.3).
-    ///
-    /// It lives on the ONNX entry rather than as a second top-level model for
-    /// one reason: **bench must keep running the ONNX artifact.** Every result
-    /// in `bench/results/` was measured on the CPU floor, so a backend switch
-    /// that silently followed the new default would make the whole history
-    /// incomparable. With the variant declared here, `engine.backend: ort`
-    /// resolves to the entry's own `onnx_url` with no second model list to
-    /// drift out of sync.
-    #[serde(default)]
-    pub mlx: Option<MlxVariantDef>,
 }
 
-/// A Metal-backend variant of a model: a different artifact of the same
-/// weights, in MLX's safetensors layout rather than an ONNX graph.
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct MlxVariantDef {
-    /// Logical id for the downloaded artifact — its own entry under
-    /// `model_dir`, and what cached vectors are keyed by (design 15 §15.4: a
-    /// runtime switch invalidates vectors by construction).
-    pub slug: String,
-    /// Where to fetch it, same `source:` grammar as any model
-    /// (`hf:<org>/<repo>`).
+pub struct ModelArtifact {
+    /// Backend this artifact serves: `onnx` or `mlx`.
+    #[serde(rename = "backend")]
+    pub backend: Backend,
+    /// Quantization/format identifier (e.g., `q4`, `fp16`, `q4f16`, `4bit`).
+    pub quantization: String,
+    /// Where to fetch it (`hf:<org>/<repo>`).
     pub source: String,
+    /// Download URL for the artifact.
+    pub url: String,
+    /// Additional files to download alongside the main artifact.
+    #[serde(default)]
+    pub extra_files: Vec<String>,
 }
 
 /// Executable paths for the binaries that still exist. `modelcaller`,
@@ -1118,6 +1103,23 @@ fn validate(cfg: &Config) -> Result<(), ConfigError> {
             )));
         }
     }
+    // Validate each model has at least one artifact
+    for m in &cfg.models {
+        if m.artifacts.is_empty() {
+            return Err(ConfigError::new(format!(
+                "model '{}' must have at least one artifact",
+                m.slug
+            )));
+        }
+        for art in &m.artifacts {
+            if art.url.is_empty() {
+                return Err(ConfigError::new(format!(
+                    "model '{}' artifact with backend '{:?}' quantization '{}' has empty url",
+                    m.slug, art.backend, art.quantization
+                )));
+            }
+        }
+    }
     Ok(())
 }
 
@@ -1222,18 +1224,18 @@ mod tests {
             "models: []\nfamilies: []\n\
              gui_judge_artifact:\n  \
              default: \"600m/judge-default.json\"\n  \
-             harrier-oss-v1-270m-ONNX_model_q4f16: \"270m/judge-270m.json\"\n",
+             harrier-oss-v1-270m: \"270m/judge-270m.json\"\n",
         );
         let config = load(&cfg_path, &CliOverrides::default()).unwrap();
         let arts = config.gui_judge_artifact.expect("map form parses");
         // relative paths resolve against the config file's directory
         let base = config.config_path.parent().unwrap();
         assert_eq!(
-            arts.for_embedder("harrier-oss-v1-270m-ONNX_model_q4f16"),
+            arts.for_embedder("harrier-oss-v1-270m"),
             Some(base.join("270m/judge-270m.json").as_path())
         );
         assert_eq!(
-            arts.for_embedder("harrier-oss-v1-0.6b-ONNX-q4"),
+            arts.for_embedder("harrier-oss-v1-0.6b"),
             Some(base.join("600m/judge-default.json").as_path())
         );
         assert!(!arts.is_empty());
@@ -1454,7 +1456,7 @@ mod tests {
     #[test]
     fn bench_embed_model_not_in_models_is_error() {
         let cfg_path = write_tmp(
-            "models:\n  - slug: m1\n    family: f1\n    kind: embedder\n    dim: 768\n    max_context_window: 8192\n    source: hf:x/y\n    onnx_url: http://x\nfamilies: []\nbench:\n  embed_models:\n    - m1\n    - missing\n"
+            "models:\n  - slug: m1\n    family: f1\n    kind: embedder\n    dim: 768\n    max_context_window: 8192\n    artifacts:\n      - backend: ort\n        quantization: \"none\"\n        source: hf:x/y\n        url: http://x\nfamilies: []\nbench:\n  embed_models:\n    - m1\n    - missing\n"
         );
         let err = load(&cfg_path, &CliOverrides::new()).unwrap_err().to_string();
         assert!(err.contains("missing"));
@@ -1464,7 +1466,7 @@ mod tests {
     #[test]
     fn parse_full_config() {
         let cfg_path = write_tmp(
-            "model_dir: /my/cache\nverbose: true\nrevision: v2\nlogfile: /tmp/test.log\nbinaries:\n  modelcaller: /bin/mc\n  bench: /bin/bench1\nmodels:\n  - slug: m1\n    family: f1\n    kind: embedder\n    dim: 768\n    max_context_window: 8192\n    source: hf:x/y\n    onnx_url: http://x\nfamilies:\n  - family: f1\n    usage: plain\nbench:\n  dataset: /d.csv\n  task: t\n  baselines:\n    - bm25\n  embed_models:\n    - m1\n"
+            "model_dir: /my/cache\nverbose: true\nrevision: v2\nlogfile: /tmp/test.log\nbinaries:\n  modelcaller: /bin/mc\n  bench: /bin/bench1\nmodels:\n  - slug: m1\n    family: f1\n    kind: embedder\n    dim: 768\n    max_context_window: 8192\n    artifacts:\n      - backend: ort\n        quantization: \"none\"\n        source: hf:x/y\n        url: http://x\nfamilies:\n  - family: f1\n    usage: plain\nbench:\n  dataset: /d.csv\n  task: t\n  baselines:\n    - bm25\n  embed_models:\n    - m1\n"
         );
         let config = load(&cfg_path, &CliOverrides::new()).unwrap();
         assert_eq!(config.model_dir, PathBuf::from("/my/cache"));
@@ -1492,7 +1494,7 @@ mod tests {
     #[test]
     fn judgetrainer_section_validated() {
         let cfg_path = write_tmp(
-            "models:\n  - slug: m1\n    family: f1\n    kind: embedder\n    dim: 768\n    max_context_window: 8192\n    source: hf:x/y\n    onnx_url: http://x\nfamilies: []\nbinaries:\n  judgetrainer: /bin/jt\njudgetrainer:\n  train_csv: /d/train.csv\n  out_dir: /cache/jt\n  rungs: [m0, m1]\n  embedder: m1\n  epochs: 10\n"
+            "models:\n  - slug: m1\n    family: f1\n    kind: embedder\n    dim: 768\n    max_context_window: 8192\n    artifacts:\n      - backend: ort\n        quantization: \"none\"\n        source: hf:x/y\n        url: http://x\nfamilies: []\nbinaries:\n  judgetrainer: /bin/jt\njudgetrainer:\n  train_csv: /d/train.csv\n  out_dir: /cache/jt\n  rungs: [m0, m1]\n  embedder: m1\n  epochs: 10\n"
         );
         let config = load(&cfg_path, &CliOverrides::new()).unwrap();
         let jt = config.judgetrainer.clone().expect("section present");
@@ -1694,47 +1696,54 @@ mod tests {
     const TWO_MODELS: &str = r#"
 model_dir: /cache/models
 models:
-  - slug: harrier-onnx-q4
+  - slug: harrier-oss-v1-0.6b
     family: harrier-oss-v1
     kind: embedder
     dim: 1024
     max_context_window: 32768
-    source: hf:onnx-community/harrier-oss-v1-0.6b-ONNX
-    onnx_url: https://huggingface.co/x/resolve/main/onnx/model_q4.onnx
-    mlx:
-      slug: harrier-mlx-4bit
-      source: hf:majentik/harrier-oss-v1-0.6b-MLX-4bit
+    artifacts:
+      - backend: ort
+        quantization: "q4"
+        source: hf:onnx-community/harrier-oss-v1-0.6b-ONNX
+        url: https://huggingface.co/x/resolve/main/onnx/model_q4.onnx
+      - backend: mlx
+        quantization: "4bit"
+        source: hf:majentik/harrier-oss-v1-0.6b-MLX-4bit
+        url: https://huggingface.co/majentik/resolve/main/model.safetensors
   - slug: plain-model
     family: other
     kind: embedder
     dim: 384
     max_context_window: 512
-    source: hf:someone/plain
-    onnx_url: https://huggingface.co/x/resolve/main/onnx/model.onnx
+    artifacts:
+      - backend: ort
+        quantization: "none"
+        source: hf:someone/plain
+        url: https://huggingface.co/x/resolve/main/onnx/model.onnx
 families: []
 "#;
 
-    #[test]
+#[test]
     fn mlx_variant_parses_and_is_optional() {
         let cfg_path = write_tmp(TWO_MODELS);
         let cfg = load(&cfg_path, &CliOverrides::new()).expect("loads");
         let with = cfg
             .models
             .iter()
-            .find(|m| m.slug == "harrier-onnx-q4")
+            .find(|m| m.slug == "harrier-oss-v1-0.6b")
             .expect("model");
-        let mlx = with.mlx.as_ref().expect("mlx variant present");
-        assert_eq!(mlx.slug, "harrier-mlx-4bit");
-        assert_eq!(mlx.source, "hf:majentik/harrier-oss-v1-0.6b-MLX-4bit");
-        // Absent, not empty: the ladder asks "does this model have a Metal
-        // artifact?" and a missing key is the answer.
+        let mlx_art = with.artifacts.iter().find(|a| a.backend == Backend::Mlx).expect("mlx artifact");
+        assert_eq!(mlx_art.quantization, "4bit");
+        assert_eq!(mlx_art.source, "hf:majentik/harrier-oss-v1-0.6b-MLX-4bit");
+        let onnx_art = with.artifacts.iter().find(|a| a.backend == Backend::Ort).expect("onnx artifact");
+        assert_eq!(onnx_art.quantization, "q4");
+        // Model without MLX artifact
         let without = cfg
             .models
             .iter()
             .find(|m| m.slug == "plain-model")
             .expect("model");
-        assert!(without.mlx.is_none());
-        std::fs::remove_file(&cfg_path).ok();
+        assert!(without.artifacts.iter().all(|a| a.backend == Backend::Ort));
     }
 
     #[test]

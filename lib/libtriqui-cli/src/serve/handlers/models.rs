@@ -67,7 +67,11 @@ pub fn list_embedders(state: &Arc<ServeState>) -> Result<serde_json::Value, Prot
             is_default: active_slug == Some(ge.slug.as_str()),
             dim: model_def.dim,
             max_context_window: model_def.max_context_window,
-            source: model_def.source.clone(),
+            source: model_def
+                .artifacts
+                .first()
+                .map(|a| a.source.clone())
+                .unwrap_or_default(),
             size_bytes: size,
         });
     }
@@ -197,23 +201,31 @@ pub fn model_variants(
     // ONNX presence = the file `resolve_onnx` prefers (URL mode lands under
     // `<slug>/repo/`) on disk. MLX presence comes from the variant status.
     let model_dir = app_config::model_dir();
-    let onnx_file = model_def
-        .onnx_url
-        .rsplit('/')
-        .next()
-        .unwrap_or(&model_def.onnx_url)
-        .to_string();
+    
+    // Find the ONNX artifact to get the filename
+    let onnx_art = model_def
+        .artifacts
+        .iter()
+        .find(|a| a.backend == libconfigreader::Backend::Ort);
+    let onnx_file = onnx_art
+        .map(|a| a.url.rsplit('/').next().unwrap_or(&a.url).to_string())
+        .unwrap_or_default();
     let onnx_present = std::path::Path::new(&model_dir)
         .join(&params.model)
         .join("repo")
         .join(&onnx_file)
         .exists();
+    
+    let has_mlx = model_def
+        .artifacts
+        .iter()
+        .any(|a| a.backend == libconfigreader::Backend::Mlx);
     ok_json(libtriqui_client::types::EmbedderVariants {
         model: params.model.clone(),
         runtime: status.runtime.to_string(),
         present: status.present,
         onnx_present,
-        mlx_present: model_def.mlx.as_ref().map(|_| status.present),
+        mlx_present: if has_mlx { Some(status.present) } else { None },
     })
 }
 
@@ -236,7 +248,15 @@ pub fn download_embedder(state: &Arc<ServeState>, slug: &str) -> Result<(), Prot
         .iter()
         .find(|m| m.slug == slug)
         .ok_or_else(|| string_err(format!("model '{slug}' not in models registry")))?;
-    run_embedder_download(state, slug, &model_def.onnx_url, &model_def.extra_files)
+    
+    // Find the ONNX artifact to download
+    let onnx_art = model_def
+        .artifacts
+        .iter()
+        .find(|a| a.backend == libconfigreader::Backend::Ort)
+        .ok_or_else(|| string_err(format!("model '{slug}' has no ONNX artifact")))?;
+    
+    run_embedder_download(state, slug, &onnx_art.url, &onnx_art.extra_files)
 }
 
 /// The one shared embedder download (the Models activity AND the startup
@@ -271,6 +291,7 @@ fn run_embedder_download(
     // event sink instead of borrowing `state`; the aggregate is shared so the
     // settled totals survive the call.
     let events = state.events.clone();
+    let events_complete = events.clone();
     let slug_owned = slug.to_string();
     let agg = Arc::new(Mutex::new(DownloadProgressAggregate::default()));
     let agg_cb = Arc::clone(&agg);
@@ -295,6 +316,17 @@ fn run_embedder_download(
     let done: u64 = agg.done();
     let total = agg.total().unwrap_or(done).max(done);
     emit_progress(state, slug, "", total, Some(total));
+
+    // Emit completion event with the saved path so the GUI can notify the user.
+    let model_dir = app_config::model_dir();
+    let save_path = libmodelstorage::slug_dir(&model_dir, slug);
+    events_complete.emit(
+        "model-download-complete",
+        &libtriqui_client::types::ModelDownloadComplete {
+            slug: slug.to_string(),
+            path: save_path.to_string_lossy().to_string(),
+        },
+    );
     Ok(())
 }
 
