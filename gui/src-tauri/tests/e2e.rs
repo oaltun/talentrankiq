@@ -154,8 +154,8 @@ fn import_two_txt_cvs(
 }
 
 /// Temp CV root for `tag`. `~/Documents/jobs` is the app's last-resort root when
-/// neither a saved preference nor `ikapp.yaml` names one — and the repo
-/// `ikapp.yaml` leaves `gui_cv_dir_root` commented out. A serve started with
+/// neither a saved preference nor `triq.yaml`/`ikapp.yaml` names one — and the repo
+/// config leaves `gui_cv_dir_root` commented out. A serve started with
 /// that config would therefore mkdir a `job-N` folder in the developer's own
 /// Documents, once per `create_job`, every test run. Every serve in this file
 /// pins the root here instead. Pid-scoped, so two runs never collide.
@@ -258,7 +258,7 @@ fn spawn_serve_isolated_cv_root(
     (serve, client, isolated_cv_root(tag), cfg_path)
 }
 
-/// Write a copy of the repo `ikapp.yaml` into `app_dir` with
+/// Write a copy of the repo config (`triq.yaml` or `ikapp.yaml`) into `app_dir` with
 /// `gui_cv_dir_root` pinned to [`isolated_cv_root`] for `tag`, and return its
 /// path. Judge-artifact paths (relative to the config) are rewritten so they
 /// still resolve.
@@ -277,13 +277,19 @@ fn write_config_with_isolated_cv_root(app_dir: &std::path::Path, tag: &str) -> s
         .parent()
         .and_then(|p| p.parent())
         .expect("repo root");
-    let cfg = std::fs::read_to_string(repo.join("ikapp.yaml")).expect("repo ikapp.yaml");
+    // `triq.yaml` preferred, `ikapp.yaml` fallback (both may live at repo root).
+    let repo_cfg = if repo.join("triq.yaml").is_file() {
+        repo.join("triq.yaml")
+    } else {
+        repo.join("ikapp.yaml")
+    };
+    let cfg = std::fs::read_to_string(&repo_cfg).expect("repo config");
     let cfg = cfg.replace(
         "\"gui/judges/",
         &format!("\"{}/gui/judges/", repo.display()),
     );
     let cfg = format!("{cfg}\ngui_cv_dir_root: \"{}\"\n", cv_root.display());
-    let cfg_path = app_dir.join("ikapp.yaml");
+    let cfg_path = app_dir.join("triq.yaml");
     std::fs::write(&cfg_path, cfg).unwrap();
     cfg_path
 }
@@ -297,11 +303,16 @@ fn job_lifecycle_crud_archive_delete_and_persistence() {
     let job1: libtriqui_client::types::Job = client
         .call_typed("create_job", &EmptyParams {})
         .expect("create job 1");
-    // Rubric weights default from `ikapp.yaml` `rubric_defaults` — the config
+    // Rubric weights default from `triq.yaml` (preferred) or `ikapp.yaml` `rubric_defaults` — the config
     // the gui's Setup pane also renders. Read it so the test tracks the config.
-    let config_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ikapp.yaml");
+    let config_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../triq.yaml");
+    let config_path = if config_path.is_file() {
+        config_path
+    } else {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ikapp.yaml")
+    };
     let rubric = &libconfigreader::load(&config_path, &libconfigreader::CliOverrides::new())
-        .expect("load ikapp.yaml")
+        .expect("load config")
         .rubric_defaults;
     assert_eq!(job1.ad_weight, rubric.ad_points);
     assert_eq!(job1.fb_job_weight, rubric.fb_job_points);
@@ -837,13 +848,13 @@ fn preferences_round_trip_and_restart_persistence() {
 
 /// Settings → General → CV directory: the gui writes
 /// `AppPreferences::cv_dir_root` into `preferences.json` and new jobs' default
-/// CV dirs must follow it, overriding `ikapp.yaml`'s `gui_cv_dir_root`. Reset
+/// CV dirs must follow it, overriding the config's `gui_cv_dir_root`. Reset
 /// (null) falls back to the config root. Cheap: rpcs only, no engine.
 #[test]
 fn cv_dir_root_preference_overrides_config_for_new_jobs() {
     let (serve, client, cv_root, _cfg_path) = spawn_serve_isolated_cv_root("cvrootpref");
 
-    // No preference saved yet → the effective root is the ikapp.yaml one.
+    // No preference saved yet → the effective root is the config one.
     let effective: String = client
         .call_typed("get_cv_dir_root", &EmptyParams {})
         .expect("get_cv_dir_root");
@@ -1161,7 +1172,7 @@ fn embedder_lists_contract_and_default_model_persists() {
         .expect("list_embedders");
     assert!(
         !embedders.is_empty(),
-        "ikapp.yaml must define gui_embedders"
+        "config must define gui_embedders"
     );
     assert_eq!(
         embedders.iter().filter(|e| e.is_default).count(),

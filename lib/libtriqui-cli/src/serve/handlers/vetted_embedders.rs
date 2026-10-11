@@ -72,7 +72,7 @@ pub fn list_vetted_embedders(
     _state: &std::sync::Arc<ServeState>,
 ) -> Result<serde_json::Value, ProtocolError> {
     let cfg = libtriqui_core::app_config::load_ikapp()
-        .ok_or_else(|| string_err("config: ikapp.yaml not found"))?;
+        .ok_or_else(|| string_err("config: triq.yaml not found"))?;
 
     let ram_mb = system_ram_mb();
 

@@ -33,7 +33,7 @@ const CASCADE_RETIRE_WAIT: std::time::Duration = std::time::Duration::from_secs(
 
 /// List the curated ONNX embedders (`gui_embedders`) with download/default state.
 pub fn list_embedders(state: &Arc<ServeState>) -> Result<serde_json::Value, ProtocolError> {
-    let cfg = app_config::load_ikapp().ok_or_else(|| string_err("ikapp.yaml not found"))?;
+    let cfg = app_config::load_ikapp().ok_or_else(|| string_err("triq.yaml not found"))?;
     let model_dir = app_config::model_dir();
     let revision = app_config::revision();
     let prefs = load_app_preferences(state).embedding_model;
@@ -178,7 +178,7 @@ pub fn model_variants(
     _state: &Arc<ServeState>,
     params: &libtriqui_client::params::ModelVariantsParams,
 ) -> Result<Value, ProtocolError> {
-    let cfg = app_config::load_ikapp().ok_or_else(|| string_err("ikapp.yaml not found"))?;
+    let cfg = app_config::load_ikapp().ok_or_else(|| string_err("triq.yaml not found"))?;
     let model_def = cfg
         .models
         .iter()
@@ -230,7 +230,7 @@ pub fn download_embedder(state: &Arc<ServeState>, slug: &str) -> Result<(), Prot
         }
     }
 
-    let cfg = app_config::load_ikapp().ok_or_else(|| string_err("ikapp.yaml not found"))?;
+    let cfg = app_config::load_ikapp().ok_or_else(|| string_err("triq.yaml not found"))?;
     let model_def = cfg
         .models
         .iter()
@@ -525,7 +525,7 @@ pub fn set_default_model(
 /// (model, content_hash), so switching back to a previous model re-serves the
 /// old vectors from cache without a single model call.
 pub fn set_embedding_model(state: &Arc<ServeState>, slug: &str) -> Result<(), ProtocolError> {
-    let cfg = app_config::load_ikapp().ok_or_else(|| string_err("ikapp.yaml not found"))?;
+    let cfg = app_config::load_ikapp().ok_or_else(|| string_err("triq.yaml not found"))?;
     if !cfg.gui_embedders.iter().any(|ge| ge.slug == slug) {
         return Err(string_err(format!("unknown embedding model '{slug}'")));
     }

@@ -16,7 +16,7 @@
 
   "preferences.title": "Préférences",
   "modelDownload.title": "Téléchargement du modèle d'IA",
-  "modelDownload.description": "{{name}} n'est pas encore téléchargé. TalentRankIQ le récupère depuis Hugging Face — cela n'arrive qu'une fois, et tout reste sur cette machine.",
+  "modelDownload.description": "Le modèle d'IA n'est pas encore téléchargé. TalentRankIQ le récupère depuis Hugging Face — cela n'arrive qu'une fois, et tout reste sur cette machine.",
   "modelDownload.downloading": "Téléchargement…",
   "modelDownload.hint": "Cela peut prendre quelques minutes selon votre connexion.",
   "modelDownload.failed": "Échec du téléchargement",

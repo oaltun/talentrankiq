@@ -128,6 +128,18 @@ pub fn run() {
             // Managed bridge state: the (single) in-process serve loop.
             app.manage(cli::Bridge::new());
 
+            // Locate the bundled config: in production the triq.yaml is a Tauri
+            // resource, sitting next to the binary in the app bundle. In dev it
+            // lives at the repo root and `repo_root()` discovers it by walking
+            // up from the exe. Set the env var so config discovery picks it up
+            // before the serve loop starts.
+            if let Ok(resource_dir) = app.path().resource_dir() {
+                let bundled = resource_dir.join("triq.yaml");
+                if bundled.is_file() {
+                    std::env::set_var("TRIQI_MODELCALLER_CONFIG", bundled.to_string_lossy().to_string());
+                }
+            }
+
             // Spawn the serve loop now so its CV-dir watchers and the engine
             // status events are live before the frontend asks for anything.
             // The engine itself is NOT started here — the frontend calls

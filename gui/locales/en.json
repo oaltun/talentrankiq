@@ -16,7 +16,7 @@
 
   "preferences.title": "Preferences",
   "modelDownload.title": "Downloading the AI model",
-  "modelDownload.description": "{{name}} isn't downloaded yet. TalentRankIQ is fetching it from Hugging Face — this happens once, and everything stays on this machine.",
+  "modelDownload.description": "AI model isn't downloaded yet. TalentRankIQ is fetching it from Hugging Face — this happens once, and everything stays on this machine.",
   "modelDownload.downloading": "Downloading…",
   "modelDownload.hint": "This can take a few minutes depending on your connection.",
   "modelDownload.failed": "Download failed",

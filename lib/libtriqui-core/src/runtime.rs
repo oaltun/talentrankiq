@@ -33,9 +33,9 @@ use libtriqui_license::{load_judge_license, License};
 /// `runtime-status` Tauri event so the UI can react (e.g. enable Sort).
 pub type StatusHook = Arc<dyn Fn(&RuntimeStatusInfo) + Send + Sync>;
 
-/// Runtime config, discovered from env / `ikapp.yaml` (`model_dir`).
+/// Runtime config, discovered from env / `triq.yaml` (`model_dir`).
 pub struct RuntimeConfig {
-    /// Path to `ikapp.yaml` (model registry + engine settings).
+    /// Path to the config file (`triq.yaml` preferred, `ikapp.yaml` fallback).
     pub config_path: Option<std::path::PathBuf>,
     /// On-disk ONNX model cache root.
     pub model_dir: std::path::PathBuf,
@@ -47,7 +47,7 @@ pub struct RuntimeConfig {
 }
 
 impl RuntimeConfig {
-    /// Discover the toolchain from `ikapp.yaml`/env. `model` (`None` = env
+    /// Discover the toolchain from `triq.yaml`/env. `model` (`None` = env
     /// `SHORTLIST_EMBED_MODEL`, else the `gui_embedders` default from
     /// `ikapp.yaml`) is resolved by the caller when it has extra sources
     /// (the GUI layers user preferences on top).
@@ -463,7 +463,7 @@ impl EngineRuntime {
         let Some(config) = &self.cfg.config_path else {
             self.set_status_if_current(
                 Status::Error(
-                    "ikapp.yaml not found. Set SHORTLIST_MODELCALLER_CONFIG or run from the repo."
+                    "triq.yaml / ikapp.yaml not found. Set TRIQI_MODELCALLER_CONFIG or run from the repo."
                         .to_string(),
                 ),
                 my_epoch,

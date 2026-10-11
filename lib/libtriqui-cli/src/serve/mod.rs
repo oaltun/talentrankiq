@@ -85,7 +85,7 @@ pub struct ServeState {
     pub runtime: Arc<EngineRuntime>,
     pub events: EventSink,
     pub watch: WatchHandle,
-    /// Cascade config for progressive ranking (from `cascade:` in `ikapp.yaml`).
+    /// Cascade config for progressive ranking (from `cascade:` in `triq.yaml`).
     pub config: libtriqui_core::config::CascadeSection,
     /// Live cascade runners per job (see [`handlers::rank::CascadeGens`]).
     pub cascade_gens: Arc<crate::serve::handlers::rank::CascadeGens>,
@@ -146,7 +146,7 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
     let cfg_override = libtriqui_core::app_config::config_path_override();
 
     // Model resolution mirrors the pre-migration gui: env var, then the saved
-    // preference, then the ikapp.yaml default (inside `RuntimeConfig::discover`).
+    // preference, then the triq.yaml default (inside `RuntimeConfig::discover`).
     let model = std::env::var("TRIQI_EMBED_MODEL")
         .ok()
         .or_else(|| prefs_default_model(&app_dir));
@@ -305,7 +305,7 @@ fn panic_message(panic: &Box<dyn std::any::Any + Send>) -> String {
 }
 
 /// The embedding-model default from the saved preferences (env var is checked
-/// by the caller first, `ikapp.yaml` inside `RuntimeConfig::discover` last).
+/// by the caller first, `triq.yaml` inside `RuntimeConfig::discover` last).
 fn prefs_default_model(app_dir: &std::path::Path) -> Option<String> {
     let path = app_dir.join("preferences.json");
     let contents = std::fs::read_to_string(path).ok()?;

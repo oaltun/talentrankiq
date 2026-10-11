@@ -1,10 +1,11 @@
-//! Shared discovery of `ikapp.yaml` and the engine's paths.
+//! Shared discovery of the config file (`triq.yaml` preferred, `ikapp.yaml`
+//! fallback) and the engine's paths.
 //!
 //! Both the engine runtime and the model-management commands need the same
 //! paths (config, model dir), so the lookup logic lives here. Everything
-//! falls back gracefully: an explicit env var wins, then the value from
-//! `ikapp.yaml`, then a filesystem walk from the repo root (found by walking
-//! up from the running exe).
+//! falls back gracefully: an explicit env var wins, then the config file
+//! (`triq.yaml` or `ikapp.yaml`), then a filesystem walk from the repo root
+//! (found by walking up from the running exe).
 //!
 //! `modelcaller`, `modeldownloader`, and `onnxwrapperrs` are all in-process
 //! now — the gui runs the whole engine inside its own binary and needs no
@@ -15,12 +16,13 @@ use std::path::{Path, PathBuf};
 use libconfigreader::Config;
 
 /// Walk up from the running executable to find the repo root (a dir containing
-/// `ikapp.yaml`). Used to locate config + binaries when no env/config is set.
+/// `triq.yaml` or `ikapp.yaml`). Used to locate config + binaries when no
+/// env/config is set.
 pub fn repo_root() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let mut cur = exe.parent();
     while let Some(p) = cur {
-        if p.join("ikapp.yaml").is_file() {
+        if p.join("triq.yaml").is_file() || p.join("ikapp.yaml").is_file() {
             return Some(p.to_path_buf());
         }
         cur = p.parent();
@@ -29,7 +31,7 @@ pub fn repo_root() -> Option<PathBuf> {
 }
 
 thread_local! {
-    /// Per-thread `ikapp.yaml` override. Set on the serve thread by
+    /// Per-thread config override (`triq.yaml`/`ikapp.yaml` path). Set on the serve thread by
     /// `InProcessServe::start_with_config` (tests, tools) so one process can
     /// host several serves, each with its own config, without process-global
     /// state like `TRIQI_MODELCALLER_CONFIG` — concurrent serves in test
@@ -38,7 +40,7 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
-/// Override `ikapp.yaml` discovery **for the calling thread only**; pass
+/// Override config file discovery **for the calling thread only**; pass
 /// `None` to clear. All config lookups made from this thread — serve
 /// handlers and the engine runtime it starts — resolve through the override.
 pub fn set_config_path_override(path: Option<PathBuf>) {
@@ -53,8 +55,9 @@ pub fn config_path_override() -> Option<PathBuf> {
     CONFIG_PATH_OVERRIDE.with(|o| o.borrow().clone())
 }
 
-/// Path to `ikapp.yaml`, from the per-thread override,
-/// `TRIQI_MODELCALLER_CONFIG`, or repo-root discovery.
+/// Path to the config file (`triq.yaml` preferred, `ikapp.yaml` fallback),
+/// from the per-thread override, `TRIQI_MODELCALLER_CONFIG`, or repo-root
+/// discovery.
 pub fn ikapp_config_path() -> Option<PathBuf> {
     if let Some(p) = CONFIG_PATH_OVERRIDE.with(|o| o.borrow().clone()) {
         return Some(p);
@@ -64,10 +67,15 @@ pub fn ikapp_config_path() -> Option<PathBuf> {
             return Some(PathBuf::from(p));
         }
     }
-    repo_root().map(|r| r.join("ikapp.yaml"))
+    let root = repo_root()?;
+    if root.join("triq.yaml").is_file() {
+        Some(root.join("triq.yaml"))
+    } else {
+        Some(root.join("ikapp.yaml"))
+    }
 }
 
-/// Load `ikapp.yaml` (best-effort). Returns `None` if it can't be read/parsed.
+/// Load the config file (`triq.yaml` or `ikapp.yaml`) (best-effort). Returns `None` if it can't be read/parsed.
 pub fn load_ikapp() -> Option<Config> {
     let path = ikapp_config_path()?;
     libconfigreader::load(&path, &libconfigreader::CliOverrides::new()).ok()
