@@ -64,18 +64,6 @@ tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.
 # Keep dev builds (tauri dev, cargo test) small on disk: full DWARF debuginfo
 # makes target/debug grow to many GB. Line tables still give file/line info in
 # backtraces; drop to `debug = false` if even that is too much.
-[profile.dev]
-debug = "line-tables-only"
-
-# Optimize for smaller binary size in release builds
-[profile.release]
-codegen-units = 1        # Better LLVM optimization (slower build, smaller binary)
-lto = true               # Link-time optimizations
-opt-level = "s"          # Optimize for size over speed
-# Unwinding on purpose: the in-process serve loop catches handler panics with
-# `catch_unwind` and answers them as error envelopes. `panic = "abort"` would
-# turn any command bug into a full app crash.
-strip = true             # Remove debug symbols
 
 [dev-dependencies]
 # A few workflows assert on rows the serve contract does not expose (the

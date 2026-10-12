@@ -31,10 +31,3 @@ libmlxembed = { path = "../libmlxembed", features = ["mlx"] }
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 libmlxembed = { path = "../libmlxembed" }
-
-[profile.release]
-codegen-units = 1
-lto = true
-opt-level = "s"
-panic = "abort"
-strip = true

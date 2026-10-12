@@ -277,9 +277,9 @@ impl ModelCallerClient {
             .map_err(|e| {
                 ModelCallerError::Spawn("in-process".into(), format!("load config: {e}"))
             })?;
-        let registry = modelcaller::Registry::from_config(&cfg);
+        let registry = libmodelcaller::Registry::from_config(&cfg);
         let (backend, exec_provider) = effective_engine_io(&engine, &cfg);
-        let args = modelcaller::StdioArgs {
+         let args = libmodelcaller::StdioArgs {
             model_dir: Some(cfg.model_dir.clone()),
             revision: cfg.revision.clone(),
             backend,
@@ -301,7 +301,7 @@ impl ModelCallerClient {
         std::thread::Builder::new()
             .name("modelcaller".into())
             .spawn(move || {
-                if let Err(e) = modelcaller::run_stdio_over(
+                 if let Err(e) = libmodelcaller::run_stdio_over(
                     registry,
                     args,
                     engine,

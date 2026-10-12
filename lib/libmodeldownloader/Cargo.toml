@@ -16,10 +16,3 @@ tar = "0.4"
 flate2 = "1"
 libmodelstorage = { path = "../libmodelstorage" }
 libconfigreader = { path = "../libconfigreader" }
-
-[profile.release]
-codegen-units = 1
-lto = true
-opt-level = "s"
-panic = "abort"
-strip = true

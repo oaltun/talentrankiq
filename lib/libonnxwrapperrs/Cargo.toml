@@ -34,13 +34,3 @@ coreml = ["ort/coreml"]
 directml = ["ort/directml"]
 openvino = ["ort/openvino"]
 rocm = ["ort/rocm"]
-
-[profile.dev]
-opt-level = 0
-
-[profile.release]
-codegen-units = 1
-lto = true
-opt-level = "s"
-panic = "abort"
-strip = true

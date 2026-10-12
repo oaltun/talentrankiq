@@ -21,3 +21,14 @@ members = [
     "lib/libbenchresults",
     "lib/libcvevidence",
 ]
+
+[profile.dev]
+debug = "line-tables-only"
+opt-level = 0
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
