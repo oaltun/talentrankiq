@@ -55,7 +55,7 @@ export function ModelDownloadModal() {
         {status === 'consent' ? (
           <>
             <DialogHeader>
-              <DialogTitle>{t('modelDownload.consentTitle')}</DialogTitle>
+              <DialogTitle>{t('modelDownload.consentTitle', { name })}</DialogTitle>
               <DialogDescription>
                 {t('modelDownload.consentDescription', {
                   name,
