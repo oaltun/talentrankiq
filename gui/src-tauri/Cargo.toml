@@ -64,6 +64,7 @@ tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.
 # Keep dev builds (tauri dev, cargo test) small on disk: full DWARF debuginfo
 # makes target/debug grow to many GB. Line tables still give file/line info in
 # backtraces; drop to `debug = false` if even that is too much.
+# (profile.dev is set at the workspace root: talentrankiq/Cargo.toml)
 
 [dev-dependencies]
 # A few workflows assert on rows the serve contract does not expose (the

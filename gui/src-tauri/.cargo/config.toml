@@ -1,6 +1,0 @@
-# Low-resource dev machine: bound cargo parallelism so builds/checks never
-# saturate all cores (matches ikbuild's `-j 2`). Applies to cargo invocations
-# run with cwd inside gui/src-tauri: rust:prewarm, rust:test, tauri CLI, and
-# rust-analyzer's workspace analysis.
-[build]
-jobs = 2

@@ -229,6 +229,7 @@ fn detect_simd() -> Vec<String> {
     simd
 }
 
+#[cfg(unix)]
 fn detect_on_battery() -> Option<bool> {
     let manager = starship_battery::Manager::new().ok()?;
     let mut present = false;
@@ -241,6 +242,11 @@ fn detect_on_battery() -> Option<bool> {
         }
     }
     if present { Some(discharging) } else { None }
+}
+
+#[cfg(not(unix))]
+fn detect_on_battery() -> Option<bool> {
+    None
 }
 
 /// Free bytes on the filesystem containing `path`. `None` = unknown.

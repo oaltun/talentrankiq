@@ -165,6 +165,12 @@ fn main() {
         // included by the generated cxx bridge, so suppress it for all profiles.
         .flag_if_supported("-Wno-deprecated-copy");
 
+    // cl.exe (MSVC) rejects GCC-style `-std=c++20`, so flag_if_supported drops it
+    // and cl.exe falls back to its C++14 default. mlx-cpp needs C++17 (and C++20
+    // for defaulted comparison operators), so pass /std:c++20 directly on MSVC.
+    #[cfg(target_env = "msvc")]
+    bridge.flag("/std:c++20");
+
     // Used by: QMV exactness retry and decode command-buffer budget controls.
     // These symbols exist precisely when CMake builds the Metal backend.
     // Cargo's optional feature is not that condition: macOS defaults to Metal,
