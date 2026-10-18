@@ -63,7 +63,21 @@ Judge artifacts are **not** part of this repository. Artifacts are purchased and
 
 ## Build & run
 
-Prerequisites: Rust (stable), Node ≥ 20, and the platform toolchain for Tauri.
+Prerequisites: Rust (stable), Node ≥ 20, a C++ toolchain (CMake/MSVC/Clang for the vendored libs), and the platform toolchain for Tauri.
+
+Build order: compile the Rust dependencies first (`lib/` crates plus vendored `vendor/mlxcel` via `libmlxembed`), then build/run the GUI.
+
+### 1. Compile all Rust dependencies
+
+At the repo root:
+
+```sh
+cargo build --release
+```
+
+Builds the whole workspace — every `lib/` crate and `gui/src-tauri` — including `vendor/mlxcel`, which is linked through `libmlxembed`. Use `cargo build` (dev profile) for faster iteration.
+
+### 2. Build & run the GUI
 
 ```sh
 cd gui
@@ -71,17 +85,11 @@ npm install
 npm run tauri:dev
 ```
 
-Useful scripts (all under `gui/`):
+`npm run tauri:dev` rebuilds Rust in dev mode and launches the app. For a release bundle:
 
-| Script | What it does |
-|---|---|
-| `npm run tauri:dev` | Run the app in dev mode |
-| `npm run tauri:build` | Release build |
-| `npm run tauri:run` | Debug build + run, fast iteration |
-| `npm run tauri:check` | Typecheck + `tauri build --check` |
-| `npm run test:all` | Vitest (frontend) + `cargo test` |
-| `npm run check:all` | Full gate: typecheck, lint, format, clippy, all tests |
-| `npm run fix:all` | Auto-fix lint/format/clippy |
+```sh
+npm run tauri:build
+```
 
 ## License
 

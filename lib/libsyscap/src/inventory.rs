@@ -157,7 +157,7 @@ pub struct DiskInfo {
     pub home_free_bytes: u64,
 }
 
-fn pe_cores(vendor: CpuVendor) -> (Option<u32>, Option<u32>) {
+fn pe_cores(_vendor: CpuVendor) -> (Option<u32>, Option<u32>) {
     #[cfg(target_os = "macos")]
     {
         if vendor == CpuVendor::Apple {

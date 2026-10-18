@@ -1,6 +1,7 @@
 use std::path::Path;
 use serde::{Deserialize, Serialize};
 use chrono::Utc;
+use base64::Engine;
 
 use ed25519_dalek::{VerifyingKey, Signature, Verifier};
 use thiserror::Error;
@@ -95,7 +96,8 @@ impl License {
         let canonical = serde_json::to_vec(&payload)?;
 
         // Verify Ed25519 signature
-        let sig_bytes = base64::decode(&self.signature)
+        let sig_bytes = base64::engine::general_purpose::STANDARD
+            .decode(&self.signature)
             .map_err(|_| LicenseError::BadSignatureEncoding)?;
         let signature = Signature::try_from(sig_bytes.as_slice())
             .map_err(|_| LicenseError::BadSignatureEncoding)?;

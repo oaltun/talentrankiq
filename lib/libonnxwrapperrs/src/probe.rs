@@ -272,7 +272,7 @@ fn disk_cache_free() -> u64 {
     fs2_available_space(cache_dir).unwrap_or(0)
 }
 
-fn fs2_available_space(path: &std::path::Path) -> Option<u64> {
+fn fs2_available_space(_path: &std::path::Path) -> Option<u64> {
     #[cfg(unix)]
     {
         use std::ffi::CString;
