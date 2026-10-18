@@ -32,7 +32,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' tauri: ipc: http://ipc.localhost"
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' tauri: ipc: http://ipc.localhost https://talentrankiq.com"
     },
     "macOSPrivateApi": true
   },
@@ -57,11 +57,11 @@
     "copyright": "Copyright © 2025 oaltun. All rights reserved.",
     "macOS": {
       "frameworks": [],
-      "minimumSystemVersion": "10.15",
-      "signingIdentity": "-",
-      "providerShortName": null,
-      "entitlements": null,
-      "exceptionDomain": ""
+      "minimumSystemVersion": "13.0",
+      "signingIdentity": "Developer ID Application: Your Name (TEAM_ID)",
+      "providerShortName": "TEAM_ID",
+      "entitlements": "entitlements.plist",
+      "exceptionDomain": "talentrankiq.com"
     }
   },
   "plugins": {

@@ -1,7 +1,7 @@
 import { useCallback } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { commands, unwrapResult } from '@/lib/tauri-bindings'
-import type { TalentRankIQItem } from '@/lib/tauri-bindings'
+import type { TriqiItem } from '@/lib/tauri-bindings'
 import { jobsQueryKeys } from './jobs'
 import { candidatesQueryKeys } from './candidates'
 import {
@@ -65,7 +65,7 @@ export function useResetFeedback(jobId: string) {
  * Like/unlike a candidate AND immediately apply it as feedback (re-rank). Shared by
  * the grid and the detail overlay so liking from either place re-ranks right away.
  */
-export function useLikeCandidate(jobId: string, triqui: TalentRankIQItem[]) {
+export function useLikeCandidate(jobId: string, triqui: TriqiItem[]) {
   const applyFeedback = useApplyFeedback(jobId)
   const toggleLike = useFeedbackStore(s => s.toggleLike)
   const clear = useFeedbackStore(s => s.clear)

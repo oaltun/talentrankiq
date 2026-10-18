@@ -13,6 +13,7 @@ pub mod import;
 pub mod job_ad;
 pub mod job_bundle;
 pub mod jobs;
+pub mod license;
 pub mod models;
 pub mod notifications;
 pub mod preferences;

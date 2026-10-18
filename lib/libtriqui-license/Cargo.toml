@@ -14,3 +14,11 @@ chrono = { version = "0.4", features = ["serde"] }
 thiserror = "2"
 base64 = "0.23.1"
 dirs = "7.0.0"
+rand = "0.8"
+clap = { version = "4", features = ["derive"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+log = "0.4"
+
+[[bin]]
+name = "licgen"
+path = "src/bin/licgen.rs"

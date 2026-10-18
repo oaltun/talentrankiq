@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Settings, Palette, Cpu } from 'lucide-react'
+import { Settings, Palette, Cpu, Key } from 'lucide-react'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -29,8 +29,9 @@ import { useUIStore } from '@/store/ui-store'
 import { GeneralPane } from './panes/GeneralPane'
 import { AppearancePane } from './panes/AppearancePane'
 import { ModelsPane } from './panes/ModelsPane'
+import { LicensePane } from './panes/LicensePane'
 
-type PreferencePane = 'general' | 'appearance' | 'models'
+type PreferencePane = 'general' | 'appearance' | 'models' | 'license'
 
 const navigationItems = [
   {
@@ -42,6 +43,11 @@ const navigationItems = [
     id: 'models' as const,
     labelKey: 'preferences.models',
     icon: Cpu,
+  },
+  {
+    id: 'license' as const,
+    labelKey: 'preferences.license.title',
+    icon: Key,
   },
   {
     id: 'appearance' as const,
@@ -120,6 +126,7 @@ export function PreferencesDialog() {
             <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4 pt-0 max-h-[calc(600px-4rem)]">
               {activePane === 'general' && <GeneralPane />}
               {activePane === 'models' && <ModelsPane />}
+              {activePane === 'license' && <LicensePane />}
               {activePane === 'appearance' && <AppearancePane />}
             </div>
           </main>

@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::sync::OnceLock;
 use serde::{Deserialize, Serialize};
 use chrono::Utc;
 
@@ -14,6 +15,18 @@ pub const LICENSE_FORMAT: u32 = 1;
 
 /// Public key as raw 32-byte compressed form (last 32 bytes of SPKI DER).
 const PUBLIC_KEY_BYTES: &[u8] = include_bytes!("public_key.raw");
+
+/// Online license verification endpoint (your website: talentrankiq.com)
+static LICENSE_API_URL: OnceLock<String> = OnceLock::new();
+
+/// Set the license API URL (call once at startup, e.g., from config)
+pub fn set_license_api_url(url: String) {
+    let _ = LICENSE_API_URL.set(url);
+}
+
+fn license_api_url() -> &'static str {
+    LICENSE_API_URL.get().map(|s| s.as_str()).unwrap_or("https://talentrankiq.com/api/license")
+}
 
 #[derive(Debug, Error)]
 pub enum LicenseError {
@@ -35,6 +48,10 @@ pub enum LicenseError {
     Expired(String),
     #[error("artifact '{0}' not authorized by license")]
     ArtifactNotAuthorized(String),
+    #[error("license revoked: {0}")]
+    Revoked(String),
+    #[error("online verification failed: {0}")]
+    OnlineVerificationFailed(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,8 +63,10 @@ pub struct License {
     pub expires_at: String,
     #[serde(default)]
     pub artifacts: Vec<String>,
-    #[serde(skip_serializing, skip_deserializing)]
     pub signature: String,
+    /// Optional: license ID for revocation tracking
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub license_id: Option<String>,
 }
 
 /// The canonical payload that is signed: all fields except `signature`,
@@ -71,7 +90,7 @@ impl License {
         Ok(license)
     }
 
-    /// Verify the signature and check expiry.
+    /// Verify the signature and check expiry (offline verification).
     fn verify(&self) -> Result<(), LicenseError> {
         if self.format != LICENSE_FORMAT {
             return Err(LicenseError::Version(self.format, LICENSE_FORMAT));
@@ -113,6 +132,57 @@ impl License {
         Ok(())
     }
 
+    /// Full verification: offline (signature + expiry) + online (revocation check).
+    /// Returns the license if valid, or an error.
+    pub async fn verify_full(&self) -> Result<&Self, LicenseError> {
+        // First, offline verification
+        self.verify()?;
+
+        // Then, online revocation check (non-blocking, best-effort)
+        if let Some(license_id) = &self.license_id {
+            self.check_revocation_online(license_id).await?;
+        }
+
+        Ok(self)
+    }
+
+    /// Check if license has been revoked via the license API.
+    async fn check_revocation_online(&self, license_id: &str) -> Result<(), LicenseError> {
+        let url = format!("{}/verify/{}", license_api_url(), license_id);
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .map_err(|e| LicenseError::OnlineVerificationFailed(e.to_string()))?;
+
+        let response = client.get(&url).send().await;
+        match response {
+            Ok(resp) if resp.status().is_success() => {
+                let result: LicenseVerifyResponse = resp.json().await
+                    .map_err(|e| LicenseError::OnlineVerificationFailed(e.to_string()))?;
+                if result.revoked {
+                    return Err(LicenseError::Revoked(result.reason.unwrap_or_else(|| "License revoked".to_string())));
+                }
+                if !result.valid {
+                    return Err(LicenseError::Revoked(result.reason.unwrap_or_else(|| "License invalid".to_string())));
+                }
+                Ok(())
+            }
+            Ok(resp) if resp.status() == 404 => {
+                // License not found in server database - treat as revoked
+                Err(LicenseError::Revoked("License not found on server".to_string()))
+            }
+            Ok(resp) => {
+                let status = resp.status();
+                Err(LicenseError::OnlineVerificationFailed(format!("HTTP {}", status)))
+            }
+            Err(e) => {
+                // Network error - log but don't fail (offline-first)
+                log::warn!("Online license verification failed (offline mode): {}", e);
+                Ok(())
+            }
+        }
+    }
+
     /// Check if the given artifact ID (file stem) is authorized.
     /// Empty `artifacts` list or `["*"]` means all artifacts allowed.
     pub fn authorizes_artifact(&self, artifact_id: &str) -> bool {
@@ -125,11 +195,27 @@ impl License {
     }
 }
 
+/// Response from the license verification API
+#[derive(Debug, Deserialize)]
+struct LicenseVerifyResponse {
+    valid: bool,
+    revoked: bool,
+    reason: Option<String>,
+}
+
 /// Load the judge license from the standard config directory.
 /// Returns `None` if no license file exists or if it fails to load/verify.
 pub fn load_judge_license() -> Option<License> {
     let path = license_path()?;
     License::load(&path).ok()
+}
+
+/// Load and fully verify (offline + online) the judge license.
+pub async fn load_and_verify_judge_license() -> Result<Option<License>, LicenseError> {
+    let path = license_path().ok_or(LicenseError::NotFound("config dir not found".to_string()))?;
+    let license = License::load(&path)?;
+    license.verify_full().await?;
+    Ok(Some(license))
 }
 
 /// Standard location for the license file: `~/.config/triqui/license.json`
@@ -140,10 +226,12 @@ fn license_path() -> Option<std::path::PathBuf> {
 /// Human-readable status for the UI.
 #[derive(Debug, Clone, Serialize)]
 #[derive(specta::Type)]
+#[serde(tag = "kind")]
 pub enum LicenseStatus {
     Licensed { customer: String, expires_at: String, artifacts: Vec<String> },
     Invalid { reason: String },
     NotFound,
+    Revoked { reason: String },
 }
 
 impl License {
@@ -154,4 +242,53 @@ impl License {
             artifacts: self.artifacts.clone(),
         }
     }
+
+    pub fn status_revoked(reason: String) -> LicenseStatus {
+        LicenseStatus::Revoked { reason }
+    }
+}
+
+/// License activation: download and save a license from the server.
+/// Used when user enters a license key in the UI.
+pub async fn activate_license(license_key: &str) -> Result<License, LicenseError> {
+    let url = format!("{}/activate", license_api_url());
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| LicenseError::OnlineVerificationFailed(e.to_string()))?;
+
+    let response = client
+        .post(&url)
+        .json(&serde_json::json!({ "license_key": license_key }))
+        .send()
+        .await
+        .map_err(|e| LicenseError::OnlineVerificationFailed(e.to_string()))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let err_text = response.text().await.unwrap_or_default();
+        return Err(LicenseError::OnlineVerificationFailed(format!("HTTP {}: {}", status, err_text)));
+    }
+
+    let license: License = response.json().await
+        .map_err(|e| LicenseError::OnlineVerificationFailed(e.to_string()))?;
+
+    // Verify the license signature locally
+    license.verify()?;
+
+    // Save to standard location
+    let path = license_path().ok_or(LicenseError::NotFound("config dir not found".to_string()))?;
+    std::fs::create_dir_all(path.parent().unwrap())?;
+    std::fs::write(&path, serde_json::to_string_pretty(&license)?)?;
+
+    Ok(license)
+}
+
+/// Deactivate (remove) the local license file.
+pub fn deactivate_license() -> Result<(), LicenseError> {
+    let path = license_path().ok_or(LicenseError::NotFound("config dir not found".to_string()))?;
+    if path.exists() {
+        std::fs::remove_file(path)?;
+    }
+    Ok(())
 }

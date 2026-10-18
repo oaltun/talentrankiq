@@ -3,7 +3,7 @@ use tauri_specta::{collect_commands, Builder};
 pub fn generate_bindings() -> Builder<tauri::Wry> {
     use crate::commands::{
         candidates, criteria, debug, embed, feedback, files, import, job_ad, job_bundle, jobs,
-        models, notifications, preferences, quick_pane, rank, recovery, results_csv, sort,
+        license, models, notifications, preferences, quick_pane, rank, recovery, results_csv, sort,
         vetted_embedders, judge_license,
     };
 
@@ -69,6 +69,10 @@ pub fn generate_bindings() -> Builder<tauri::Wry> {
         models::try_model,
         vetted_embedders::list_vetted_embedders,
         judge_license::judge_license_status,
+        license::license_activate,
+        license::license_deactivate,
+        license::license_status_full,
+        license::license_check_artifact,
     ])
 }
 
