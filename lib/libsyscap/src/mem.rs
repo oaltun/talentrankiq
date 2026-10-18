@@ -16,6 +16,7 @@
 //! available, and counting them would overstate headroom by gigabytes.
 
 /// Parsed `vm_stat` counters (pages, not bytes).
+#[cfg(target_os = "macos")]
 #[derive(Debug, Default, Clone, Copy)]
 struct VmStat {
     free: u64,
@@ -27,6 +28,7 @@ struct VmStat {
 }
 
 /// Parse a `vm_stat` dump into page counters plus the page size.
+#[cfg(target_os = "macos")]
 fn parse_vm_stat(text: &str) -> Option<(VmStat, u64)> {
     let mut page_size = 0u64;
     let mut v = VmStat::default();
@@ -64,6 +66,7 @@ fn parse_vm_stat(text: &str) -> Option<(VmStat, u64)> {
 
 /// Available bytes from a `vm_stat` dump. Pure, so it is tested against
 /// captured output rather than against whatever the machine says today.
+#[cfg(target_os = "macos")]
 fn available_from_vm_stat(text: &str, total: u64) -> Option<u64> {
     let (v, page_size) = parse_vm_stat(text)?;
     let pages = v.free + v.inactive + v.speculative;
@@ -119,6 +122,7 @@ mod tests {
 
     const TOTAL: u64 = 24 * 1024 * 1024 * 1024;
 
+    #[cfg(target_os = "macos")]
     #[test]
     fn vm_stat_page_size_and_counters_parse() {
         let (v, page) = parse_vm_stat(SAMPLE).expect("parses");
@@ -129,6 +133,7 @@ mod tests {
         assert_eq!(v.wired, 184175);
     }
 
+    #[cfg(target_os = "macos")]
     #[test]
     fn available_counts_free_inactive_and_speculative_but_not_wired() {
         let got = available_from_vm_stat(SAMPLE, TOTAL).expect("available");
@@ -141,6 +146,7 @@ mod tests {
         assert!(got < TOTAL - 184175 * 16384);
     }
 
+    #[cfg(target_os = "macos")]
     #[test]
     fn a_machine_with_everything_wired_reports_zero() {
         let text = concat!(
@@ -153,6 +159,7 @@ mod tests {
         assert_eq!(available_from_vm_stat(text, TOTAL), Some(0));
     }
 
+    #[cfg(target_os = "macos")]
     #[test]
     fn garbage_never_claims_headroom() {
         // No page size means refuse rather than default to something plausible.

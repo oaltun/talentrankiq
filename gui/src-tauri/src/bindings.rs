@@ -78,6 +78,7 @@ pub fn generate_bindings() -> Builder<tauri::Wry> {
 
 /// Export TypeScript bindings to the frontend.
 /// Run with: cargo test export_bindings -- --ignored
+#[cfg(debug_assertions)]
 pub fn export_ts_bindings() {
     generate_bindings()
         .export(

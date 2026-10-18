@@ -57,14 +57,20 @@ pub fn config_path_override() -> Option<PathBuf> {
 
 /// Path to the config file (`triq.yaml` preferred, `ikapp.yaml` fallback),
 /// from the per-thread override, `TRIQI_MODELCALLER_CONFIG`, or repo-root
-/// discovery.
+/// discovery. An explicit env var only wins when it names an existing file;
+/// a stale or bogus `TRIQI_MODELCALLER_CONFIG` falls through to repo-root
+/// discovery instead of silently making config undiscoverable.
 pub fn ikapp_config_path() -> Option<PathBuf> {
     if let Some(p) = CONFIG_PATH_OVERRIDE.with(|o| o.borrow().clone()) {
         return Some(p);
     }
     if let Ok(p) = std::env::var("TRIQI_MODELCALLER_CONFIG") {
         if !p.is_empty() {
-            return Some(PathBuf::from(p));
+            let path = PathBuf::from(p);
+            if path.is_file() {
+                return Some(path);
+            }
+            // env points to a missing file; fall through to repo_root()
         }
     }
     let root = repo_root()?;
