@@ -616,6 +616,38 @@ async judgeLicenseStatus() : Promise<Result<LicenseStatus, string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async licenseActivate(licenseKey: string) : Promise<Result<LicenseStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("license_activate", { licenseKey }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async licenseDeactivate() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("license_deactivate") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async licenseStatusFull() : Promise<Result<LicenseStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("license_status_full") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async licenseCheckArtifact(artifactId: string) : Promise<Result<boolean, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("license_check_artifact", { artifactId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -1070,7 +1102,7 @@ export type JsonValue = null | boolean | number | string | JsonValue[] | Partial
 /**
  * Human-readable status for the UI.
  */
-export type LicenseStatus = { Licensed: { customer: string; expires_at: string; artifacts: string[] } } | { Invalid: { reason: string } } | "NotFound"
+export type LicenseStatus = { kind: "Licensed"; customer: string; expires_at: string; artifacts: string[] } | { kind: "Invalid"; reason: string } | { kind: "NotFound" } | { kind: "Revoked"; reason: string }
 /**
  * Which kind of model an operation targets.
  */
