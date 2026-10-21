@@ -308,10 +308,11 @@ function EmbeddingPane() {
         </p>
       ) : (
         embedders.map(e => {
-          const p = progress.get(e.slug)
+          const entries = progress.get(e.slug)
+          const p = entries[0]
           const total = p?.total ?? 0
           const pct = total > 0 ? ((p?.done ?? 0) / total) * 100 : undefined
-          const downloading = download.isPending && !!p
+          const downloading = download.isPending && entries.length > 0
           return (
             <EmbedderCard
               key={e.slug}

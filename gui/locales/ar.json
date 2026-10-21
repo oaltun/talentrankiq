@@ -18,6 +18,7 @@
   "modelDownload.title": "جارٍ تنزيل نموذج الذكاء الاصطناعي",
   "modelDownload.description": "نموذج الذكاء الاصطناعي غير منزَّل بعد. يقوم TalentRankIQ بجلبه من Hugging Face — يحدث هذا مرة واحدة فقط، وكل شيء يبقى على هذا الجهاز.",
   "modelDownload.downloading": "جارٍ التنزيل…",
+  "modelDownload.downloadingFile": "جارٍ تنزيل {{file}}…",
   "modelDownload.hint": "قد يستغرق هذا بضع دقائق حسب اتصالك.",
   "modelDownload.failed": "فشل التنزيل",
   "modelDownload.retry": "إعادة المحاولة",

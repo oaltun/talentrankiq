@@ -115,14 +115,17 @@ models:
         quantization: "fp16"
         source: hf:onnx-community/harrier-oss-v1-0.6b-ONNX
         url: https://huggingface.co/onnx-community/harrier-oss-v1-0.6b-ONNX/resolve/main/onnx/model_fp16.onnx
+        sha256: "460cf6e8d8da587e60976b1e36bb5e433c79e5af9681dbab48abad9353d4957c"
       - backend: ort
         quantization: "q4"
         source: hf:onnx-community/harrier-oss-v1-0.6b-ONNX
         url: https://huggingface.co/onnx-community/harrier-oss-v1-0.6b-ONNX/resolve/main/onnx/model_q4.onnx
+        sha256: "4a41218d088c2e31fd6a3953d838d08536a27e98cf987796104a9511f9d9a671"
       - backend: mlx
         quantization: "4bit"
         source: hf:majentik/harrier-oss-v1-0.6b-MLX-4bit
         url: https://huggingface.co/majentik/harrier-oss-v1-0.6b-MLX-4bit/resolve/main/model.safetensors
+        sha256: "362866d8cd7476138d095b1123599d25d5a590d6d9a9130892e0516b8b57481c"
 
   - slug: harrier-oss-v1-270m
     family: harrier-oss-v1
@@ -134,10 +137,12 @@ models:
         quantization: "q4f16"
         source: hf:onnx-community/harrier-oss-v1-270m-ONNX
         url: https://huggingface.co/onnx-community/harrier-oss-v1-270m-ONNX/resolve/main/onnx/model_q4f16.onnx
+        sha256: "e844fc75743d24f9bea799c35018f8d47efec3fd34d74f43906ee0a1899bcc83"
       - backend: mlx
         quantization: "4bit"
         source: hf:majentik/harrier-oss-v1-270m-MLX-4bit
         url: https://huggingface.co/majentik/harrier-oss-v1-270m-MLX-4bit/resolve/main/model.safetensors
+        sha256: "f8bbe0be03d9e45b3297908218659b5fa8ef290f666bede0060644ecb283a537"
 
   # LLM evidence extractor
   - slug: qwen3-4b-instruct-2507

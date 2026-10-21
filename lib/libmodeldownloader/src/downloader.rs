@@ -2,6 +2,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use sha2::{Digest, Sha256};
 
 use crate::cli::Cli;
 use crate::hf_url;
@@ -649,6 +650,19 @@ impl Downloader {
             total: None,
         });
         let bytes = http_get_bytes(client, url)?;
+        
+        // Verify sha256 if provided
+        if let Some(expected) = &self.cli.sha256 {
+            let actual = sha256_hex(&bytes);
+            if actual != *expected {
+                log::error!(
+                    "sha256 mismatch for {file}: expected {expected}, got {actual}"
+                );
+                return Err(Exit::ChecksumMismatch);
+            }
+            log::info!("sha256 verified for {file}");
+        }
+        
         atomic_write(dest, &bytes)?;
         self.emit(DownloadEvent::Finished {
             file: file.to_string(),
@@ -1275,6 +1289,7 @@ mod tests {
             files,
             extra_files: vec![],
             artifact: crate::cli::Artifact::Onnx,
+            sha256: None,
             verbose: false,
             logfile: None,
         }
@@ -1303,6 +1318,7 @@ mod tests {
             files: vec![],
             extra_files: vec![],
             artifact: crate::cli::Artifact::Onnx,
+            sha256: None,
             verbose: false,
             logfile: None,
         };
@@ -1458,6 +1474,7 @@ mod tests {
             files: vec![],
             extra_files: vec![],
             artifact: crate::cli::Artifact::Onnx,
+            sha256: None,
             verbose: false,
             logfile: None,
         };
@@ -1569,4 +1586,10 @@ mod tests {
         zw.finish().unwrap();
         buf.into_inner()
     }
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hex::encode(hasher.finalize())
 }

@@ -290,9 +290,11 @@ export function useModelDownloadProgress() {
     let unlisten: (() => void) | null = null
     listen<ModelDownloadProgress>('model-download-progress', event => {
       const { repo_id, filename, done, total } = event.payload
+      // Key by repo_id + filename to track multiple files per model
+      const key = `${repo_id}:${filename}`
       setProgress(p => ({
         ...p,
-        [repo_id]: { repoId: repo_id, filename, done, total },
+        [key]: { repoId: repo_id, filename, done, total },
       }))
     })
       .then(fn => {
@@ -311,12 +313,12 @@ export function useModelDownloadProgress() {
     setProgress(p => {
       const next: Record<string, DownloadProgressEntry> = {}
       for (const [k, v] of Object.entries(p)) {
-        if (k !== slug) next[k] = v
+        if (!k.startsWith(`${slug}:`)) next[k] = v
       }
       return next
     })
-  const get = (slug: string): DownloadProgressEntry | undefined =>
-    progress[slug]
+  const get = (slug: string): DownloadProgressEntry[] =>
+    Object.values(progress).filter(e => e.repoId === slug)
 
   return { get, clear }
 }

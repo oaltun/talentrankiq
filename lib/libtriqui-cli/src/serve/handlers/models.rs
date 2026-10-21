@@ -256,7 +256,7 @@ pub fn download_embedder(state: &Arc<ServeState>, slug: &str) -> Result<(), Prot
         .find(|a| a.backend == libconfigreader::Backend::Ort)
         .ok_or_else(|| string_err(format!("model '{slug}' has no ONNX artifact")))?;
     
-    run_embedder_download(state, slug, &onnx_art.url, &onnx_art.extra_files)
+    run_embedder_download(state, slug, &onnx_art.url, &onnx_art.sha256, &onnx_art.extra_files)
 }
 
 /// The one shared embedder download (the Models activity AND the startup
@@ -271,6 +271,7 @@ fn run_embedder_download(
     state: &ServeState,
     slug: &str,
     onnx_url: &str,
+    sha256: &str,
     extra_files: &[String],
 ) -> Result<(), ProtocolError> {
     let model_dir = app_config::model_dir();
@@ -285,7 +286,7 @@ fn run_embedder_download(
 
     emit_progress(state, slug, "", 0, None);
 
-    let mut req = libmodeldownloader::UrlDownload::new(onnx_url, slug, model_dir);
+    let mut req = libmodeldownloader::UrlDownload::new(onnx_url, slug, model_dir, sha256.to_string());
     req.extra_files = extra_files.to_vec();
     // The progress callback must be 'static, so hand it an owned clone of the
     // event sink instead of borrowing `state`; the aggregate is shared so the

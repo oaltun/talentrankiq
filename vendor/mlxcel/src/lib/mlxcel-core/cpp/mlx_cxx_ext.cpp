@@ -386,18 +386,24 @@ std::unique_ptr<MlxArray> inplace_slice_write(
 
 std::unique_ptr<MlxLoadedWeights> mlx_load_safetensors(rust::Str path) {
     std::string path_str(path.data(), path.size());
-    auto [weights_map, metadata] = mlx::core::load_safetensors(path_str);
+    try {
+        auto [weights_map, metadata] = mlx::core::load_safetensors(path_str);
 
-    auto result = std::make_unique<MlxLoadedWeights>();
-    result->names.reserve(weights_map.size());
-    result->arrays.reserve(weights_map.size());
+        auto result = std::make_unique<MlxLoadedWeights>();
+        result->names.reserve(weights_map.size());
+        result->arrays.reserve(weights_map.size());
 
-    for (auto& [name, arr] : weights_map) {
-        result->names.push_back(std::move(name));
-        result->arrays.push_back(std::make_unique<MlxArray>(std::move(arr)));
+        for (auto& [name, arr] : weights_map) {
+            result->names.push_back(std::move(name));
+            result->arrays.push_back(std::make_unique<MlxArray>(std::move(arr)));
+        }
+
+        return result;
+    } catch (const std::exception& e) {
+        throw std::runtime_error(std::string("mlx_load_safetensors: ") + e.what());
+    } catch (...) {
+        throw std::runtime_error("mlx_load_safetensors: Unknown error loading safetensors");
     }
-
-    return result;
 }
 
 size_t loaded_weights_len(const MlxLoadedWeights& w) {

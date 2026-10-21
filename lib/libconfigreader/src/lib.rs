@@ -506,6 +506,9 @@ pub struct ModelArtifact {
     /// Additional files to download alongside the main artifact.
     #[serde(default)]
     pub extra_files: Vec<String>,
+    /// sha256 checksum of the primary artifact (model.onnx or model.safetensors).
+    /// The downloader verifies the download matches this hash.
+    pub sha256: String,
 }
 
 /// Executable paths for the binaries that still exist. `modelcaller`,
@@ -1456,7 +1459,7 @@ mod tests {
     #[test]
     fn bench_embed_model_not_in_models_is_error() {
         let cfg_path = write_tmp(
-            "models:\n  - slug: m1\n    family: f1\n    kind: embedder\n    dim: 768\n    max_context_window: 8192\n    artifacts:\n      - backend: ort\n        quantization: \"none\"\n        source: hf:x/y\n        url: http://x\nfamilies: []\nbench:\n  embed_models:\n    - m1\n    - missing\n"
+            "models:\n  - slug: m1\n    family: f1\n    kind: embedder\n    dim: 768\n    max_context_window: 8192\n    artifacts:\n      - backend: ort\n        quantization: \"none\"\n        source: hf:x/y\n        url: http://x\n        sha256: \"deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef\"\nfamilies: []\nbench:\n  embed_models:\n    - m1\n    - missing\n"
         );
         let err = load(&cfg_path, &CliOverrides::new()).unwrap_err().to_string();
         assert!(err.contains("missing"));
@@ -1466,7 +1469,7 @@ mod tests {
     #[test]
     fn parse_full_config() {
         let cfg_path = write_tmp(
-            "model_dir: /my/cache\nverbose: true\nrevision: v2\nlogfile: /tmp/test.log\nbinaries:\n  modelcaller: /bin/mc\n  bench: /bin/bench1\nmodels:\n  - slug: m1\n    family: f1\n    kind: embedder\n    dim: 768\n    max_context_window: 8192\n    artifacts:\n      - backend: ort\n        quantization: \"none\"\n        source: hf:x/y\n        url: http://x\nfamilies:\n  - family: f1\n    usage: plain\nbench:\n  dataset: /d.csv\n  task: t\n  baselines:\n    - bm25\n  embed_models:\n    - m1\n"
+            "model_dir: /my/cache\nverbose: true\nrevision: v2\nlogfile: /tmp/test.log\nbinaries:\n  modelcaller: /bin/mc\n  bench: /bin/bench1\nmodels:\n  - slug: m1\n    family: f1\n    kind: embedder\n    dim: 768\n    max_context_window: 8192\n    artifacts:\n      - backend: ort\n        quantization: \"none\"\n        source: hf:x/y\n        url: http://x\n        sha256: \"deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef\"\nfamilies:\n  - family: f1\n    usage: plain\nbench:\n  dataset: /d.csv\n  task: t\n  baselines:\n    - bm25\n  embed_models:\n    - m1\n"
         );
         let config = load(&cfg_path, &CliOverrides::new()).unwrap();
         assert_eq!(config.model_dir, PathBuf::from("/my/cache"));
@@ -1494,7 +1497,7 @@ mod tests {
     #[test]
     fn judgetrainer_section_validated() {
         let cfg_path = write_tmp(
-            "models:\n  - slug: m1\n    family: f1\n    kind: embedder\n    dim: 768\n    max_context_window: 8192\n    artifacts:\n      - backend: ort\n        quantization: \"none\"\n        source: hf:x/y\n        url: http://x\nfamilies: []\nbinaries:\n  judgetrainer: /bin/jt\njudgetrainer:\n  train_csv: /d/train.csv\n  out_dir: /cache/jt\n  rungs: [m0, m1]\n  embedder: m1\n  epochs: 10\n"
+            "models:\n  - slug: m1\n    family: f1\n    kind: embedder\n    dim: 768\n    max_context_window: 8192\n    artifacts:\n      - backend: ort\n        quantization: \"none\"\n        source: hf:x/y\n        url: http://x\n        sha256: \"deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef\"\nfamilies: []\nbinaries:\n  judgetrainer: /bin/jt\njudgetrainer:\n  train_csv: /d/train.csv\n  out_dir: /cache/jt\n  rungs: [m0, m1]\n  embedder: m1\n  epochs: 10\n"
         );
         let config = load(&cfg_path, &CliOverrides::new()).unwrap();
         let jt = config.judgetrainer.clone().expect("section present");
@@ -1706,10 +1709,12 @@ models:
         quantization: "q4"
         source: hf:onnx-community/harrier-oss-v1-0.6b-ONNX
         url: https://huggingface.co/x/resolve/main/onnx/model_q4.onnx
+        sha256: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
       - backend: mlx
         quantization: "4bit"
         source: hf:majentik/harrier-oss-v1-0.6b-MLX-4bit
         url: https://huggingface.co/majentik/resolve/main/model.safetensors
+        sha256: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
   - slug: plain-model
     family: other
     kind: embedder
@@ -1720,6 +1725,7 @@ models:
         quantization: "none"
         source: hf:someone/plain
         url: https://huggingface.co/x/resolve/main/onnx/model.onnx
+        sha256: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
 families: []
 "#;
 

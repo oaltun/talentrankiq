@@ -37,10 +37,13 @@ pub struct UrlDownload {
     pub extra_files: Vec<String>,
     /// Re-download even if all files exist and match size.
     pub force: bool,
+    /// sha256 checksum of the primary artifact (model.onnx).
+    /// The download is verified against this hash.
+    pub sha256: String,
 }
 
 impl UrlDownload {
-    pub fn new(url: impl Into<String>, slug: impl Into<String>, model_dir: std::path::PathBuf) -> Self {
+    pub fn new(url: impl Into<String>, slug: impl Into<String>, model_dir: std::path::PathBuf, sha256: impl Into<String>) -> Self {
         Self {
             url: url.into(),
             slug: slug.into(),
@@ -48,6 +51,7 @@ impl UrlDownload {
             revision: "main".to_string(),
             extra_files: Vec::new(),
             force: false,
+            sha256: sha256.into(),
         }
     }
 }
@@ -74,6 +78,7 @@ pub fn download_url(
         // URL mode is the single-ONNX path by construction; an MLX fetch is a
         // repo fetch planned from the tree.
         artifact: cli::Artifact::Onnx,
+        sha256: Some(req.sha256),
         verbose: false,
         logfile: None,
     };

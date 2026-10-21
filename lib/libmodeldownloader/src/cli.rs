@@ -74,6 +74,11 @@ pub struct Cli {
     #[arg(long, value_enum, default_value_t = Artifact::Onnx)]
     pub artifact: Artifact,
 
+    /// sha256 checksum of the primary artifact file (model.onnx or model.safetensors).
+    /// When provided, the download is verified against this hash.
+    #[arg(long)]
+    pub sha256: Option<String>,
+
     /// enable verbose debug logging
     #[arg(short, long, default_value_t = false)]
     pub verbose: bool,

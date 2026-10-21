@@ -633,6 +633,7 @@ fn auto_download_mlx(state: &State, model_slug: &str, variant: &ModelArtifact) -
         files: vec![],
         extra_files: variant.extra_files.clone(),
         artifact: libmodeldownloader::cli::Artifact::Mlx,
+        sha256: Some(variant.sha256.clone()),
         verbose: state.verbose,
         logfile: None,
     };
@@ -651,19 +652,12 @@ fn auto_download(state: &State, record: &ResolvedModel) -> Result<()> {
         "auto-downloading model '{}' via modeldownloader",
         record.slug
     );
-    // URL mode (`download_url`), NOT hf-source mode: hf-source fetches the
-    // repo-root DEFAULT_FILES (fp32 graph shell, wrong variant, megabytes of
-    // `_data` shards it cannot know about), while URL mode downloads the
-    // registry's curated ONNX variant plus its external-weight `_data`
-    // siblings into `<slug>/repo/` — the layout `resolve_onnx` prefers.
-    // In-process library call: the gui binary needs no modeldownloader
-    // executable (thin gui pattern, `gui/design/app1/thin-gui.md`).
     let onnx_art = record
         .artifacts
         .iter()
         .find(|a| a.backend == libconfigreader::Backend::Ort)
         .ok_or_else(|| ModelError::load_err(format!("{} has no ONNX artifact", record.slug)))?;
-    let mut req = libmodeldownloader::UrlDownload::new(&onnx_art.url, &record.slug, state.model_dir.clone());
+    let mut req = libmodeldownloader::UrlDownload::new(&onnx_art.url, &record.slug, state.model_dir.clone(), &onnx_art.sha256);
     for extra in &onnx_art.extra_files {
         req.extra_files.push(extra.clone());
     }
@@ -1574,8 +1568,13 @@ models:
     kind: embedder
     dim: 768
     max_context_window: 8192
-    source: hf:example/test-model
-    onnx_url: https://example.com/model.onnx
+    artifacts:
+      - backend: ort
+        quantization: none
+        source: hf:example/test-model
+        url: https://example.com/model.onnx
+        extra_files: []
+        sha256: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
 "#;
         model_registry::Registry::load_from_str(yaml).unwrap()
     }

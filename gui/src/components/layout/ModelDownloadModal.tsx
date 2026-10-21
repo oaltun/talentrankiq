@@ -29,16 +29,35 @@ export function ModelDownloadModal() {
   const { status, model, consent, error, retry, accept, decline } =
     useStartupModelDownload()
   const progress = useModelDownloadProgress()
-  const p = model ? progress.get(model.slug) : undefined
-  const pct =
-    p && p.total && p.total > 0
-      ? Math.min(100, Math.round((p.done / p.total) * 100))
-      : undefined
+  const entries = model ? progress.get(model.slug) : []
   const name = model?.name ?? model?.slug ?? ''
   const armLabel =
     consent?.variants.runtime === 'mlx'
       ? t('status.arm.mlx')
       : t('status.arm.ort')
+
+  // Compute combined progress across all files for this model
+  let combinedPct: number | undefined
+  let currentFile: string | undefined
+  if (entries.length > 0) {
+    let totalDone = 0
+    let totalSize = 0
+    let hasTotal = true
+    for (const entry of entries) {
+      totalDone += entry.done
+      if (entry.total !== null && entry.total > 0) {
+        totalSize += entry.total
+      } else {
+        hasTotal = false
+      }
+    }
+    if (hasTotal && totalSize > 0) {
+      combinedPct = Math.min(100, Math.round((totalDone / totalSize) * 100))
+    }
+    // Show the currently downloading file
+    const downloading = entries.find(e => e.total === null || e.done < (e.total ?? 0))
+    currentFile = downloading?.filename
+  }
 
   return (
     <Dialog
@@ -84,14 +103,20 @@ export function ModelDownloadModal() {
             <div className="space-y-3">
               <div className="flex items-center gap-2 text-sm">
                 <Loader2 className="size-4 animate-spin" />
-                {t('modelDownload.downloading')}
+                {currentFile ? (
+                  <>
+                    {t('modelDownload.downloadingFile', { file: currentFile })}
+                  </>
+                ) : (
+                  t('modelDownload.downloading')
+                )}
               </div>
-              {pct === undefined ? (
+              {combinedPct === undefined ? (
                 <div className="h-2 w-full overflow-hidden rounded-full bg-primary/20">
                   <div className="h-full w-1/3 animate-pulse rounded-full bg-primary" />
                 </div>
               ) : (
-                <Progress value={pct} />
+                <Progress value={combinedPct} />
               )}
               <p className="text-xs text-muted-foreground">
                 {t('modelDownload.hint')}

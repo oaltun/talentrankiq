@@ -1,11 +1,12 @@
 //! In-process engine wiring: the exact `EngineRuntime::start` chain (registry
-//! from `ikapp.yaml` → `modelcaller::run_stdio_over` on a thread over an
+//! from `ikapp.yaml` → `libmodelcaller::run_stdio_over` on a thread over an
 //! in-memory duplex → `ModelCallerClient::over`). The ORT wrapper runs
 //! in-process as well (a dedicated wrapper thread inside modelcaller).
 //! Load hits the real ONNX model — skipped under `IK_SKIP_EXPENSIVE`
 //! (AGENTS.md convention).
 
 use libmodelcallerclient::ModelCallerClient;
+use libmodelcaller::{Registry, StdioArgs, run_stdio_over};
 
 /// Both tests below bring up a full in-process engine (modelcaller loop +
 /// in-process onnxwrapperrs wrapper + ONNX model). cargo runs a binary's
@@ -18,8 +19,8 @@ fn inproc_client() -> (ModelCallerClient, std::thread::JoinHandle<()>) {
     let cfg_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ikapp.yaml");
     let cfg = libconfigreader::load(&cfg_path, &libconfigreader::CliOverrides::new())
         .expect("load ikapp.yaml");
-    let registry = modelcaller::Registry::from_config(&cfg);
-    let args = modelcaller::StdioArgs {
+    let registry = Registry::from_config(&cfg);
+    let args = StdioArgs {
         model_dir: Some(libtriqui_core::app_config::model_dir()),
         revision: cfg.revision.clone(),
         ..Default::default()
@@ -28,7 +29,7 @@ fn inproc_client() -> (ModelCallerClient, std::thread::JoinHandle<()>) {
     // carries requests, b_write → a_read carries responses).
     let (a_write, a_read, b_write, b_read) = libtriqui_client::transport::duplex();
     let handle = std::thread::spawn(move || {
-        modelcaller::run_stdio_over(
+        run_stdio_over(
             registry, args, cfg.engine, cfg.syscap, false, None, b_read, b_write,
         )
         .expect("modelcaller loop");

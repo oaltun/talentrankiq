@@ -17,6 +17,8 @@ pub enum Exit {
     /// expected: a download that quietly produces neither is a bug in the
     /// planner, not a missing file.
     NoWeights = 6,
+    /// Downloaded file sha256 did not match expected checksum.
+    ChecksumMismatch = 7,
 }
 
 impl std::fmt::Display for Exit {
@@ -28,6 +30,7 @@ impl std::fmt::Display for Exit {
             Exit::DiskWrite => write!(f, "disk write error"),
             Exit::NoOnnx => write!(f, "no ONNX model file found after download"),
             Exit::NoWeights => write!(f, "no safetensors weight file found after download"),
+            Exit::ChecksumMismatch => write!(f, "checksum mismatch"),
         }
     }
 }

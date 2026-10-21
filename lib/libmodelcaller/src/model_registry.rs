@@ -17,6 +17,9 @@ pub struct ModelArtifact {
     pub url: String,
     #[serde(default)]
     pub extra_files: Vec<String>,
+    /// sha256 checksum of the primary artifact (model.onnx or model.safetensors).
+    /// The downloader verifies the download matches this hash.
+    pub sha256: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -66,6 +69,7 @@ impl Registry {
                         source: a.source.clone(),
                         url: a.url.clone(),
                         extra_files: a.extra_files.clone(),
+                        sha256: a.sha256.clone(),
                     })
                     .collect(),
                 multi_vector: m.multi_vector,
@@ -190,8 +194,13 @@ models:
     kind: embedder
     dim: 768
     max_context_window: 8192
-    source: hf:example/test-model
-    onnx_url: https://example.com/model.onnx
+    artifacts:
+      - backend: ort
+        quantization: none
+        source: hf:example/test-model
+        url: https://example.com/model.onnx
+        extra_files: []
+        sha256: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
 "#;
         let reg = Registry::load_from_str(yaml).unwrap();
         let m = reg.find("test-model").unwrap();
