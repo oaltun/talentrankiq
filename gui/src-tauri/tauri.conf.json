@@ -41,7 +41,6 @@
     "active": true,
     "targets": "all",
     "resources": [
-      "triq.yaml"
     ],
     "icon": [
       "icons/32x32.png",

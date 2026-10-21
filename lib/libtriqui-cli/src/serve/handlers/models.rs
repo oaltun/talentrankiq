@@ -33,7 +33,7 @@ const CASCADE_RETIRE_WAIT: std::time::Duration = std::time::Duration::from_secs(
 
 /// List the curated ONNX embedders (`gui_embedders`) with download/default state.
 pub fn list_embedders(state: &Arc<ServeState>) -> Result<serde_json::Value, ProtocolError> {
-    let cfg = app_config::load_ikapp().ok_or_else(|| string_err("triq.yaml not found"))?;
+    let cfg = app_config::load_ikapp();
     let model_dir = app_config::model_dir();
     let revision = app_config::revision();
     let prefs = load_app_preferences(state).embedding_model;
@@ -182,14 +182,13 @@ pub fn model_variants(
     _state: &Arc<ServeState>,
     params: &libtriqui_client::params::ModelVariantsParams,
 ) -> Result<Value, ProtocolError> {
-    let cfg = app_config::load_ikapp().ok_or_else(|| string_err("triq.yaml not found"))?;
+    let cfg = app_config::load_ikapp();
     let model_def = cfg
         .models
         .iter()
         .find(|m| m.slug == params.model)
         .ok_or_else(|| string_err(format!("model '{}' not in models registry", params.model)))?;
-    let registry = libtriqui_core::app_config::registry_ctx()
-        .ok_or_else(|| string_err("model registry unavailable"))?;
+    let registry = libtriqui_core::app_config::registry_ctx();
     let status = libtriqui_core::app_config::variant_status(
         &registry.registry,
         registry.backend,
@@ -242,7 +241,7 @@ pub fn download_embedder(state: &Arc<ServeState>, slug: &str) -> Result<(), Prot
         }
     }
 
-    let cfg = app_config::load_ikapp().ok_or_else(|| string_err("triq.yaml not found"))?;
+    let cfg = app_config::load_ikapp();
     let model_def = cfg
         .models
         .iter()
@@ -256,7 +255,7 @@ pub fn download_embedder(state: &Arc<ServeState>, slug: &str) -> Result<(), Prot
         .find(|a| a.backend == libconfigreader::Backend::Ort)
         .ok_or_else(|| string_err(format!("model '{slug}' has no ONNX artifact")))?;
     
-    run_embedder_download(state, slug, &onnx_art.url, &onnx_art.sha256, &onnx_art.extra_files)
+    run_embedder_download(state, slug, &onnx_art.url, onnx_art.sha256.clone(), &onnx_art.extra_files)
 }
 
 /// The one shared embedder download (the Models activity AND the startup
@@ -271,7 +270,7 @@ fn run_embedder_download(
     state: &ServeState,
     slug: &str,
     onnx_url: &str,
-    sha256: &str,
+    sha256: Option<String>,
     extra_files: &[String],
 ) -> Result<(), ProtocolError> {
     let model_dir = app_config::model_dir();
@@ -286,7 +285,7 @@ fn run_embedder_download(
 
     emit_progress(state, slug, "", 0, None);
 
-    let mut req = libmodeldownloader::UrlDownload::new(onnx_url, slug, model_dir, sha256.to_string());
+    let mut req = libmodeldownloader::UrlDownload::new(onnx_url, slug, model_dir, sha256);
     req.extra_files = extra_files.to_vec();
     // The progress callback must be 'static, so hand it an owned clone of the
     // event sink instead of borrowing `state`; the aggregate is shared so the
@@ -558,7 +557,7 @@ pub fn set_default_model(
 /// (model, content_hash), so switching back to a previous model re-serves the
 /// old vectors from cache without a single model call.
 pub fn set_embedding_model(state: &Arc<ServeState>, slug: &str) -> Result<(), ProtocolError> {
-    let cfg = app_config::load_ikapp().ok_or_else(|| string_err("triq.yaml not found"))?;
+    let cfg = app_config::load_ikapp();
     if !cfg.gui_embedders.iter().any(|ge| ge.slug == slug) {
         return Err(string_err(format!("unknown embedding model '{slug}'")));
     }

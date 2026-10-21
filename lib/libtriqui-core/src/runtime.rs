@@ -55,13 +55,11 @@ impl RuntimeConfig {
         let model = model
             .or_else(|| std::env::var("SHORTLIST_EMBED_MODEL").ok())
             .unwrap_or_else(|| {
-                app_config::load_ikapp()
-                    .and_then(|cfg| {
-                        cfg.gui_embedders
-                            .iter()
-                            .find(|ge| ge.default)
-                            .map(|ge| ge.slug.clone())
-                    })
+                let cfg = app_config::load_ikapp();
+                cfg.gui_embedders
+                    .iter()
+                    .find(|ge| ge.default)
+                    .map(|ge| ge.slug.clone())
                     .unwrap_or_default()
             });
         Self {
@@ -278,10 +276,9 @@ impl EngineRuntime {
 
     /// Which arm is about to serve `model`, engine-free: the modelcaller
     /// registry + backend setting + filesystem presence, without loading
-    /// anything. `None` when the config can't be read (callers proceed; the
-    /// post-embed reconcile below still catches a flip).
+    /// anything. `None` when the model slug is not in the registry.
     fn predicted_backend(&self, model: &str) -> Option<String> {
-        let ctx = app_config::registry_ctx()?;
+        let ctx = app_config::registry_ctx();
         libmodelcaller::variant_status(
             &ctx.registry,
             ctx.backend,
@@ -460,31 +457,22 @@ impl EngineRuntime {
             g.epoch
         };
 
-        let Some(config) = &self.cfg.config_path else {
-            self.set_status_if_current(
-                Status::Error(
-                    "triq.yaml / ikapp.yaml not found. Set TRIQI_MODELCALLER_CONFIG or run from the repo."
-                        .to_string(),
-                ),
-                my_epoch,
-            );
-            return;
-        };
-
-        let cfg = match libconfigreader::load(config, &libconfigreader::CliOverrides::new()) {
-            Ok(c) => c,
-            Err(e) => {
-                self.set_status_if_current(
-                    Status::Error(format!("failed to load {}: {e}", config.display())),
-                    my_epoch,
-                );
-                return;
-            }
+        let cfg = match &self.cfg.config_path {
+            Some(config) => match libconfigreader::load(config, &libconfigreader::CliOverrides::new()) {
+                Ok(c) => c,
+                Err(e) => {
+                    self.set_status_if_current(
+                        Status::Error(format!("failed to load {}: {e}", config.display())),
+                        my_epoch,
+                    );
+                    return;
+                }
+            },
+            None => app_config::load_ikapp(),
         };
 
         log::info!(
-            "engine runtime: starting in-process modelcaller (config {}, ORT wrapper in-process)",
-            config.display()
+            "engine runtime: starting in-process modelcaller (ORT wrapper in-process)"
         );
 
         let registry = libmodelcaller::Registry::from_config(&cfg);

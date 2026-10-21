@@ -55,7 +55,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             path
         } else {
             // Use URL mode for ONNX
-            let req = UrlDownload::new(url_or_source, slug, model_dir.clone(), "PLACEHOLDER".to_string());
+            let req = UrlDownload::new(url_or_source, slug, model_dir.clone(), None);
             download_url(req, |ev| {
                 match ev {
                     libmodeldownloader::DownloadEvent::Finished { file, .. } => {
@@ -85,7 +85,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let sha256 = hex::encode(hasher.finalize());
             println!("  SHA256: {}", sha256);
             
-            // Also print the URL for easy triq.yaml update
+            // Also print fields for easy config.rs update
             println!("  URL/Source: {}", url_or_source);
             println!("  slug: {}", slug);
             println!("  backend: {}", backend);

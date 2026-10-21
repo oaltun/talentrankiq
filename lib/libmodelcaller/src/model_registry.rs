@@ -18,8 +18,9 @@ pub struct ModelArtifact {
     #[serde(default)]
     pub extra_files: Vec<String>,
     /// sha256 checksum of the primary artifact (model.onnx or model.safetensors).
-    /// The downloader verifies the download matches this hash.
-    pub sha256: String,
+    /// When present, the downloader verifies the download matches this hash.
+    #[serde(default)]
+    pub sha256: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

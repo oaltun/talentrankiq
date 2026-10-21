@@ -4,6 +4,14 @@ use std::path::{Path, PathBuf};
 use serde::de::{Deserializer, Error as DeError, Visitor};
 use serde::{Deserialize, Serialize};
 
+/// Returns true when `sha256` is `None` or empty — the skip-serializing guard
+/// so the field is omitted from YAML when no checksum is configured.
+fn is_default_sha256(sha: &Option<String>) -> bool {
+    sha.as_deref().map_or(true, |s| s.is_empty())
+}
+
+pub mod config;
+
 /// Default `gui_idle_unload_secs` when `ikapp.yaml` does not set it: unload the
 /// model after 5 minutes without a request. `0` disables idle unloading.
 pub const DEFAULT_GUI_IDLE_UNLOAD_SECS: u64 = 300;
@@ -225,6 +233,38 @@ impl Backend {
     /// Does this setting *demand* MLX, so a missing arm must fail loudly?
     pub fn requires_mlx(&self) -> bool {
         matches!(self, Backend::Mlx)
+    }
+}
+
+impl std::str::FromStr for ExecutionProvider {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "auto" => Ok(ExecutionProvider::Auto),
+            "cpu" => Ok(ExecutionProvider::Cpu),
+            "coreml" => Ok(ExecutionProvider::CoreMl),
+            "xnnpack" => Ok(ExecutionProvider::XnnPack),
+            "cuda" => Ok(ExecutionProvider::Cuda),
+            "tensorrt" => Ok(ExecutionProvider::TensorRt),
+            "directml" => Ok(ExecutionProvider::DirectMl),
+            "openvino" => Ok(ExecutionProvider::OpenVino),
+            "rocm" => Ok(ExecutionProvider::Rocm),
+            _ => Err(format!("unknown execution provider: {s}")),
+        }
+    }
+}
+
+impl std::str::FromStr for Backend {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "auto" => Ok(Backend::Auto),
+            "ort" => Ok(Backend::Ort),
+            "mlx" => Ok(Backend::Mlx),
+            _ => Err(format!("unknown backend: {s}")),
+        }
     }
 }
 
@@ -507,8 +547,9 @@ pub struct ModelArtifact {
     #[serde(default)]
     pub extra_files: Vec<String>,
     /// sha256 checksum of the primary artifact (model.onnx or model.safetensors).
-    /// The downloader verifies the download matches this hash.
-    pub sha256: String,
+    /// When present, the downloader verifies the download matches this hash.
+    #[serde(default, skip_serializing_if = "is_default_sha256")]
+    pub sha256: Option<String>,
 }
 
 /// Executable paths for the binaries that still exist. `modelcaller`,
@@ -687,7 +728,7 @@ pub struct ChunkedVariants {
     pub exclude: Vec<HashMap<String, String>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct RawConfig {
     pub model_dir: Option<PathBuf>,
     pub verbose: Option<bool>,
@@ -964,6 +1005,77 @@ fn expand_tilde(p: &Path) -> PathBuf {
     }
 }
 
+/// Parse a `RawConfig` into a `Config`, resolving relative paths against
+/// `config_path` and validating. Used by both `load` (file-based) and
+/// `config::default_config` (embedded YAML).
+pub fn from_raw(raw: RawConfig, config_path: &Path) -> Result<Config, ConfigError> {
+    let model_dir = raw
+        .model_dir
+        .as_ref()
+        .map(|p| resolve_relative(config_path, p))
+        .unwrap_or_else(libmodelstorage::default_model_dir);
+
+    let verbose = raw.verbose.unwrap_or(false);
+    let logfile = raw
+        .logfile
+        .as_ref()
+        .map(|p| resolve_relative(config_path, p));
+    let revision = raw.revision.clone().unwrap_or_else(|| "main".to_string());
+
+    let bench = raw.bench.as_ref().map(|b| {
+        let mut b = b.clone();
+        b.results_dir = b.results_dir.map(|d| {
+            resolve_relative(config_path, &expand_tilde(Path::new(&d)))
+                .to_string_lossy()
+                .into_owned()
+        });
+        b.cache_dir = b.cache_dir.map(|d| {
+            resolve_relative(config_path, &expand_tilde(Path::new(&d)))
+                .to_string_lossy()
+                .into_owned()
+        });
+        b
+    });
+
+    let config = Config {
+        model_dir,
+        verbose,
+        logfile,
+        revision,
+        binaries: resolve_binaries_ref(config_path, raw.binaries.as_ref()),
+        models: raw.models.unwrap_or_default(),
+        families: raw.families.unwrap_or_default(),
+        gui_embedders: raw.gui_embedders.unwrap_or_default(),
+        gui_idle_unload_secs: raw
+            .gui_idle_unload_secs
+            .unwrap_or(DEFAULT_GUI_IDLE_UNLOAD_SECS),
+        gui_cv_dir_root: raw
+            .gui_cv_dir_root
+            .as_ref()
+            .map(|p| resolve_relative(config_path, &expand_tilde(p))),
+        gui_judge_artifact: raw.gui_judge_artifact.as_ref().map(|arts| {
+            let mut arts = arts.clone();
+            if let Some(p) = arts.default.as_mut() {
+                *p = resolve_relative(config_path, p);
+            }
+            for p in arts.by_embedder.values_mut() {
+                *p = resolve_relative(config_path, p);
+            }
+            arts
+        }),
+        rubric_defaults: raw.rubric_defaults.unwrap_or_default(),
+        bench,
+        judgetrainer: raw.judgetrainer.clone(),
+        engine: raw.engine.unwrap_or_default(),
+        cascade: raw.cascade.unwrap_or_default(),
+        syscap: raw.syscap.unwrap_or_default(),
+        config_path: config_path.to_path_buf(),
+    };
+
+    validate(&config)?;
+    Ok(config)
+}
+
 pub fn load(path: &Path, overrides: &CliOverrides) -> Result<Config, ConfigError> {
     let content = std::fs::read_to_string(path)
         .map_err(|e| ConfigError::new(format!("failed to read '{}': {}", path.display(), e)));
@@ -971,6 +1083,8 @@ pub fn load(path: &Path, overrides: &CliOverrides) -> Result<Config, ConfigError
     let raw: RawConfig = serde_yaml::from_str(&content)
         .map_err(|e| ConfigError::new(format!("failed to parse '{}': {}", path.display(), e)))?;
 
+    // Merge CLI overrides with the file config, detecting conflicts when
+    // both the CLI and the file set the same value differently.
     let model_dir = merge_path("model-dir", &overrides.model_dir, &raw.model_dir)?
         .map(|p| resolve_relative(path, &p))
         .unwrap_or_else(libmodelstorage::default_model_dir);
@@ -981,7 +1095,7 @@ pub fn load(path: &Path, overrides: &CliOverrides) -> Result<Config, ConfigError
     let revision =
         merge_string("revision", &overrides.revision, &raw.revision)?.unwrap_or("main".into());
 
-    let bench = raw.bench.map(|mut b| {
+    let bench = raw.bench.clone().map(|mut b| {
         b.results_dir = b.results_dir.map(|d| {
             resolve_relative(path, &expand_tilde(Path::new(&d)))
                 .to_string_lossy()
@@ -1028,6 +1142,10 @@ pub fn load(path: &Path, overrides: &CliOverrides) -> Result<Config, ConfigError
 
     validate(&config)?;
     Ok(config)
+}
+
+fn resolve_binaries_ref(config_path: &Path, raw: Option<&BinaryPaths>) -> BinaryPaths {
+    resolve_binaries(config_path, raw.cloned())
 }
 
 fn resolve_binaries(config_path: &Path, raw: Option<BinaryPaths>) -> BinaryPaths {
@@ -1127,6 +1245,46 @@ fn validate(cfg: &Config) -> Result<(), ConfigError> {
 }
 
 impl Config {
+    /// Load the config from the embedded default YAML (replacing triq.yaml).
+    /// `config_path` is used for resolving relative paths and is typically the
+    /// path to the config file (or a synthetic path for the embedded fallback).
+    pub fn default_from_embedded(config_path: PathBuf) -> Self {
+        let raw: RawConfig = serde_yaml::from_str(crate::config::DEFAULT_CONFIG_YAML)
+            .expect("embedded DEFAULT_CONFIG_YAML must parse");
+        crate::from_raw(raw, &config_path).expect("embedded config must validate")
+    }
+
+    /// Merge user preference overrides on top of the embedded config.
+    /// Only fields set in `overrides` replace the defaults; the rest stay.
+    pub fn with_user_overrides(mut self, overrides: &crate::config::UserOverrides) -> Self {
+        if let Some(ref b) = overrides.engine_backend {
+            if let Ok(backend) = b.parse::<Backend>() {
+                self.engine.backend = Some(backend);
+            }
+        }
+        if let Some(ref p) = overrides.engine_exec_provider {
+            if let Ok(ep) = p.parse::<ExecutionProvider>() {
+                self.engine.exec_provider = Some(ep);
+            }
+        }
+        if let Some(v) = overrides.engine_embed_batch {
+            self.engine.embed_batch = Some(v);
+        }
+        if let Some(v) = overrides.engine_intra_threads {
+            self.engine.intra_threads = Some(v);
+        }
+        if let Some(v) = overrides.engine_inter_threads {
+            self.engine.inter_threads = Some(v);
+        }
+        if let Some(v) = overrides.engine_max_cores {
+            self.engine.max_cores = Some(v);
+        }
+        if let Some(v) = overrides.engine_no_cache {
+            self.engine.no_cache = Some(v);
+        }
+        self
+    }
+
     pub fn bench_bin(&self) -> Option<&Path> {
         self.binaries.bench.as_deref()
     }

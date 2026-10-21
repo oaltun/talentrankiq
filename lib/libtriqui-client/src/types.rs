@@ -53,6 +53,30 @@ pub struct AppPreferences {
     /// to `gui_cv_dir_root` from `ikapp.yaml`, then the platform Documents dir
     /// + `jobs`.
     pub cv_dir_root: Option<String>,
+    /// Engine backend preference: "auto" | "ort" | "mlx".
+    /// Only set by advanced users; if None, uses the config `engine.backend`
+    /// ("auto" by default).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine_backend: Option<String>,
+    /// ONNX execution provider: "auto" | "cpu" | "coreml" | etc.
+    /// If None, uses the config `engine.exec_provider` (None = CPU).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine_exec_provider: Option<String>,
+    /// Intra-op thread cap. If None, uses config (derived from libsyscap budget).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine_intra_threads: Option<u32>,
+    /// Inter-op thread cap. If None, uses config (single-threaded by default).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine_inter_threads: Option<u32>,
+    /// Embed batch size ceiling. If None, uses config (derived from budget).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine_embed_batch: Option<u32>,
+    /// Max cores cap. If None, uses config (no cap).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine_max_cores: Option<u32>,
+    /// Benchmark mode: skip caches. If None, uses config (default false).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine_no_cache: Option<bool>,
 }
 
 fn default_color_theme() -> String {
@@ -69,6 +93,13 @@ impl Default for AppPreferences {
             embedding_model: None,
             inference_model: None,
             cv_dir_root: None,
+            engine_backend: None,
+            engine_exec_provider: None,
+            engine_intra_threads: None,
+            engine_inter_threads: None,
+            engine_embed_batch: None,
+            engine_max_cores: None,
+            engine_no_cache: None,
         }
     }
 }

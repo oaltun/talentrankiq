@@ -144,9 +144,16 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
     // this loop thread has it; workers spawned below don't inherit
     // thread-locals, so each re-applies the captured value.
     let cfg_override = libtriqui_core::app_config::config_path_override();
+    let user_overrides = user_overrides_from_prefs(&app_dir);
+    let user_ovr_opt = if user_overrides.is_default() {
+        None
+    } else {
+        Some(user_overrides)
+    };
+    libtriqui_core::app_config::set_user_overrides(user_ovr_opt.clone());
 
     // Model resolution mirrors the pre-migration gui: env var, then the saved
-    // preference, then the triq.yaml default (inside `RuntimeConfig::discover`).
+    // preference, then the embedded default (inside `RuntimeConfig::discover`).
     let model = std::env::var("TRIQI_EMBED_MODEL")
         .ok()
         .or_else(|| prefs_default_model(&app_dir));
@@ -202,10 +209,12 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
     {
         let state = Arc::clone(&state);
         let cfg_override = cfg_override.clone();
+        let user_ovr = user_ovr_opt.clone();
         std::thread::Builder::new()
             .name("cv-watch-coordinator".into())
             .spawn(move || {
                 libtriqui_core::app_config::set_config_path_override(cfg_override);
+                libtriqui_core::app_config::set_user_overrides(user_ovr);
                 watch::coordinate(state, jobs_rx)
             })
             .map_err(|e| format!("spawn watch coordinator: {e}"))?;
@@ -214,10 +223,12 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
     {
         let state = Arc::clone(&state);
         let cfg_override = cfg_override.clone();
+        let user_ovr = user_ovr_opt.clone();
         std::thread::Builder::new()
             .name("ad-watch-coordinator".into())
             .spawn(move || {
                 libtriqui_core::app_config::set_config_path_override(cfg_override);
+                libtriqui_core::app_config::set_user_overrides(user_ovr);
                 watch::coordinate_ad(state, ad_rx)
             })
             .map_err(|e| format!("spawn ad watch coordinator: {e}"))?;
@@ -254,10 +265,12 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
         let state = Arc::clone(&state);
         let events = events.clone();
         let cfg_override = cfg_override.clone();
+        let user_ovr = user_ovr_opt.clone();
         std::thread::Builder::new()
             .name(format!("cmd-{}", request.cmd))
             .spawn(move || {
                 libtriqui_core::app_config::set_config_path_override(cfg_override);
+                libtriqui_core::app_config::set_user_overrides(user_ovr);
                 let response = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(
                     || handlers::handle(&state, &request),
                 )) {
@@ -307,10 +320,34 @@ fn panic_message(panic: &Box<dyn std::any::Any + Send>) -> String {
 /// The embedding-model default from the saved preferences (env var is checked
 /// by the caller first, `triq.yaml` inside `RuntimeConfig::discover` last).
 fn prefs_default_model(app_dir: &std::path::Path) -> Option<String> {
-    let path = app_dir.join("preferences.json");
-    let contents = std::fs::read_to_string(path).ok()?;
-    let prefs: libtriqui_client::types::AppPreferences = serde_json::from_str(&contents).ok()?;
+    let prefs = load_app_preferences(app_dir);
     prefs.embedding_model
+}
+
+/// Convert saved AppPreferences engine overrides into the libconfigreader
+/// `UserOverrides` shape used by `Config::with_user_overrides()`.
+fn user_overrides_from_prefs(app_dir: &std::path::Path) -> libconfigreader::config::UserOverrides {
+    let prefs = load_app_preferences(app_dir);
+    libconfigreader::config::UserOverrides {
+        engine_backend: prefs.engine_backend,
+        engine_exec_provider: prefs.engine_exec_provider,
+        engine_embed_batch: prefs.engine_embed_batch.map(|v| v as usize),
+        engine_intra_threads: prefs.engine_intra_threads.map(|v| v as usize),
+        engine_inter_threads: prefs.engine_inter_threads.map(|v| v as usize),
+        engine_max_cores: prefs.engine_max_cores.map(|v| v as usize),
+        engine_no_cache: prefs.engine_no_cache,
+    }
+}
+
+/// Load AppPreferences from the preferences.json in app_dir.
+/// Returns defaults if the file is missing or unparseable.
+fn load_app_preferences(app_dir: &std::path::Path) -> libtriqui_client::types::AppPreferences {
+    let path = app_dir.join("preferences.json");
+    let contents = std::fs::read_to_string(&path).ok();
+    match contents {
+        Some(c) => serde_json::from_str(&c).unwrap_or_default(),
+        None => libtriqui_client::types::AppPreferences::default(),
+    }
 }
 
 // ---------------------------------------------------------------------------

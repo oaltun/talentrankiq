@@ -1,47 +1,26 @@
-# model_dir: platform-specific cache dir set at runtime via TRIQI_MODEL_DIR env var
-# macOS: ~/Library/Caches/com.talentrankiq.triqui/models
-# Windows: %LOCALAPPDATA%\com.talentrankiq.triqui\models
-# Linux: ~/.cache/talentrankiq/models
+//! Embedded default configuration, replacing the former `triq.yaml` file.
+//!
+//! The model registry, families, and gui_embedders are baked into the binary
+//! as a YAML string. At runtime, `Config::default_from_embedded()` parses it
+//! once, and `Config::with_user_overrides()` merges in optional user overrides
+//! (engine/backend settings from `AppPreferences`).
+
+/// The full default config as YAML, replacing triq.yaml.
+/// model_dir is platform-specific, set at runtime via TRIQI_MODEL_DIR.
+pub const DEFAULT_CONFIG_YAML: &str = r#"
 verbose: false
 revision: main
 gui_idle_unload_secs: 300
 
-# Root folder for new jobs' default CV directories (each new job gets a fresh
-# `<root>/job-N/cv` folder, created on disk and auto-import-watched while the
-# job is open). Normally set from inside the app (Settings -> General -> CV
-# directory), which overrides this key; this is only a fallback for a fresh
-# install. `~` and relative paths resolve against this file. Unset = the
-# platform Documents dir + `jobs` (e.g. ~/Documents/jobs).
-# gui_cv_dir_root: "~/Documents/jobs"
-
-# ONNX engine resource ceilings (modelcaller -> onnxwrapperrs, both
-# in-process libraries). No hardcoded machine-size numbers: every knob is
-# OPTIONAL and the `syscap` budget below derives the effective value from
-# live capacity.
 engine:
-  # UNSET = derived from the libsyscap budget (capacity when idle, halved under
-  # Polite, floored under Backoff/Hold). Never ONNX Runtime's every-core fallback.
-  # intra_threads: 4
-  # UNSET = derived (single-threaded dispatch). These small embedding models gain
-  # nothing from node parallelism.
-  # inter_threads: 1
-  # UNSET = derived (follows the same budget). Bigger batches are SLOWER for
-  # these bandwidth-bound embedders.
-  # embed_batch: 8
   backend: auto
 
-# System capability + live-load budget (lib/libsyscap): one policy the gui,
-# bench, tests, and build tools consult to decide how much CPU/RAM they may use
-# right now. Capacity counts every core; runtime consumers derive their knobs
-# from it (engine ceilings can only lower).
 syscap:
   on_battery_polite: true
   build_jobs: auto
   reserve_cores: 1
   reserve_core_frac: 0.10
 
-# Default rubric weights (points) applied when a new job is created and to
-# each newly added criterion.
 rubric_defaults:
   ad_points: 50
   fb_job_points: 10
@@ -345,3 +324,50 @@ cascade:
   k1_embed_per_wave: 100
   k2_judge_per_wave: 50
   small_job_threshold: 300
+"#;
+
+/// Parse the embedded default config YAML into a `Config`.
+pub fn default_config(config_path: std::path::PathBuf) -> crate::Config {
+    let raw: crate::RawConfig = serde_yaml::from_str(DEFAULT_CONFIG_YAML)
+        .expect("embedded DEFAULT_CONFIG_YAML must parse");
+    crate::from_raw(raw, &config_path)
+        .expect("embedded config must validate")
+}
+
+/// User preference overrides that layer on top of the embedded config.
+/// Populated from `AppPreferences` in the tauri frontend.
+/// Only the fields the user has explicitly set are `Some`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct UserOverrides {
+    /// Override the engine backend: "auto" | "ort" | "mlx".
+    pub engine_backend: Option<String>,
+    /// Override the ONNX execution provider.
+    pub engine_exec_provider: Option<String>,
+    /// Override the embed batch size.
+    pub engine_embed_batch: Option<usize>,
+    /// Override intra-op thread count.
+    pub engine_intra_threads: Option<usize>,
+    /// Override inter-op thread count.
+    pub engine_inter_threads: Option<usize>,
+    /// Override max cores cap.
+    pub engine_max_cores: Option<usize>,
+    /// Disable the embedding cache (benchmark mode).
+    pub engine_no_cache: Option<bool>,
+}
+
+impl UserOverrides {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Returns true when no override field is set.
+    pub fn is_default(&self) -> bool {
+        self.engine_backend.is_none()
+            && self.engine_exec_provider.is_none()
+            && self.engine_embed_batch.is_none()
+            && self.engine_intra_threads.is_none()
+            && self.engine_inter_threads.is_none()
+            && self.engine_max_cores.is_none()
+            && self.engine_no_cache.is_none()
+    }
+}

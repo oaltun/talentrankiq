@@ -737,7 +737,38 @@ inference_model: string | null;
  * to `gui_cv_dir_root` from `ikapp.yaml`, then the platform Documents dir
  * + `jobs`.
  */
-cv_dir_root: string | null }
+cv_dir_root: string | null; 
+/**
+ * Engine backend preference: "auto" | "ort" | "mlx".
+ * Only set by advanced users; if None, uses the config `engine.backend`
+ * ("auto" by default).
+ */
+engine_backend?: string | null; 
+/**
+ * ONNX execution provider: "auto" | "cpu" | "coreml" | etc.
+ * If None, uses the config `engine.exec_provider` (None = CPU).
+ */
+engine_exec_provider?: string | null; 
+/**
+ * Intra-op thread cap. If None, uses config (derived from libsyscap budget).
+ */
+engine_intra_threads?: number | null; 
+/**
+ * Inter-op thread cap. If None, uses config (single-threaded by default).
+ */
+engine_inter_threads?: number | null; 
+/**
+ * Embed batch size ceiling. If None, uses config (derived from budget).
+ */
+engine_embed_batch?: number | null; 
+/**
+ * Max cores cap. If None, uses config (no cap).
+ */
+engine_max_cores?: number | null; 
+/**
+ * Benchmark mode: skip caches. If None, uses config (default false).
+ */
+engine_no_cache?: boolean | null }
 /**
  * What to include in an export. CV files are always included — without them
  * the bundle is just names and numbers, which the app cannot interpret (there

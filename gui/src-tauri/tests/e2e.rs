@@ -258,7 +258,7 @@ fn spawn_serve_isolated_cv_root(
     (serve, client, isolated_cv_root(tag), cfg_path)
 }
 
-/// Write a copy of the repo config (`triq.yaml` or `ikapp.yaml`) into `app_dir` with
+/// Write a copy of the embedded default config into `app_dir` with
 /// `gui_cv_dir_root` pinned to [`isolated_cv_root`] for `tag`, and return its
 /// path. Judge-artifact paths (relative to the config) are rewritten so they
 /// still resolve.
@@ -277,13 +277,10 @@ fn write_config_with_isolated_cv_root(app_dir: &std::path::Path, tag: &str) -> s
         .parent()
         .and_then(|p| p.parent())
         .expect("repo root");
-    // `triq.yaml` preferred, `ikapp.yaml` fallback (both may live at repo root).
-    let repo_cfg = if repo.join("triq.yaml").is_file() {
-        repo.join("triq.yaml")
-    } else {
-        repo.join("ikapp.yaml")
-    };
-    let cfg = std::fs::read_to_string(&repo_cfg).expect("repo config");
+    // Use the embedded default config (triq.yaml is now baked into the binary).
+    // The gui_judge_artifact paths are relative to the config file's dir, so
+    // rewrite them to be relative to the repo root.
+    let cfg = libconfigreader::config::DEFAULT_CONFIG_YAML;
     let cfg = cfg.replace(
         "\"gui/judges/",
         &format!("\"{}/gui/judges/", repo.display()),
@@ -303,17 +300,12 @@ fn job_lifecycle_crud_archive_delete_and_persistence() {
     let job1: libtriqui_client::types::Job = client
         .call_typed("create_job", &EmptyParams {})
         .expect("create job 1");
-    // Rubric weights default from `triq.yaml` (preferred) or `ikapp.yaml` `rubric_defaults` — the config
-    // the gui's Setup pane also renders. Read it so the test tracks the config.
-    let config_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../triq.yaml");
-    let config_path = if config_path.is_file() {
-        config_path
-    } else {
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ikapp.yaml")
-    };
-    let rubric = &libconfigreader::load(&config_path, &libconfigreader::CliOverrides::new())
-        .expect("load config")
-        .rubric_defaults;
+    // Rubric weights default from the embedded config's `rubric_defaults`.
+    // Read it so the test tracks the config.
+    let rubric = &libconfigreader::Config::default_from_embedded(
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    )
+    .rubric_defaults;
     assert_eq!(job1.ad_weight, rubric.ad_points);
     assert_eq!(job1.fb_job_weight, rubric.fb_job_points);
     assert_eq!(job1.fb_profile_weight, rubric.fb_profile_points);
@@ -795,6 +787,7 @@ fn preferences_round_trip_and_restart_persistence() {
         embedding_model: Some("nomic-embed-text-v1.5".into()),
         inference_model: Some("test-model".into()),
         cv_dir_root: Some(app_dir.join("cv-root").to_string_lossy().to_string()),
+        ..Default::default()
     };
     client
         .call_typed::<serde_json::Value>(

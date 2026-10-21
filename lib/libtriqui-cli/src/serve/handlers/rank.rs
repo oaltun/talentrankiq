@@ -592,9 +592,9 @@ pub fn spawn_cascade(state: &Arc<ServeState>, job_id: &str) -> Result<bool, Stri
     // (thread-locals don't inherit). Missing config = default sections:
     // syscap enabled, engine caps unset (libsyscap design: absent yaml =
     // defaults).
-    let (syscap, engine) = match libtriqui_core::app_config::load_ikapp() {
-        Some(cfg) => (cfg.syscap, cfg.engine),
-        None => Default::default(),
+    let (syscap, engine) = {
+        let cfg = libtriqui_core::app_config::load_ikapp();
+        (cfg.syscap, cfg.engine)
     };
 
     let runner = CascadeRunner {
@@ -695,9 +695,9 @@ fn state_reason(cancelled: bool, budget: &libsyscap::Budget) -> Option<String> {
 /// The system budget as a fresh sample (pull-based — every poll re-derives
 /// it, so the answer can never go stale). Missing config = default sections.
 fn sample_budget_for_state() -> (libsyscap::Budget, libsyscap::LoadSnapshot) {
-    let (syscap, engine) = match libtriqui_core::app_config::load_ikapp() {
-        Some(cfg) => (cfg.syscap, cfg.engine),
-        None => Default::default(),
+    let (syscap, engine) = {
+        let cfg = libtriqui_core::app_config::load_ikapp();
+        (cfg.syscap, cfg.engine)
     };
     libtriqui_core::syscap::sample_budget(&syscap, &engine)
 }

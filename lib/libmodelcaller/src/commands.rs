@@ -633,7 +633,7 @@ fn auto_download_mlx(state: &State, model_slug: &str, variant: &ModelArtifact) -
         files: vec![],
         extra_files: variant.extra_files.clone(),
         artifact: libmodeldownloader::cli::Artifact::Mlx,
-        sha256: Some(variant.sha256.clone()),
+        sha256: variant.sha256.clone(),
         verbose: state.verbose,
         logfile: None,
     };
@@ -657,7 +657,7 @@ fn auto_download(state: &State, record: &ResolvedModel) -> Result<()> {
         .iter()
         .find(|a| a.backend == libconfigreader::Backend::Ort)
         .ok_or_else(|| ModelError::load_err(format!("{} has no ONNX artifact", record.slug)))?;
-    let mut req = libmodeldownloader::UrlDownload::new(&onnx_art.url, &record.slug, state.model_dir.clone(), &onnx_art.sha256);
+    let mut req = libmodeldownloader::UrlDownload::new(&onnx_art.url, &record.slug, state.model_dir.clone(), onnx_art.sha256.clone());
     for extra in &onnx_art.extra_files {
         req.extra_files.push(extra.clone());
     }

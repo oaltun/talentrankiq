@@ -16,9 +16,7 @@ static ENGINE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn inproc_client() -> (ModelCallerClient, std::thread::JoinHandle<()>) {
     let _ = env_logger::try_init();
-    let cfg_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ikapp.yaml");
-    let cfg = libconfigreader::load(&cfg_path, &libconfigreader::CliOverrides::new())
-        .expect("load ikapp.yaml");
+    let cfg = libtriqui_core::app_config::load_ikapp();
     let registry = Registry::from_config(&cfg);
     let args = StdioArgs {
         model_dir: Some(libtriqui_core::app_config::model_dir()),
@@ -32,7 +30,7 @@ fn inproc_client() -> (ModelCallerClient, std::thread::JoinHandle<()>) {
         run_stdio_over(
             registry, args, cfg.engine, cfg.syscap, false, None, b_read, b_write,
         )
-        .expect("modelcaller loop");
+        .expect("modelcaller loop")
     });
     let client = ModelCallerClient::over(Box::new(a_read), Box::new(a_write));
     (client, handle)
