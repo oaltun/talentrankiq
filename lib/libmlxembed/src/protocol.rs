@@ -18,6 +18,7 @@
 //!    tokenizers (design 15 §15.5.3.3).
 
 use std::io::{BufRead, Write};
+use std::panic;
 use std::path::Path;
 
 use libtokenizer::TokenizerHandle;
@@ -67,7 +68,13 @@ impl SessionManager {
         max_ctx: usize,
     ) -> Result<(u32, LoadReport), (String, String)> {
         let dir = Path::new(model_path);
-        let embedder = Embedder::load(dir).map_err(|e| match e {
+        // Wrap in catch_unwind to catch any panics from C++ exceptions
+        // that cross the FFI boundary (cxx bridge converts them to panics).
+        let embedder = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            Embedder::load(dir)
+        }))
+        .map_err(|_| ("load_failed".to_string(), "MLX embedder load panicked (likely unhandled C++ exception)".to_string()))?
+        .map_err(|e| match e {
             EmbedError::Unsupported(m) => ("unsupported_model".to_string(), m),
             EmbedError::Load(m) => ("load_failed".to_string(), m),
         })?;
@@ -119,10 +126,13 @@ impl SessionManager {
                     .unwrap_or_default()
             })
             .collect();
-        loaded
-            .embedder
-            .embed(&rows)
-            .map_err(|e| ("embed_failed".to_string(), format!("{e}")))
+        // Wrap in catch_unwind to catch any panics from C++ exceptions
+        // that cross the FFI boundary during embedding.
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            loaded.embedder.embed(&rows)
+        }))
+        .map_err(|_| ("embed_failed".to_string(), "MLX embedder embed panicked (likely unhandled C++ exception)".to_string()))?
+        .map_err(|e| ("embed_failed".to_string(), format!("{e}")))
     }
 }
 
@@ -160,6 +170,24 @@ impl LoadReport {
 }
 
 pub fn run_stdio_over(input: impl BufRead, mut output: impl Write) {
+    // Install a panic hook to capture any panics in this thread
+    // This helps diagnose crashes from unhandled C++ exceptions
+    let orig_hook = panic::take_hook();
+    panic::set_hook(Box::new(move |info| {
+        let msg = if let Some(s) = info.payload().downcast_ref::<&str>() {
+            format!("MLX embedder panic: {}", s)
+        } else if let Some(s) = info.payload().downcast_ref::<String>() {
+            format!("MLX embedder panic: {}", s)
+        } else {
+            "MLX embedder panic: unknown payload".to_string()
+        };
+        let loc = info.location().map(|l| format!(" at {}:{}:{}", l.file(), l.line(), l.column())).unwrap_or_default();
+        eprintln!("{}", msg);
+        eprintln!("  Location:{}", loc);
+        // Also call the original hook
+        orig_hook(info);
+    }));
+
     log::info!("libmlxembed session loop starting (Metal)");
     let mut sessions = SessionManager::new();
 

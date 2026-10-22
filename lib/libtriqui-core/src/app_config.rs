@@ -21,24 +21,6 @@ use std::path::{Path, PathBuf};
 
 use libconfigreader::Config;
 
-/// Walk up from the running executable to find the repo root (a dir containing
-/// `triq.yaml`, `ikapp.yaml`, or `Cargo.toml`). Used to locate user-provided
-/// config overrides when no env var is set.
-pub fn repo_root() -> Option<PathBuf> {
-    let exe = std::env::current_exe().ok()?;
-    let mut cur = exe.parent();
-    while let Some(p) = cur {
-        if p.join("triq.yaml").is_file()
-            || p.join("ikapp.yaml").is_file()
-            || p.join("Cargo.toml").is_file()
-        {
-            return Some(p.to_path_buf());
-        }
-        cur = p.parent();
-    }
-    None
-}
-
 thread_local! {
     /// Per-thread config override (`triq.yaml`/`ikapp.yaml` path). Set on the serve thread by
     /// `InProcessServe::start_with_config` (tests, tools) so one process can
@@ -64,13 +46,10 @@ pub fn config_path_override() -> Option<PathBuf> {
     CONFIG_PATH_OVERRIDE.with(|o| o.borrow().clone())
 }
 
-/// Path to the config file (`triq.yaml` preferred, `ikapp.yaml` fallback),
-/// from the per-thread override, `TRIQI_MODELCALLER_CONFIG`, or repo-root
-/// discovery. Returns `None` if no config file is found anywhere — callers
-/// should fall back to the embedded default (`Config::default_from_embedded`).
-/// An explicit env var only wins when it names an existing file;
-/// a stale or bogus `TRIQI_MODELCALLER_CONFIG` falls through to repo-root
-/// discovery instead of silently making config undiscoverable.
+/// Path to the config file from the per-thread override or
+/// `TRIQI_MODELCALLER_CONFIG` env var. Returns `None` if neither is set
+/// or the env var points to a missing file. Callers should fall back to
+/// the embedded default (`Config::default_from_embedded`).
 pub fn ikapp_config_path() -> Option<PathBuf> {
     if let Some(p) = CONFIG_PATH_OVERRIDE.with(|o| o.borrow().clone()) {
         return Some(p);
@@ -81,34 +60,15 @@ pub fn ikapp_config_path() -> Option<PathBuf> {
             if path.is_file() {
                 return Some(path);
             }
-            // env points to a missing file; fall through to repo_root()
         }
-    }
-    let root = repo_root()?;
-    let triq = root.join("triq.yaml");
-    if triq.is_file() {
-        return Some(triq);
-    }
-    let ikapp = root.join("ikapp.yaml");
-    if ikapp.is_file() {
-        return Some(ikapp);
     }
     None
 }
 
-/// Load the config: from `triq.yaml`/`ikapp.yaml` if found, otherwise fall
-/// back to the embedded default (`libconfigreader::config::DEFAULT_CONFIG_YAML`).
+/// Load the config from the embedded default YAML (replacing triq.yaml/ikapp.yaml).
 /// User preference overrides (from `AppPreferences`) are applied if set.
 pub fn load_ikapp() -> Config {
-    let cfg = if let Some(path) = ikapp_config_path() {
-        if let Ok(cfg) = libconfigreader::load(&path, &libconfigreader::CliOverrides::new()) {
-            cfg
-        } else {
-            embedded_default()
-        }
-    } else {
-        embedded_default()
-    };
+    let cfg = embedded_default();
     // Apply user overrides if set
     if let Some(overrides) = user_overrides() {
         if !overrides.is_default() {
@@ -120,8 +80,7 @@ pub fn load_ikapp() -> Config {
 
 /// Build the config from the embedded default YAML.
 fn embedded_default() -> Config {
-    let cfg_path = repo_root().unwrap_or_else(|| PathBuf::from("."));
-    Config::default_from_embedded(cfg_path)
+    Config::default_from_embedded(PathBuf::from("."))
 }
 
 thread_local! {

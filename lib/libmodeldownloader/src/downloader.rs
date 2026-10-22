@@ -701,11 +701,26 @@ impl Downloader {
                 log::error!("file:// source missing requested file: {file}");
                 return Err(Exit::SourceNotFound);
             }
-            let dest = target.join(file);
             let data = fs::read(&src_file).map_err(|e| {
                 log::error!("failed to read {src_file:?}: {e}");
                 Exit::DiskWrite
             })?;
+            
+            // Verify sha256 if provided (only for the first/main file)
+            if *file == to_fetch[0] {
+                if let Some(expected) = &self.cli.sha256 {
+                    let actual = sha256_hex(&data);
+                    if actual != *expected {
+                        log::error!(
+                            "sha256 mismatch for {file}: expected {expected}, got {actual}"
+                        );
+                        return Err(Exit::ChecksumMismatch);
+                    }
+                    log::info!("sha256 verified for {file}");
+                }
+            }
+            
+            let dest = target.join(file);
             atomic_write(&dest, &data)?;
             report.downloaded.push(file.clone());
         }
@@ -1301,6 +1316,100 @@ mod tests {
         let r = Downloader::run(cli);
         assert!(r.is_err());
         assert_eq!(r.unwrap_err().code(), Exit::BadArgs.code());
+    }
+
+    #[test]
+    fn sha256_verification_passes_when_correct() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("model.onnx");
+        std::fs::write(&file_path, b"test model content").unwrap();
+        
+        let expected_sha256 = sha256_hex(b"test model content");
+        let source_url = format!("file://{}", temp_dir.path().display());
+        
+        let cli = Cli {
+            config: None,
+            model: Some("test-model".to_string()),
+            source: Some(source_url),
+            url: None,
+            slug: Some("test-model".to_string()),
+            revision: "main".to_string(),
+            model_dir: Some(temp_dir.path().to_path_buf()),
+            force: false,
+            dry_run: false,
+            files: vec!["model.onnx".to_string()],
+            extra_files: vec![],
+            artifact: crate::cli::Artifact::Onnx,
+            sha256: Some(expected_sha256),
+            verbose: false,
+            logfile: None,
+        };
+        
+        let result = Downloader::run(cli);
+        assert!(result.is_ok(), "sha256 verification should pass with correct hash");
+    }
+
+    #[test]
+    fn sha256_verification_fails_when_mismatch() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("model.onnx");
+        std::fs::write(&file_path, b"test model content").unwrap();
+        
+        // Wrong SHA256
+        let wrong_sha256 = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+        let source_url = format!("file://{}", temp_dir.path().display());
+        
+        let cli = Cli {
+            config: None,
+            model: Some("test-model".to_string()),
+            source: Some(source_url),
+            url: None,
+            slug: Some("test-model".to_string()),
+            revision: "main".to_string(),
+            model_dir: Some(temp_dir.path().to_path_buf()),
+            force: true,
+            dry_run: false,
+            files: vec!["model.onnx".to_string()],
+            extra_files: vec![],
+            artifact: crate::cli::Artifact::Onnx,
+            sha256: Some(wrong_sha256.to_string()),
+            verbose: false,
+            logfile: None,
+        };
+        
+        let result = Downloader::run(cli);
+        assert!(result.is_err(), "sha256 verification should fail with wrong hash");
+        assert_eq!(result.unwrap_err().code(), Exit::ChecksumMismatch.code());
+    }
+
+    #[test]
+    fn sha256_verification_skipped_when_not_provided() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("model.onnx");
+        std::fs::write(&file_path, b"test model content").unwrap();
+        
+        let source_url = format!("file://{}", temp_dir.path().display());
+        
+        let cli = Cli {
+            config: None,
+            model: Some("test-model".to_string()),
+            source: Some(source_url),
+            url: None,
+            slug: Some("test-model".to_string()),
+            revision: "main".to_string(),
+            model_dir: Some(temp_dir.path().to_path_buf()),
+            force: false,
+            dry_run: false,
+            files: vec!["model.onnx".to_string()],
+            extra_files: vec![],
+            artifact: crate::cli::Artifact::Onnx,
+            sha256: None,
+            verbose: false,
+            logfile: None,
+        };
+        
+        let result = Downloader::run(cli);
+        assert!(result.is_ok(), "sha256 verification should be skipped when not provided");
     }
 
     #[test]

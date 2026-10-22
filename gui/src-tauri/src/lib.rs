@@ -129,8 +129,8 @@ pub fn run() {
             app.manage(cli::Bridge::new());
 
             // Config is embedded in the binary (libconfigreader::config::DEFAULT_CONFIG_YAML).
-            // For development, an optional ikapp.yaml/triq.yaml at the repo root
-            // is discovered by `repo_root()` walking up from the exe.
+            // For development, an optional TRIQI_MODELCALLER_CONFIG env var can point
+            // to a custom config file.
 
             // Set platform-appropriate model cache directory:
             // macOS: ~/Library/Caches/com.talentrankiq.triqui/models

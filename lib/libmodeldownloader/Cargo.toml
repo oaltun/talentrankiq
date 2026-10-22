@@ -17,3 +17,6 @@ tar = "0.4"
 flate2 = "1"
 libmodelstorage = { path = "../libmodelstorage" }
 libconfigreader = { path = "../libconfigreader" }
+
+[dev-dependencies]
+tempfile = "3"
