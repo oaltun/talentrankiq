@@ -20,11 +20,44 @@
 use std::io::{BufRead, Write};
 use std::panic;
 use std::path::Path;
+use std::os::unix::io::AsRawFd;
 
 use libtokenizer::TokenizerHandle;
 use serde_json::Value;
 
 use crate::{EmbedError, Embedder};
+
+extern "C" {
+    fn dup2(old: std::os::raw::c_int, new: std::os::raw::c_int) -> std::os::raw::c_int;
+}
+
+const MLX_STDERR_LOG: &str = "/tmp/talentrankiq_mlx_stderr.log";
+
+fn redirect_stderr_to_file() {
+    use std::fs::OpenOptions;
+    let log_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .write(true)
+        .open(MLX_STDERR_LOG)
+        .ok();
+    if let Some(f) = log_file {
+        let fd = f.as_raw_fd();
+        unsafe {
+            if dup2(fd, 2) >= 0 {
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "[{}] MLX wrapper stderr redirected to {}",
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0),
+                    MLX_STDERR_LOG
+                );
+            }
+        }
+    }
+}
 
 type CmdResult = Result<serde_json::Map<String, Value>, (String, String)>;
 type Payload = serde_json::Map<String, Value>;
@@ -171,6 +204,11 @@ impl LoadReport {
 }
 
 pub fn run_stdio_over(input: impl BufRead, mut output: impl Write) {
+    // Redirect stderr to a file so C++ fprintf(stderr,...) output from
+    // the MLX backend (including std::terminate messages) is captured
+    // even in a macOS GUI app where stderr has no terminal.
+    redirect_stderr_to_file();
+
     // Install a panic hook to capture any panics in this thread
     // This helps diagnose crashes from unhandled C++ exceptions
     let orig_hook = panic::take_hook();
@@ -188,10 +226,13 @@ pub fn run_stdio_over(input: impl BufRead, mut output: impl Write) {
         eprintln!("  Location:{}", loc);
         
         // Also write to a crash log file for post-mortem analysis
+        // Use app cache dir to avoid sandbox issues
+        let log_path = std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".to_string());
+        let log_file = std::path::Path::new(&log_path).join("talentrankiq_mlx_crash.log");
         if let Ok(mut file) = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
-            .open("/tmp/talentrankiq_mlx_crash.log") {
+            .open(&log_file) {
             use std::io::Write;
             let timestamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -199,7 +240,9 @@ pub fn run_stdio_over(input: impl BufRead, mut output: impl Write) {
                 .unwrap_or(0);
             let _ = writeln!(file, "[{}] {}", timestamp, full_msg);
             let _ = writeln!(file, "  Location:{}", loc);
+            let _ = writeln!(file, "  Thread: {:?}", std::thread::current().id());
         }
+        eprintln!("Crash log written to: {:?}", log_file);
         
         // Also call the original hook
         orig_hook(info);
@@ -363,8 +406,9 @@ fn handle_unload(payload: &Payload, sessions: &mut SessionManager) -> CmdResult 
 #[cfg(all(test, target_os = "macos", feature = "mlx"))]
 mod tests {
     use super::*;
-    use std::env;
-    use std::fs;
+    use std::path::PathBuf;
+    use std::sync::{Arc, Mutex};
+    use libmodeldownloader::{cli, downloader, DownloadEvent};
 
     fn call(input: &str) -> Vec<Value> {
         let mut out = Vec::new();
@@ -457,5 +501,86 @@ mod tests {
         assert!(load_result.is_err());
         let (code, _msg) = load_result.unwrap_err();
         assert_eq!(code, "load_failed");
+    }
+
+    /// Test that downloads a real MLX model and loads it.
+    /// This test is ignored by default because it requires network access and downloads ~300MB.
+    /// Run with: cargo test --features mlx download_and_load_harrier_270m_mlx -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn download_and_load_harrier_270m_mlx() {
+        // Model cache directory
+        let model_cache = PathBuf::from("/tmp").join("mlx_test_models");
+        std::fs::create_dir_all(&model_cache).unwrap();
+        
+        println!("Model cache: {:?}", model_cache);
+        
+        // Download the harrier-oss-v1-270m MLX model (smaller than 600M)
+        let cli = libmodeldownloader::cli::Cli {
+            config: None,
+            model: Some("harrier-oss-v1-270m-MLX-4bit".to_string()),
+            source: Some("hf:majentik/harrier-oss-v1-270m-MLX-4bit".to_string()),
+            url: None,
+            slug: Some("harrier-oss-v1-270m-MLX-4bit".to_string()),
+            revision: "main".to_string(),
+            model_dir: Some(model_cache.clone()),
+            force: false,
+            dry_run: false,
+            files: vec![],
+            extra_files: vec![],
+            artifact: libmodeldownloader::cli::Artifact::Mlx,
+            sha256: None,
+            verbose: true,
+            logfile: None,
+        };
+        
+        println!("Downloading model...");
+        
+        let sink: libmodeldownloader::ProgressSink = Arc::new(Mutex::new(|event| {
+            match event {
+                libmodeldownloader::DownloadEvent::Started { file, total } => {
+                    println!("Download started: {} (total: {:?})", file, total);
+                }
+                libmodeldownloader::DownloadEvent::Progress { file, done, total } => {
+                    if let Some(total) = total {
+                        let pct = (done as f64 / total as f64 * 100.0) as u32;
+                        println!("Progress: {}% ({}/{} bytes) - {}", pct, done, total, file);
+                    } else {
+                        println!("Downloaded: {} bytes - {}", done, file);
+                    }
+                }
+                libmodeldownloader::DownloadEvent::Finished { file, total } => {
+                    println!("Finished: {} (total: {:?})", file, total);
+                }
+                libmodeldownloader::DownloadEvent::Cached { file, bytes } => {
+                    println!("Cached: {} ({} bytes)", file, bytes);
+                }
+            }
+        }));
+        
+        println!("Starting download...");
+        let result = libmodeldownloader::Downloader::run_with_progress(cli, Some(sink));
+        
+        match result {
+            Ok(model_dir) => {
+                println!("Download successful: {:?}", model_dir);
+                
+                // Now try to load the model - the download puts files in the revision subdirectory (e.g., "main")
+                let model_dir = model_dir;
+                println!("Loading model from {:?}", model_dir);
+                
+                match Embedder::load(&model_dir) {
+                    Ok(embedder) => {
+                        println!("Model loaded successfully: {}", embedder.describe());
+                    },
+                    Err(e) => {
+                        println!("Model load failed: {:?}", e);
+                    }
+                }
+            },
+            Err(e) => {
+                println!("Download failed: {:?}", e);
+            }
+        }
     }
 }

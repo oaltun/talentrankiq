@@ -11,9 +11,63 @@
 #include "fused_rope_append.h"      // fused q/k RoPE + KV-append layout (#905).
 #include "kv_inplace_write.h"       // in-place decode KV row write (#1959).
 
+#include <cstdio>
+#include <cstdlib>
+#include <exception>
+#include <stdexcept>
+
 namespace mlx_cxx {
 
 // ── Native safetensors loading ────────────────────────────────────────
+// ── std::terminate handler ──────────────────────────────────────────────
+//
+// When a C++ exception escapes a noexcept boundary (the cxx shim), the
+// runtime calls std::terminate → abort(). The default libc++abi message
+// ("libc++abi: terminating due to uncaught exception of type ...") goes to
+// stderr, but a macOS GUI app has no visible stderr. This handler logs the
+// exception info to stderr (which the Rust host redirects to a crash file
+// before any MLX work happens), then re-throws/terminates.
+
+[[noreturn]] void mlx_terminate_handler() {
+    std::exception_ptr ep = std::current_exception();
+    if (ep) {
+        try {
+            std::rethrow_exception(ep);
+        } catch (const std::exception& e) {
+            fprintf(stderr,
+                "[MLX C++ TERMINATE] uncaught exception: %s\n",
+                e.what());
+        } catch (const std::string& s) {
+            fprintf(stderr,
+                "[MLX C++ TERMINATE] uncaught exception (string): %s\n",
+                s.c_str());
+        } catch (const char* s) {
+            fprintf(stderr,
+                "[MLX C++ TERMINATE] uncaught exception (char*): %s\n",
+                s);
+        } catch (...) {
+            fprintf(stderr,
+                "[MLX C++ TERMINATE] uncaught exception of unknown type\n");
+        }
+    } else {
+        fprintf(stderr,
+            "[MLX C++ TERMINATE] std::terminate called with no current exception\n");
+    }
+    fflush(stderr);
+    std::abort();
+}
+
+// Installed once at first C++ function entry so every translate unit
+// benefits. Safe: set_terminate returns the previous handler and is
+// idempotent.
+__attribute__((constructor))
+void mlx_install_terminate_handler() {
+    static bool installed = false;
+    if (!installed) {
+        std::set_terminate(mlx_terminate_handler);
+        installed = true;
+    }
+}
 
 // ── Metal 4 fused attention kernel scaffolding ────────────────────────────────
 //
@@ -385,6 +439,7 @@ std::unique_ptr<MlxArray> inplace_slice_write(
 }
 
 std::unique_ptr<MlxLoadedWeights> mlx_load_safetensors(rust::Str path) {
+    mlx_install_terminate_handler();
     std::string path_str(path.data(), path.size());
     try {
         auto [weights_map, metadata] = mlx::core::load_safetensors(path_str);
@@ -400,8 +455,14 @@ std::unique_ptr<MlxLoadedWeights> mlx_load_safetensors(rust::Str path) {
 
         return result;
     } catch (const std::exception& e) {
-        throw std::runtime_error(std::string("mlx_load_safetensors: ") + e.what());
+        std::string err_msg = std::string("mlx_load_safetensors: ") + e.what();
+        // Log the actual C++ exception to stderr before re-throwing
+        fprintf(stderr, "[MLX C++ EXCEPTION] mlx_load_safetensors(%s): %s\n", path_str.c_str(), e.what());
+        fflush(stderr);
+        throw std::runtime_error(err_msg);
     } catch (...) {
+        fprintf(stderr, "[MLX C++ EXCEPTION] mlx_load_safetensors(%s): Unknown exception type\n", path_str.c_str());
+        fflush(stderr);
         throw std::runtime_error("mlx_load_safetensors: Unknown error loading safetensors");
     }
 }

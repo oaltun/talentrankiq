@@ -98,6 +98,7 @@ mod tests {
     /// This test is ignored by default so it doesn't run in CI.
     /// Run manually with: cargo test export_bindings -- --ignored
     #[test]
+    #[cfg(debug_assertions)]
     #[ignore]
     fn export_bindings() {
         export_ts_bindings();

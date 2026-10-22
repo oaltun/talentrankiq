@@ -15,6 +15,7 @@ mod commands;
 mod utils;
 
 use tauri::{Manager, RunEvent, WindowEvent};
+use std::panic;
 
 // The DTO/error vocabulary the command shells speak (and specta exports).
 // Re-exported under the historical `crate::types` path.
@@ -117,9 +118,46 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_os::init())
-        .setup(|app| {
-            log::info!("Application starting up");
+.plugin(tauri_plugin_os::init())
+    .setup(|app| {
+        // Install global panic hook early to catch panics in any thread
+        let orig_hook = panic::take_hook();
+        panic::set_hook(Box::new(move |info| {
+            let msg = if let Some(s) = info.payload().downcast_ref::<&str>() {
+                format!("APP PANIC: {}", s)
+            } else if let Some(s) = info.payload().downcast_ref::<String>() {
+                format!("APP PANIC: {}", s)
+            } else {
+                "APP PANIC: unknown payload".to_string()
+            };
+            let loc = info.location().map(|l| format!(" at {}:{}:{}", l.file(), l.line(), l.column())).unwrap_or_default();
+            let full_msg = format!("{}", msg);
+            eprintln!("{}", full_msg);
+            eprintln!("  Location:{}", loc);
+            eprintln!("  Thread: {:?}", std::thread::current().id());
+            
+            // Write to crash log
+            let log_path = std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".to_string());
+            let log_file = std::path::Path::new(&log_path).join("talentrankiq_app_crash.log");
+            if let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&log_file) {
+                use std::io::Write;
+                let timestamp = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                let _ = writeln!(file, "[{}] {}", timestamp, full_msg);
+                let _ = writeln!(file, "  Location:{}", loc);
+                let _ = writeln!(file, "  Thread: {:?}", std::thread::current().id());
+            }
+            eprintln!("Crash log written to: {:?}", log_file);
+            
+            orig_hook(info);
+        }));
+
+        log::info!("Application starting up");
             log::debug!(
                 "App handle initialized for package: {}",
                 app.package_info().name
