@@ -1,0 +1,19 @@
+[package]
+name = "triq-cli"
+version = "0.1.0"
+edition = "2021"
+description = "Headless CLI for TalentRankIQ — JSONL event loop over stdio"
+license = "Apache-2.0"
+
+[[bin]]
+name = "triq"
+path = "src/main.rs"
+
+[dependencies]
+libtriqui-cli = { path = "../lib/libtriqui-cli" }
+libtriqui-core = { path = "../lib/libtriqui-core" }
+libconfigreader = { path = "../lib/libconfigreader" }
+libtriqui-license = { path = "../lib/libtriqui-license" }
+log = "0.4"
+env_logger = "0.11"
+dirs = "6"

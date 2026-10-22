@@ -7389,6 +7389,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "triq-cli"
+version = "0.1.0"
+dependencies = [
+ "dirs 6.0.0",
+ "env_logger",
+ "libconfigreader",
+ "libtriqui-cli",
+ "libtriqui-core",
+ "libtriqui-license",
+ "log",
+]
+
+[[package]]
 name = "triqui"
 version = "0.1.0"
 dependencies = [
