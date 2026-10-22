@@ -138,6 +138,7 @@ impl SessionManager {
 
 /// What `load` reports back. Every field here is something the gui shows or a
 /// test asserts on, so "which runtime actually served this" is never a guess.
+#[derive(Debug)]
 pub struct LoadReport {
     pub runtime: &'static str,
     pub dim: usize,
@@ -182,8 +183,24 @@ pub fn run_stdio_over(input: impl BufRead, mut output: impl Write) {
             "MLX embedder panic: unknown payload".to_string()
         };
         let loc = info.location().map(|l| format!(" at {}:{}:{}", l.file(), l.line(), l.column())).unwrap_or_default();
-        eprintln!("{}", msg);
+        let full_msg = format!("{}", msg);
+        eprintln!("{}", full_msg);
         eprintln!("  Location:{}", loc);
+        
+        // Also write to a crash log file for post-mortem analysis
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("/tmp/talentrankiq_mlx_crash.log") {
+            use std::io::Write;
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let _ = writeln!(file, "[{}] {}", timestamp, full_msg);
+            let _ = writeln!(file, "  Location:{}", loc);
+        }
+        
         // Also call the original hook
         orig_hook(info);
     }));
@@ -346,6 +363,8 @@ fn handle_unload(payload: &Payload, sessions: &mut SessionManager) -> CmdResult 
 #[cfg(all(test, target_os = "macos", feature = "mlx"))]
 mod tests {
     use super::*;
+    use std::env;
+    use std::fs;
 
     fn call(input: &str) -> Vec<Value> {
         let mut out = Vec::new();
@@ -361,9 +380,11 @@ mod tests {
     fn probe_and_eplist_serve_the_same_contract_shape() {
         let lines = call(concat!(
             r#"{"id":"1","type":"request","payload":{"cmd":"probe"}}"#,
-            "\n",
+            "
+",
             r#"{"id":"2","type":"request","payload":{"cmd":"eplist"}}"#,
-            "\n",
+            "
+",
         ));
         assert_eq!(lines[0]["id"], "1");
         assert_eq!(lines[0]["type"], "response");
@@ -387,8 +408,6 @@ mod tests {
 
     #[test]
     fn an_unknown_command_is_unknown_not_unsupported() {
-        // The two are different answers: one is a typo, the other is a real
-        // capability boundary, and conflating them hides bugs.
         let out = call(r#"{"id":"1","type":"request","payload":{"cmd":"embedd"}}"#);
         assert_eq!(out[0]["payload"]["code"], "unknown_cmd");
     }
@@ -397,9 +416,46 @@ mod tests {
     fn embedding_an_unloaded_session_is_an_error_not_a_crash() {
         let out = call(r#"{"id":"1","type":"request","payload":{"cmd":"embed","session":7,"texts":["x"]}}"#);
         assert_eq!(out[0]["type"], "error");
-        // `no_session`, not a generic embed failure: the caller sent a handle
-        // that was never loaded (or already unloaded), which is a different
-        // bug from an embed that ran and failed.
         assert_eq!(out[0]["payload"]["code"], "no_session");
+    }
+
+    /// Test that reproduces the MLX embedder crash scenario:
+    /// When loading a non-existent or corrupt model directory, the catch_unwind
+    /// wrapper in SessionManager::load should catch any panic (including those
+    /// from unhandled C++ exceptions converted by the cxx bridge) and return
+    /// a proper error instead of crashing the process via std::terminate().
+    #[test]
+    fn load_nonexistent_model_returns_error_not_crash() {
+        let mut sessions = SessionManager::new();
+        let result = sessions.load("/nonexistent/model/path", 512);
+        assert!(result.is_err());
+        let (code, msg) = result.unwrap_err();
+        assert_eq!(code, "load_failed");
+        assert!(msg.contains("load failed") || msg.contains("No such file") || msg.contains("not found") || msg.contains("Failed to load"));
+    }
+
+    #[test]
+    fn load_corrupt_model_missing_tokenizer_returns_error() {
+        let temp_dir = std::env::temp_dir().join("libmlxembed_test");
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let mut sessions = SessionManager::new();
+        let result = sessions.load(temp_dir.to_str().unwrap(), 512);
+        assert!(result.is_err());
+        let (code, _msg) = result.unwrap_err();
+        assert_eq!(code, "load_failed");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn catch_unwind_catches_panic_in_embedder_load() {
+        let mut sessions = SessionManager::new();
+        let catch_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            sessions.load("/definitely/does/not/exist", 512)
+        }));
+        assert!(catch_result.is_ok());
+        let load_result = catch_result.unwrap();
+        assert!(load_result.is_err());
+        let (code, _msg) = load_result.unwrap_err();
+        assert_eq!(code, "load_failed");
     }
 }

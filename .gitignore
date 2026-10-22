@@ -20,3 +20,6 @@ jscpd-report
 !.vscode/extensions.json
 !.vscode/settings.json
 *.sw?
+
+# Test timestamp tracking
+.last_full_test_run

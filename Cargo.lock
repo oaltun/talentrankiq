@@ -3424,6 +3424,7 @@ dependencies = [
  "log",
  "mlxcel-core",
  "serde_json",
+ "tempfile",
  "tokenizers 0.21.4",
 ]
 
