@@ -1,0 +1,3 @@
+[alias]
+test-cli-embedders = "test --manifest-path triq-cli/Cargo.toml --test cli_list_embedders_matches_triq_yaml -- --nocapture"
+test-cli = "test --manifest-path triq-cli/Cargo.toml --test cli_list_embedders_matches_triq_yaml -- --nocapture"

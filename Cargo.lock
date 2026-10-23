@@ -7399,6 +7399,8 @@ dependencies = [
  "libtriqui-core",
  "libtriqui-license",
  "log",
+ "serde_json",
+ "serde_yaml",
 ]
 
 [[package]]

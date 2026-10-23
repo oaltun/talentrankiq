@@ -5,6 +5,7 @@ description = "Privacy-first desktop tool for ranking applicant CVs against a jo
 authors = ["oaltun"]
 edition = "2021"
 rust-version = "1.82"
+default-run = "talentrankiq"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(mobile)', 'cfg(desktop)'] }
