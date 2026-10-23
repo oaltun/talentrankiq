@@ -1,7 +1,7 @@
 [package]
 name = "libtriqui-cli"
 version = "0.1.0"
-description = "Headless TalentRankIQ library: inspect the SQLite store, rank/prewarm jobs, toggle likes, and serve the gui (in-process via InProcessServe — thin gui pattern). Drives libtriqui-core."
+description = "Headless TalentRankIQ library: the `triq` CLI (serve loop over stdio JSONL + tools), and `InProcessServe` for tests that run the serve loop in-process with pinned config. Drives libtriqui-core."
 authors = ["oaltun"]
 edition = "2021"
 rust-version = "1.82"

@@ -48,12 +48,8 @@ tauri-specta = { version = "=2.0.0-rc.21", features = ["typescript"] }
 specta-typescript = "=0.0.9"
 
 # The gui's domain links: contract lib for the protocol (envelope, params,
-# DTOs, client) plus the proxy lib hosting the serve loop, which the gui runs
-# in-process (one binary, no child at all: the engine runs libmodelcaller as a
-# library, and the ORT wrapper runs in-process on a dedicated thread) — thin
-# gui pattern, `gui/design/app1/thin-gui.md`.
+# DTOs, client) — thin gui pattern.
 libtriqui-client = { path = "../../lib/libtriqui-client" }
-libtriqui-cli = { path = "../../lib/libtriqui-cli" }
 libtriqui-license = { path = "../../lib/libtriqui-license" }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
@@ -77,3 +73,5 @@ tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.
 rusqlite = { version = "0.32", features = ["bundled"] }
 # the e2e workflows read the serve config the way the app does
 libconfigreader = { path = "../../lib/libconfigreader" }
+# e2e tests use InProcessServe to run the serve loop in-process with pinned config
+libtriqui-cli = { path = "../../lib/libtriqui-cli" }

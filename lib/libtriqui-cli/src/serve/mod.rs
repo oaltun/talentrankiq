@@ -1,12 +1,13 @@
-//! `serve` — the long-lived request loop behind the gui (thin gui pattern,
-//! `gui/design/app1/thin-gui.md`).
+//! `serve` — the long-lived request loop (thin gui pattern).
 //!
 //! One JSON object per line on the request stream (a [`Request`]) and the
 //! response stream (a [`Response`] or an [`Event`]). Two transports:
 //! - stdio (the `triqui-cli serve` subcommand: tests, humans, scripts);
-//! - in-process duplex pipes inside the gui binary via
-//!   [`crate::inprocess::InProcessServe`] — the gui's production path, no
-//!   child process.
+//! - in-process duplex pipes via [`crate::inprocess::InProcessServe`] — for
+//!   tests that run the serve loop directly with pinned config.
+//!
+//! The production GUI now spawns the `triq` CLI as a subprocess and
+//! communicates over stdin/stdout JSONL (`gui/src-tauri/src/cli_subprocess.rs`).
 //!
 //! Concurrency rules:
 //!

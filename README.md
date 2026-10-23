@@ -49,8 +49,8 @@ Judge artifacts are **not** part of this repository. Artifacts are purchased and
 - `gui/` — Tauri app (React frontend in `gui/src`, Rust bridge in `gui/src-tauri`)
 - `lib/` — Rust workspace crates:
   - `libtriqui-core` — domain: SQLite store, cascade ranking, CV import, scoring
-  - `libtriqui-cli` — headless engine + serve loop (`InProcessServe`)
-  - `libtriqui-client` — gui↔engine wire contract
+  - `libtriqui-cli` — headless CLI (`triq`): serve loop over stdio JSONL, plus tools
+  - `libtriqui-client` — gui↔engine wire contract (JSONL protocol, DTOs, client)
   - `libtriqui-license` — judge entitlement (Ed25519-verified license files)
   - `libmlxembed` / `libonnxwrapperrs` / `libtokenizer` — on-device inference
   - `libmodelcaller` / `libmodelcallerclient` / `libmodeldownloader` /

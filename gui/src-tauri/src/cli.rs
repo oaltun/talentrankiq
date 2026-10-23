@@ -1,11 +1,8 @@
-//! The gui's bridge to the TalentRankIQ backend (thin gui pattern,
-//! `gui/design/app1/thin-gui.md`). The `triqui-cli serve` loop runs **in-process**
-//! on a dedicated thread (`libtriqui_cli::InProcessServe`, in-memory duplex
-//! transport) — one binary, no child process at all: the engine runs
-//! modelcaller as a library, and the ORT wrapper (`onnxwrapperrs`) runs
-//! in-process on its own thread. All command shells in `commands/` route
-//! through [`rpc`] / [`rpc_blocking`]; serve events are forwarded as Tauri
-//! events with the same names/payloads, so the frontend is unchanged.
+//! The gui's bridge to the TalentRankIQ backend (thin gui pattern).
+//!
+//! The GUI spawns the `triq` CLI as a subprocess and communicates over
+//! JSONL via stdin/stdout. All domain logic, the engine, DB, model
+//! management, and CV watching live in the CLI process.
 
 use std::path::Path;
 use std::sync::Mutex;
@@ -15,13 +12,13 @@ use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager};
 
 use include_dir::include_dir;
-
 use libtriqui_client::client::{ClientError, TriqiClient};
 use libtriqui_client::types::{DomainError, RecoveryError};
-use libtriqui_cli::InProcessServe;
 
-/// Managed state: the (lazily started) in-process serve connection.
-pub struct Bridge(Mutex<Option<InProcessServe>>);
+use crate::cli_subprocess::SubprocessBridge;
+
+/// Managed state: the (lazily started) subprocess bridge.
+pub struct Bridge(Mutex<Option<SubprocessBridge>>);
 
 impl Bridge {
     pub fn new() -> Self {
@@ -29,17 +26,14 @@ impl Bridge {
     }
 }
 
-/// Start the in-process serve loop, install the event forwarder, and stash
-/// the connection in managed state. `app_dir` is the Tauri app-data dir (the
-/// serve loop keeps its DB/prefs/recovery there); `app_version` rides along
-/// so exported job bundle metadata keeps describing the gui.
+/// Start the subprocess bridge, install the event forwarder, and stash
+/// the connection in managed state. `app_dir` is the Tauri app-data dir;
+/// `app_version` rides along so exported job bundle metadata keeps describing the gui.
 pub fn spawn_bridge(app: &AppHandle, app_dir: &Path, app_version: &str) -> Result<(), String> {
-    let serve = InProcessServe::start(app_dir.to_path_buf(), app_version.to_string())
-        .map_err(|e| format!("failed to start in-process serve: {e}"))?;
+    let bridge = SubprocessBridge::spawn(app, app_dir, app_version)?;
 
-    // Forward serve events to the frontend under the same event names the gui
-    // has always emitted (job-import-progress, runtime-status, ...).
-    if let Some(rx) = serve.client().take_event_receiver() {
+    // Forward serve events to the frontend under the same event names.
+    if let Some(rx) = bridge.client().take_event_receiver() {
         let forward = app.clone();
         std::thread::Builder::new()
             .name("serve-event-forwarder".into())
@@ -52,32 +46,28 @@ pub fn spawn_bridge(app: &AppHandle, app_dir: &Path, app_version: &str) -> Resul
             .map_err(|e| format!("failed to spawn event forwarder: {e}"))?;
     }
 
-    let bridge = app.state::<Bridge>();
-    *bridge.0.lock().expect("bridge lock poisoned") = Some(serve);
-    log::info!(
-        "in-process serve loop started (app dir {})",
-        app_dir.display()
-    );
+    let state = app.state::<Bridge>();
+    *state.0.lock().expect("bridge lock poisoned") = Some(bridge);
+    log::info!("subprocess bridge started (app dir {})", app_dir.display());
     Ok(())
 }
 
-/// The live client, starting the serve loop on first use if the setup-time
-/// start failed or was never attempted. One retry when closed: if the loop
-/// died mid-session (a bug), the next command restarts it transparently.
+/// The live client, starting the subprocess on first use if the setup-time
+/// start failed or was never attempted. One retry when closed: if the subprocess
+/// died mid-session, the next command restarts it transparently.
 fn get_or_spawn(app: &AppHandle) -> Result<TriqiClient, ClientError> {
     let live = {
         let bridge = app.state::<Bridge>();
         let guard = bridge.0.lock().expect("bridge lock poisoned");
         guard
             .as_ref()
-            .filter(|s| !s.client().is_closed())
+            .filter(|s| s.is_alive() && !s.client().is_closed())
             .map(|s| s.client())
     };
     if let Some(client) = live {
         return Ok(client);
     }
-    // (Re)start. Kept outside the lock: spawn installs the forwarder, which
-    // touches the app handle but not the Bridge state.
+    // (Re)start. Kept outside the lock: spawn installs the forwarder.
     let app_dir = app
         .path()
         .app_data_dir()
@@ -105,8 +95,7 @@ pub fn rpc(
 }
 
 /// [`rpc`] for long-running commands invoked from `async fn` shells: runs on
-/// the blocking thread pool, mirroring the pre-migration `spawn_blocking`
-/// pattern.
+/// the blocking thread pool.
 pub async fn rpc_blocking(
     app: AppHandle,
     cmd: &'static str,
@@ -202,9 +191,8 @@ pub fn extract_benchmark_cvs(app_dir: &Path) {
     }
 }
 
-/// Shut the backend down (app exit): signals EOF to the serve loop and waits
-/// (bounded) for its teardown — engine shutdown ends the in-process ORT
-/// wrapper thread, so this must run before the process exits.
+/// Shut the backend down (app exit): signals EOF to the subprocess and waits
+/// (bounded) for its teardown.
 pub fn shutdown_bridge(app: &AppHandle) {
     let bridge = app.state::<Bridge>();
     let serve = bridge.0.lock().expect("bridge lock poisoned").take();

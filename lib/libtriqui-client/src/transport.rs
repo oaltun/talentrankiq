@@ -10,7 +10,7 @@
 //! Semantics mirror the stdio pipes the design relies on (`gui/design/app1/thin-gui.md`):
 //! - writes never block (the buffer is unbounded) — the same invariant as the
 //!   dedicated reader/writer tasks, which always drain;
-//! - dropping a `DuplexWriter` is EOF for the peer's reader: reads return
+//! - dropping a `DuplexWriter` is EOF for the peer reader: reads return
 //!   `Ok(0)` once the buffer is drained, exactly like a closed pipe.
 
 use std::collections::VecDeque;

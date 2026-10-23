@@ -6,6 +6,10 @@
 //! and teardown semantics are byte-for-byte the stdio child's: dropping the
 //! client's write end is EOF for the loop, which shuts the engine down —
 //! exactly what "the gui closes the child's stdin" used to do.
+//!
+//! This is used by **tests** (e.g. gui/src-tauri/tests/e2e.rs) to run the
+//! serve loop in-process with pinned config. The production GUI now uses
+//! the subprocess bridge (`gui/src-tauri/src/cli_subprocess.rs`).
 
 use std::path::PathBuf;
 use std::sync::mpsc;

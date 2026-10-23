@@ -1,16 +1,13 @@
-//! Tauri application library entry point (thin gui pattern, `gui/design/app1/thin-gui.md`).
+//! Tauri application library entry point (thin gui pattern).
 //!
-//! The gui's Rust layer owns no domain logic and spawns **no children**: the
-//! `triqui-cli serve` loop runs in-process (over a `libtriqui_client`
-//! duplex), and every command routes through the [`cli`] bridge. The DB,
-//! embedding engine, model management, and CV watching all live behind the
-//! bridge; serve events are forwarded to the frontend with the same
-//! names/payloads as before, and the `commands` modules keep their
-//! pre-migration signatures so the generated TypeScript bindings (and thus
-//! the frontend) are unchanged.
+//! The gui's Rust layer owns no domain logic and spawns the `triq` CLI
+//! as a subprocess. All domain logic, the engine, DB, model management,
+//! and CV watching live in the CLI process. The GUI communicates via
+//! JSONL over stdin/stdout.
 
 mod bindings;
 mod cli;
+mod cli_subprocess;
 mod commands;
 mod utils;
 
@@ -31,7 +28,7 @@ pub fn run() {
     // ONNX/CPU runtime with slow caps (1 intra thread, batch 4) to simulate a
     // weak machine. Process-global, read once when the engine starts.
     if std::env::args().any(|a| a == "--cpu-only") {
-        libtriqui_cli::set_cpu_only_engine();
+        std::env::set_var("TRIQI_CPU_ONLY", "1");
         log::info!("--cpu-only: forcing ONNX/CPU arm with minimal caps");
     }
 
@@ -118,61 +115,61 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
-.plugin(tauri_plugin_os::init())
-    .setup(|app| {
-        // Install global panic hook early to catch panics in any thread
-        let orig_hook = panic::take_hook();
-        panic::set_hook(Box::new(move |info| {
-            let msg = if let Some(s) = info.payload().downcast_ref::<&str>() {
-                format!("APP PANIC: {}", s)
-            } else if let Some(s) = info.payload().downcast_ref::<String>() {
-                format!("APP PANIC: {}", s)
-            } else {
-                "APP PANIC: unknown payload".to_string()
-            };
-            let loc = info.location().map(|l| format!(" at {}:{}:{}", l.file(), l.line(), l.column())).unwrap_or_default();
-            let full_msg = format!("{}", msg);
-            eprintln!("{}", full_msg);
-            eprintln!("  Location:{}", loc);
-            eprintln!("  Thread: {:?}", std::thread::current().id());
-            
-            // Write to crash log
-            let log_path = std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".to_string());
-            let log_file = std::path::Path::new(&log_path).join("talentrankiq_app_crash.log");
-            if let Ok(mut file) = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&log_file) {
-                use std::io::Write;
-                let timestamp = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0);
-                let _ = writeln!(file, "[{}] {}", timestamp, full_msg);
-                let _ = writeln!(file, "  Location:{}", loc);
-                let _ = writeln!(file, "  Thread: {:?}", std::thread::current().id());
-            }
-            eprintln!("Crash log written to: {:?}", log_file);
-            
-            orig_hook(info);
-        }));
+        .plugin(tauri_plugin_os::init())
+        .setup(|app| {
+            // Install global panic hook early to catch panics in any thread
+            let orig_hook = panic::take_hook();
+            panic::set_hook(Box::new(move |info| {
+                let msg = if let Some(s) = info.payload().downcast_ref::<&str>() {
+                    format!("APP PANIC: {}", s)
+                } else if let Some(s) = info.payload().downcast_ref::<String>() {
+                    format!("APP PANIC: {}", s)
+                } else {
+                    "APP PANIC: unknown payload".to_string()
+                };
+                let loc = info.location().map(|l| format!(" at {}:{}:{}", l.file(), l.line(), l.column())).unwrap_or_default();
+                let full_msg = format!("{}", msg);
+                eprintln!("{}", full_msg);
+                eprintln!("  Location:{}", loc);
+                eprintln!("  Thread: {:?}", std::thread::current().id());
+                
+                // Write to crash log
+                let log_path = std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".to_string());
+                let log_file = std::path::Path::new(&log_path).join("talentrankiq_app_crash.log");
+                if let Ok(mut file) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&log_file) {
+                    use std::io::Write;
+                    let timestamp = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
+                    let _ = writeln!(file, "[{}] {}", timestamp, full_msg);
+                    let _ = writeln!(file, "  Location:{}", loc);
+                    let _ = writeln!(file, "  Thread: {:?}", std::thread::current().id());
+                }
+                eprintln!("Crash log written to: {:?}", log_file);
+                
+                orig_hook(info);
+            }));
 
-        log::info!("Application starting up");
-            log::debug!(
-                "App handle initialized for package: {}",
-                app.package_info().name
-            );
+            log::info!("Application starting up");
+                log::debug!(
+                    "App handle initialized for package: {}",
+                    app.package_info().name
+                );
 
-            // Managed bridge state: the (single) in-process serve loop.
+            // Managed bridge state: the (single) subprocess bridge.
             app.manage(cli::Bridge::new());
 
-            // Config is loaded from bundled triq.yaml (via TRIQI_MODELCALLER_CONFIG).
-            // For development, an optional TRIQI_MODELCALLER_CONFIG env var can point
+            // Config is loaded from bundled triq.yaml (via TRIQ_CONFIG).
+            // For development, an optional TRIQ_CONFIG env var can point
             // to a custom config file.
             if let Ok(resource_dir) = app.path().resource_dir() {
                 let config_path = resource_dir.join("triq.yaml");
                 if config_path.exists() {
-                    std::env::set_var("TRIQI_MODELCALLER_CONFIG", config_path.to_string_lossy().to_string());
+                    std::env::set_var("TRIQ_CONFIG", config_path.to_string_lossy().to_string());
                     log::info!("Using bundled config: {}", config_path.display());
                 }
             }
@@ -186,7 +183,7 @@ pub fn run() {
                 std::env::set_var("TRIQI_MODEL_DIR", model_dir.to_string_lossy().to_string());
             }
 
-            // Spawn the serve loop now so its CV-dir watchers and the engine
+            // Spawn the subprocess bridge now so its CV-dir watchers and the engine
             // status events are live before the frontend asks for anything.
             // The engine itself is NOT started here — the frontend calls
             // `start_runtime` once React has loaded, so launch isn't blocked
@@ -204,7 +201,7 @@ pub fn run() {
                 &app.package_info().version.to_string(),
             ) {
                 // Non-fatal: the bridge retries on the first command.
-                log::error!("Failed to start in-process serve: {e}");
+                log::error!("Failed to start subprocess bridge: {e}");
             }
 
             // Set up global shortcut plugin (without any shortcuts - we register them separately)
@@ -315,9 +312,8 @@ pub fn run() {
                     }
                 }
 
-                // Shut the in-process serve loop down (signals EOF; the loop
-                // then tears the engine — and the ORT wrapper thread — down
-                // itself).
+                // Shut the subprocess bridge down (signals EOF; the CLI
+                // then tears the engine down itself).
                 cli::shutdown_bridge(app_handle);
 
                 log::info!("Cleanup complete");

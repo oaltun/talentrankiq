@@ -1,20 +1,12 @@
 //! `triqui-cli` library — headless access to the TalentRankIQ ranking
-//! pipeline. There is no `triqui-cli` binary: every host runs serve
-//! in-process via [`inprocess::InProcessServe`] (one binary, no child; the
-//! gui's production path, `gui/design/app1/thin-gui.md`).
+//! pipeline. The `triqui-cli serve` subcommand runs the serve loop over
+//! stdio (tests, humans, scripts). The GUI now runs the CLI as a subprocess
+//! instead of in-process.
 //!
-//! Library faces:
-//! - classic operations (`status`/`rank`/`prewarm`/`like` via [`run`]/[`Cmd`])
-//!   for tools and future thin shells, driving the same `triqui-core`
-//!   operations as the gui;
-//! - `serve` (see [`serve::run_over`]): the long-lived request loop — the
-//!   host wires it to a transport itself; [`inprocess::InProcessServe`] is
-//!   the standard wiring. The host owns presentation only; the DB,
-//!   preferences, triq.yaml, engine runtime, model management, and CV-dir
-//!   watching all live here.
+//! In-process serve ([`InProcessServe`]) is available for tests that need
+//! to run the serve loop directly with pinned config.
 
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use libtriqui_core::db;
 use libtriqui_core::embeddings;
@@ -25,15 +17,6 @@ pub mod inprocess;
 pub mod serve;
 
 pub use inprocess::InProcessServe;
-
-/// Process-global engine knobs set by the host (the gui's non-default
-/// `--cpu-only` flag): pin the arm to ONNX/CPU with minimal caps so a fast
-/// machine can simulate a slow one. Consulted when the engine session starts.
-pub fn set_cpu_only_engine() {
-    libtriqui_core::app_config::set_engine_override(Some(
-        libtriqui_core::app_config::cpu_only_engine(),
-    ));
-}
 
 /// Parsed top-level command for [`run`] (tools / future thin shells).
 pub enum Cmd {
@@ -94,13 +77,13 @@ pub fn open(db_path: &std::path::Path) -> rusqlite::Connection {
 }
 
 /// Spawn the engine and block until ready (or exit with the error).
-pub fn start_engine(model: &Option<String>, db_path: &std::path::Path) -> Arc<EngineRuntime> {
+pub fn start_engine(model: &Option<String>, db_path: &std::path::Path) -> std::sync::Arc<EngineRuntime> {
     let rt = EngineRuntime::new(
         RuntimeConfig::discover(model.clone()),
         db_path.to_path_buf(),
     );
     // Surface status changes as info logs instead of UI events.
-    rt.set_status_hook(Arc::new(|info| {
+    rt.set_status_hook(std::sync::Arc::new(|info| {
         log::info!("engine: {} (model {:?})", info.status, info.model);
     }));
     rt.start();
@@ -211,4 +194,15 @@ fn cmd_like(db_path: &std::path::Path, candidate_id: &str) {
         )
         .unwrap_or(false);
     println!("{candidate_id}: liked = {liked}");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn truncate_works() {
+        assert_eq!(truncate("short", 10), "short");
+        assert_eq!(truncate("very long string", 10), "very long …");
+    }
 }
