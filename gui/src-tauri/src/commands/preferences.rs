@@ -4,9 +4,6 @@
 //! path+layout are part of the gui↔serve app-dir contract, and the bridge is
 //! not up yet during setup.
 
-use std::path::PathBuf;
-use tauri::{AppHandle, Manager};
-
 use libtriqui_client::params::*;
 use libtriqui_client::types::{
     validate_color_theme, validate_string_input, validate_theme, AppPreferences,
@@ -14,6 +11,14 @@ use libtriqui_client::types::{
 
 use crate::cli::{rpc_blocking, rpc_blocking_typed, str_err};
 
+use tauri::AppHandle;
+
+#[cfg(desktop)]
+use std::path::PathBuf;
+#[cfg(desktop)]
+use tauri::Manager;
+
+#[cfg(desktop)]
 /// Gets the path to the preferences file (app-data contract with the serve
 /// process: `<app_data_dir>/preferences.json`).
 fn get_preferences_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -29,6 +34,7 @@ fn get_preferences_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(app_data_dir.join("preferences.json"))
 }
 
+#[cfg(desktop)]
 /// Load the saved quick pane shortcut from preferences, returning None on any failure.
 /// Used at startup before the full preferences system is available.
 pub fn load_quick_pane_shortcut(app: &AppHandle) -> Option<String> {

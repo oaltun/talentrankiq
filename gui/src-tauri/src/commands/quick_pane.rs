@@ -3,7 +3,6 @@
 //! The quick pane is a floating panel (NSPanel on macOS, standard window elsewhere)
 //! that provides quick entry functionality accessible via global shortcut.
 
-use std::sync::Mutex;
 use tauri::{AppHandle, Manager, WebviewUrl};
 
 use libtriqui_client::types::DEFAULT_QUICK_PANE_SHORTCUT;
@@ -19,6 +18,10 @@ const QUICK_PANE_LABEL: &str = "quick-pane";
 const QUICK_PANE_WIDTH: f64 = 500.0;
 const QUICK_PANE_HEIGHT: f64 = 72.0;
 
+#[cfg(desktop)]
+use std::sync::Mutex;
+
+#[cfg(desktop)]
 /// Tracks the currently registered quick pane shortcut for selective unregistration.
 /// This allows us to unregister only our shortcut without affecting other shortcuts.
 static CURRENT_QUICK_PANE_SHORTCUT: Mutex<Option<String>> = Mutex::new(None);
