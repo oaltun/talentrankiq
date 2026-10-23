@@ -77,6 +77,8 @@ models:
     source: hf:onnx-community/harrier-oss-v1-0.6b-ONNX
     artifacts:
       - backend: ort
+        quantization: "q4"
+        source: hf:onnx-community/harrier-oss-v1-0.6b-ONNX
         url: https://huggingface.co/onnx-community/harrier-oss-v1-0.6b-ONNX/resolve/main/onnx/model_q4.onnx
         sha256: null
         extra_files:
@@ -92,7 +94,9 @@ models:
     source: hf:majentik/harrier-oss-v1-0.6b-MLX-4bit
     artifacts:
       - backend: mlx
-        url: ""
+        quantization: "4bit"
+        source: hf:majentik/harrier-oss-v1-0.6b-MLX-4bit
+        url: https://huggingface.co/majentik/harrier-oss-v1-0.6b-MLX-4bit
         sha256: null
         extra_files:
           - tokenizer.json
@@ -107,6 +111,8 @@ models:
     source: hf:onnx-community/harrier-oss-v1-270m-ONNX
     artifacts:
       - backend: ort
+        quantization: "q4f16"
+        source: hf:onnx-community/harrier-oss-v1-270m-ONNX
         url: https://huggingface.co/onnx-community/harrier-oss-v1-270m-ONNX/resolve/main/onnx/model_q4f16.onnx
         sha256: null
         extra_files:
@@ -122,7 +128,9 @@ models:
     source: hf:majentik/harrier-oss-v1-270m-MLX-4bit
     artifacts:
       - backend: mlx
-        url: ""
+        quantization: "4bit"
+        source: hf:majentik/harrier-oss-v1-270m-MLX-4bit
+        url: https://huggingface.co/majentik/harrier-oss-v1-270m-MLX-4bit
         sha256: null
         extra_files:
           - tokenizer.json
@@ -137,6 +145,8 @@ models:
     source: hf:onnx-community/Qwen3-4B-Instruct-2507-ONNX
     artifacts:
       - backend: ort
+        quantization: "q4"
+        source: hf:onnx-community/Qwen3-4B-Instruct-2507-ONNX
         url: https://huggingface.co/onnx-community/Qwen3-4B-Instruct-2507-ONNX/resolve/main/onnx/model_q4.onnx
         sha256: null
         extra_files:
@@ -151,6 +161,8 @@ models:
     source: hf:onnx-community/bge-reranker-v2-m3-ONNX
     artifacts:
       - backend: ort
+        quantization: "quantized"
+        source: hf:onnx-community/bge-reranker-v2-m3-ONNX
         url: https://huggingface.co/onnx-community/bge-reranker-v2-m3-ONNX/resolve/main/onnx/model_quantized.onnx
         sha256: null
         extra_files:
@@ -165,6 +177,8 @@ models:
     source: hf:jinaai/jina-reranker-v1-tiny-en
     artifacts:
       - backend: ort
+        quantization: "none"
+        source: hf:jinaai/jina-reranker-v1-tiny-en
         url: https://huggingface.co/jinaai/jina-reranker-v1-tiny-en/resolve/main/onnx/model.onnx
         sha256: null
         extra_files:
@@ -179,6 +193,8 @@ models:
     source: hf:ibm-granite/granite-embedding-311m-multilingual-r2
     artifacts:
       - backend: ort
+        quantization: "none"
+        source: hf:ibm-granite/granite-embedding-311m-multilingual-r2
         url: https://huggingface.co/ibm-granite/granite-embedding-311m-multilingual-r2/resolve/main/onnx/model.onnx
         sha256: null
         extra_files:
@@ -193,6 +209,8 @@ models:
     source: hf:lightonai/mLateOn
     artifacts:
       - backend: ort
+        quantization: "none"
+        source: hf:lightonai/mLateOn
         url: https://huggingface.co/lightonai/mLateOn/resolve/main/model.onnx
         sha256: null
         extra_files:
@@ -209,6 +227,8 @@ models:
     source: hf:intfloat/multilingual-e5-small
     artifacts:
       - backend: ort
+        quantization: "none"
+        source: hf:intfloat/multilingual-e5-small
         url: https://huggingface.co/intfloat/multilingual-e5-small/resolve/main/onnx/model.onnx
         sha256: null
         extra_files:
@@ -223,6 +243,8 @@ models:
     source: hf:sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
     artifacts:
       - backend: ort
+        quantization: "none"
+        source: hf:sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
         url: https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/onnx/model.onnx
         sha256: null
         extra_files:
@@ -237,6 +259,8 @@ models:
     source: hf:Snowflake/snowflake-arctic-embed-xs
     artifacts:
       - backend: ort
+        quantization: "int8"
+        source: hf:Snowflake/snowflake-arctic-embed-xs
         url: https://huggingface.co/Snowflake/snowflake-arctic-embed-xs/resolve/main/onnx/model_int8.onnx
         sha256: null
         extra_files:
@@ -251,6 +275,8 @@ models:
     source: hf:Snowflake/snowflake-arctic-embed-s
     artifacts:
       - backend: ort
+        quantization: "none"
+        source: hf:Snowflake/snowflake-arctic-embed-s
         url: https://huggingface.co/Snowflake/snowflake-arctic-embed-s/resolve/main/onnx/model.onnx
         sha256: null
         extra_files:
@@ -265,6 +291,8 @@ models:
     source: hf:Snowflake/snowflake-arctic-embed-m-v2.0
     artifacts:
       - backend: ort
+        quantization: "none"
+        source: hf:Snowflake/snowflake-arctic-embed-m-v2.0
         url: https://huggingface.co/Snowflake/snowflake-arctic-embed-m-v2.0/resolve/main/onnx/model.onnx
         sha256: null
         extra_files:
@@ -279,6 +307,8 @@ models:
     source: hf:AmarettoLabs/amaretto-embed-148m-ONNX
     artifacts:
       - backend: ort
+        quantization: "none"
+        source: hf:AmarettoLabs/amaretto-embed-148m-ONNX
         url: https://huggingface.co/AmarettoLabs/amaretto-embed-148m-ONNX/resolve/main/model.onnx
         sha256: null
         extra_files:
@@ -293,6 +323,8 @@ models:
     source: hf:intfloat/multilingual-e5-base
     artifacts:
       - backend: ort
+        quantization: "none"
+        source: hf:intfloat/multilingual-e5-base
         url: https://huggingface.co/intfloat/multilingual-e5-base/resolve/main/onnx/model.onnx
         sha256: null
         extra_files:
@@ -307,6 +339,8 @@ models:
     source: hf:thoratsr7/embeddinggemma-300m-ONNX
     artifacts:
       - backend: ort
+        quantization: "none"
+        source: hf:thoratsr7/embeddinggemma-300m-ONNX
         url: https://huggingface.co/thoratsr7/embeddinggemma-300m-ONNX/resolve/main/onnx/model.onnx
         sha256: null
         extra_files:
@@ -322,6 +356,8 @@ models:
     source: hf:sentence-transformers/static-similarity-mrl-multilingual-v1
     artifacts:
       - backend: ort
+        quantization: "int8"
+        source: hf:sentence-transformers/static-similarity-mrl-multilingual-v1
         url: https://huggingface.co/sentence-transformers/static-similarity-mrl-multilingual-v1/resolve/main/onnx/model_int8.onnx
         sha256: null
         extra_files:
