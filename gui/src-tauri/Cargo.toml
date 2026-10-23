@@ -47,10 +47,6 @@ specta = { version = "=2.0.0-rc.22", features = ["derive", "serde_json"] }
 tauri-specta = { version = "=2.0.0-rc.21", features = ["typescript"] }
 specta-typescript = "=0.0.9"
 
-# The gui's domain links: contract lib for the protocol (envelope, params,
-# DTOs, client) — thin gui pattern.
-libtriqui-client = { path = "../../lib/libtriqui-client" }
-libtriqui-license = { path = "../../lib/libtriqui-license" }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-single-instance = "2"
@@ -72,4 +68,3 @@ tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.
 # shipped binary.
 rusqlite = { version = "0.32", features = ["bundled"] }
 # the e2e workflows read the serve config the way the app does
-libconfigreader = { path = "../../lib/libconfigreader" }
