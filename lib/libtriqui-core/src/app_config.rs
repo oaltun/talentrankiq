@@ -65,10 +65,23 @@ pub fn ikapp_config_path() -> Option<PathBuf> {
     None
 }
 
-/// Load the config from the embedded default YAML (replacing triq.yaml/ikapp.yaml).
+/// Load the config from the config path override or `TRIQI_MODELCALLER_CONFIG`
+/// env var, falling back to the embedded default YAML (`triq.yaml` in the binary).
 /// User preference overrides (from `AppPreferences`) are applied if set.
 pub fn load_ikapp() -> Config {
-    let cfg = embedded_default();
+    let cfg = match ikapp_config_path() {
+        Some(path) => {
+            log::debug!("load_ikapp: loading from {}", path.display());
+            match libconfigreader::load(&path, &libconfigreader::CliOverrides::new()) {
+                Ok(c) => c,
+                Err(e) => {
+                    log::warn!("load_ikapp: failed to load {}: {e}; using embedded default", path.display());
+                    embedded_default()
+                }
+            }
+        }
+        None => embedded_default(),
+    };
     // Apply user overrides if set
     if let Some(overrides) = user_overrides() {
         if !overrides.is_default() {

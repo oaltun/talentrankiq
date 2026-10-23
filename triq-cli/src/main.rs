@@ -22,8 +22,19 @@ fn main() {
     let app_dir = resolve_app_dir();
 
     // Load config from ikapp.yaml (same as GUI)
+    let config_path = std::env::var("TRIQ_CONFIG")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::env::current_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .join("ikapp.yaml")
+        });
     let config = load_config();
     CONFIG.set(config).ok();
+
+    // Publish the config path so the serve loop and its worker threads resolve
+    // paths (model_dir, cascade config) from the same config the CLI loaded.
+    libtriqui_core::app_config::set_config_path_override(Some(config_path));
 
     let app_version = env!("CARGO_PKG_VERSION").to_string();
 
