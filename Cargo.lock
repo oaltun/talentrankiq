@@ -7409,7 +7409,6 @@ version = "0.1.0"
 dependencies = [
  "include_dir",
  "libconfigreader",
- "libtriqui-cli",
  "libtriqui-client",
  "libtriqui-license",
  "log",

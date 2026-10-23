@@ -73,5 +73,3 @@ tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.
 rusqlite = { version = "0.32", features = ["bundled"] }
 # the e2e workflows read the serve config the way the app does
 libconfigreader = { path = "../../lib/libconfigreader" }
-# e2e tests use InProcessServe to run the serve loop in-process with pinned config
-libtriqui-cli = { path = "../../lib/libtriqui-cli" }
