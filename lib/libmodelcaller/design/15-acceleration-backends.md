@@ -3,7 +3,7 @@
 ## depends on
 
 - `01-protocol.md` (the JSONL command contract — unchanged by this design)
-- `08-config.md` (`ikapp.yaml` `engine:` section)
+- `08-config.md` (`triq.yaml` `engine:` section)
 - `../onnxwrapperrs/design/01-wrapper.md` (the in-process wrapper: one
   dedicated thread, pipe pair, ORT sessions)
 - `../../../lib/libsyscap/design/design.md` (the live budget: capacity,
@@ -800,7 +800,7 @@ in order of how much they actually matter:
 - Not replacing ORT as the default; CPU EP stays the floor every arch can
   fall back to, and bench comparability depends on it.
 - Not a general plugin system: the ladder is a fixed, ordered list per
-  arch in `ikapp.yaml`, not user-supplied provider strings.
+  arch in `triq.yaml`, not user-supplied provider strings.
 - Risks: quantization drift between runtimes (bench-visible, hence §15.4
   metadata); shape recompile storms under a derived batch (hence §15.6);
   silent CPU fallback (hence the placement-log gate); a vendored C++

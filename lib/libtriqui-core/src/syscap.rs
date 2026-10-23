@@ -2,7 +2,7 @@
 //!
 //! The progressive-ranking cascade is the one long-running consumer that must
 //! adapt to a busy machine: its waves shrink under load and pause entirely
-//! when the verdict is `hold`. The `ikapp.yaml` `cascade.k1`/`k2` (and
+//! when the verdict is `hold`. The `triq.yaml` `cascade.k1`/`k2` (and
 //! `engine.embed_batch`) stay the ceiling — the budget can only lower them.
 //! Pull-based: the caller samples (`budget_now`) at every wave, so waves
 //! scale down AND back up as the machine's load changes; no watcher thread.

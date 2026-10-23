@@ -304,7 +304,7 @@ function EmbeddingPane() {
 
       {embedders.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No embedders configured in ikapp.yaml.
+          No embedders configured in triq.yaml.
         </p>
       ) : (
         embedders.map(e => {

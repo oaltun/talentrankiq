@@ -107,7 +107,7 @@ pub fn rescore_conn(
 }
 
 /// [`rescore_conn`] with the scout's slug named explicitly instead of read from
-/// `ikapp.yaml`, so a test can name a space of its own instead of depending on
+/// `triq.yaml`, so a test can name a space of its own instead of depending on
 /// whatever this box is configured with.
 pub fn rescore_in_spaces(
     conn: &Connection,
@@ -1006,7 +1006,7 @@ mod tests {
     const SCOUT: &str = "scout-slug";
 
     /// The projection, with both spaces named — no dependency on this box's
-    /// `ikapp.yaml`.
+    /// `triq.yaml`.
     fn rescore(
         c: &rusqlite::Connection,
         job_id: &str,

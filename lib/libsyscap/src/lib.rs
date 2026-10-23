@@ -7,7 +7,7 @@
 //! 2. what is it doing RIGHT NOW — [`load::LoadSampler`] (cpu %, loadavg,
 //!    memory available/total, swap, a memory-pressure score);
 //! 3. how much of it may this process use — [`budget::budget`], a pure policy
-//!    that turns (1) + (2) + the `ikapp.yaml` knobs into a [`budget::Budget`].
+//!    that turns (1) + (2) + the `triq.yaml` knobs into a [`budget::Budget`].
 //!
 //! Invariants (see `design/design.md`):
 //! - no subprocesses, no threads of its own, no panics on probe failure, no
@@ -15,7 +15,7 @@
 //! - the budget only ever LOWERS the configured `engine:` caps (config stays
 //!   the enforcement; a busy machine must not surprise the user, an idle one
 //!   should not be wasted);
-//! - config comes from `ikapp.yaml` only (`syscap:` section via
+//! - config comes from `triq.yaml` only (`syscap:` section via
 //!   `libconfigreader`); no env-var config.
 
 pub mod budget;

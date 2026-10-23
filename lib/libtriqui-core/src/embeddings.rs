@@ -118,7 +118,7 @@ pub fn load_candidate_chunks(
 }
 
 /// How many texts to send per embeddings request. `engine.embed_batch` in
-/// `ikapp.yaml` is an optional ceiling; unset, the batch derives from the
+/// `triq.yaml` is an optional ceiling; unset, the batch derives from the
 /// libsyscap budget (thread cap — capacity when idle): each batch is one
 /// ONNX forward pass whose activation memory scales with
 /// `batch x chunk_tokens`, and smaller batches keep peak RAM flat and give

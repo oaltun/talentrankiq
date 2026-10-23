@@ -54,7 +54,7 @@ pub fn add_criterion(
     text: &str,
     weight: Option<f64>,
 ) -> Result<Value, ProtocolError> {
-    // `None` uses the criterion default from `ikapp.yaml` (`rubric_defaults:`).
+    // `None` uses the criterion default from `triq.yaml` (`rubric_defaults:`).
     let weight = weight.unwrap_or_else(|| app_config::rubric_defaults().criterion_points);
     validate(text, weight).map_err(|e| domain(&e))?;
     let id = format!("crit_{}", Uuid::new_v4());

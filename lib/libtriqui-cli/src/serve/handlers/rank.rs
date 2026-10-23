@@ -593,7 +593,7 @@ pub fn spawn_cascade(state: &Arc<ServeState>, job_id: &str) -> Result<bool, Stri
     // syscap enabled, engine caps unset (libsyscap design: absent yaml =
     // defaults).
     let (syscap, engine) = {
-        let cfg = libtriqui_core::app_config::load_ikapp();
+        let cfg = libtriqui_core::app_config::load_triq();
         (cfg.syscap, cfg.engine)
     };
 
@@ -696,7 +696,7 @@ fn state_reason(cancelled: bool, budget: &libsyscap::Budget) -> Option<String> {
 /// it, so the answer can never go stale). Missing config = default sections.
 fn sample_budget_for_state() -> (libsyscap::Budget, libsyscap::LoadSnapshot) {
     let (syscap, engine) = {
-        let cfg = libtriqui_core::app_config::load_ikapp();
+        let cfg = libtriqui_core::app_config::load_triq();
         (cfg.syscap, cfg.engine)
     };
     libtriqui_core::syscap::sample_budget(&syscap, &engine)

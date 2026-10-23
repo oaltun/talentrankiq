@@ -1,5 +1,5 @@
 //! Manually vetted embedder cards for the onboarding recommendation.
-//! Reads `ikapp.yaml` via `libtriqui_core::app_config` (repo-root discovery).
+//! Reads `triq.yaml` via `libtriqui_core::app_config` (repo-root discovery).
 
 use std::collections::HashMap;
 
@@ -71,7 +71,7 @@ fn is_downloaded(model_dir: &std::path::Path, slug: &str) -> bool {
 pub fn list_vetted_embedders(
     _state: &std::sync::Arc<ServeState>,
 ) -> Result<serde_json::Value, ProtocolError> {
-    let cfg = libtriqui_core::app_config::load_ikapp();
+    let cfg = libtriqui_core::app_config::load_triq();
 
     let ram_mb = system_ram_mb();
 

@@ -1,5 +1,5 @@
 //! ONNX embedder management for the Models activity (was gui
-//! `commands/models.rs`). The curated list comes from `ikapp.yaml`
+//! `commands/models.rs`). The curated list comes from `triq.yaml`
 //! `gui_embedders:`; downloads run in-process through the `modeldownloader`
 //! library with typed progress events (no helper binary, no stderr parsing —
 //! thin gui pattern, `gui/design/app1/thin-gui.md`); on-disk state lives in the
@@ -33,7 +33,7 @@ const CASCADE_RETIRE_WAIT: std::time::Duration = std::time::Duration::from_secs(
 
 /// List the curated ONNX embedders (`gui_embedders`) with download/default state.
 pub fn list_embedders(state: &Arc<ServeState>) -> Result<serde_json::Value, ProtocolError> {
-    let cfg = app_config::load_ikapp();
+    let cfg = app_config::load_triq();
     let model_dir = app_config::model_dir();
     let revision = app_config::revision();
     let prefs = load_app_preferences(state).embedding_model;
@@ -42,7 +42,7 @@ pub fn list_embedders(state: &Arc<ServeState>) -> Result<serde_json::Value, Prot
         cfg.models.iter().map(|m| (m.slug.as_str(), m)).collect();
 
     let mut out = Vec::new();
-    // The active model is the saved preference, else the `ikapp.yaml` default.
+    // The active model is the saved preference, else the `triq.yaml` default.
     let active_slug = prefs.as_deref().or_else(|| {
         cfg.gui_embedders
             .iter()
@@ -182,7 +182,7 @@ pub fn model_variants(
     _state: &Arc<ServeState>,
     params: &libtriqui_client::params::ModelVariantsParams,
 ) -> Result<Value, ProtocolError> {
-    let cfg = app_config::load_ikapp();
+    let cfg = app_config::load_triq();
     let model_def = cfg
         .models
         .iter()
@@ -241,7 +241,7 @@ pub fn download_embedder(state: &Arc<ServeState>, slug: &str) -> Result<(), Prot
         }
     }
 
-    let cfg = app_config::load_ikapp();
+    let cfg = app_config::load_triq();
     let model_def = cfg
         .models
         .iter()
@@ -557,7 +557,7 @@ pub fn set_default_model(
 /// (model, content_hash), so switching back to a previous model re-serves the
 /// old vectors from cache without a single model call.
 pub fn set_embedding_model(state: &Arc<ServeState>, slug: &str) -> Result<(), ProtocolError> {
-    let cfg = app_config::load_ikapp();
+    let cfg = app_config::load_triq();
     if !cfg.gui_embedders.iter().any(|ge| ge.slug == slug) {
         return Err(string_err(format!("unknown embedding model '{slug}'")));
     }

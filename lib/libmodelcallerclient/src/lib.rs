@@ -246,7 +246,7 @@ impl ModelCallerClient {
     /// Run the modelcaller JSONL loop **in this process** on a dedicated
     /// thread, wired through an OS-pipe pair, and return the connected
     /// client. Requires the `inprocess` feature. `config_path` is the shared
-    /// `ikapp.yaml` (registry, model_dir, engine caps); the loop tears itself
+    /// `triq.yaml` (registry, model_dir, engine caps); the loop tears itself
     /// down on `shutdown` (which also ends the in-process ORT wrapper).
     #[cfg(feature = "inprocess")]
     pub fn spawn_inprocess(

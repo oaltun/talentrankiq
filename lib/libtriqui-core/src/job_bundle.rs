@@ -516,7 +516,7 @@ pub fn extract_bundle_candidates(path: &Path, dest_dir: &Path) -> Result<(i64, i
 }
 
 /// Insert the job + criteria rows for an imported bundle. Weights absent from
-/// the bundle fall back to the `ikapp.yaml` rubric defaults; feedback weights
+/// the bundle fall back to the `triq.yaml` rubric defaults; feedback weights
 /// are never imported (personal). `cv_dir` becomes the job's watched CV
 /// directory (the staging dir the bundle's CV files were extracted into).
 pub fn create_job_from_bundle(

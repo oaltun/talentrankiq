@@ -166,9 +166,16 @@ pub fn run() {
             // Managed bridge state: the (single) in-process serve loop.
             app.manage(cli::Bridge::new());
 
-            // Config is embedded in the binary (libconfigreader::config::DEFAULT_CONFIG_YAML).
+            // Config is loaded from bundled triq.yaml (via TRIQI_MODELCALLER_CONFIG).
             // For development, an optional TRIQI_MODELCALLER_CONFIG env var can point
             // to a custom config file.
+            if let Ok(resource_dir) = app.path().resource_dir() {
+                let config_path = resource_dir.join("triq.yaml");
+                if config_path.exists() {
+                    std::env::set_var("TRIQI_MODELCALLER_CONFIG", config_path.to_string_lossy().to_string());
+                    log::info!("Using bundled config: {}", config_path.display());
+                }
+            }
 
             // Set platform-appropriate model cache directory:
             // macOS: ~/Library/Caches/com.talentrankiq.triqui/models

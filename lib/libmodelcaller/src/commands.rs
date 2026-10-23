@@ -19,7 +19,7 @@ pub struct State {
     revision: String,
     exec_provider: String,
     precision: String,
-    /// ONNX session thread caps from `ikapp.yaml` `engine:` — optional
+    /// ONNX session thread caps from `triq.yaml` `engine:` — optional
     /// ceilings; unset fields resolve from the libsyscap budget.
     engine: libconfigreader::EngineSection,
     /// The `syscap:` section the host runs with (defaults when the host has

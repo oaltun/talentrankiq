@@ -24,7 +24,7 @@ use std::sync::{Arc, Mutex};
 /// prefers), with `extra_files` (projection weights etc.) fetched alongside.
 #[derive(Debug, Clone)]
 pub struct UrlDownload {
-    /// Full HF blob url to a single ONNX file (e.g. from `ikapp.yaml`
+    /// Full HF blob url to a single ONNX file (e.g. from `triq.yaml`
     /// `models[].onnx_url`).
     pub url: String,
     /// Directory slug (the model id) used under `model_dir`.

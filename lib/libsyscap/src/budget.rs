@@ -1,10 +1,10 @@
 //! The budget policy: given what the host has ([`Inventory`]), what it is
-//! doing ([`LoadSnapshot`]), the `ikapp.yaml` `syscap:` knobs and the
+//! doing ([`LoadSnapshot`]), the `triq.yaml` `syscap:` knobs and the
 //! configured `engine:` caps, decide how much of the machine this process may
 //! use RIGHT NOW.
 //!
 //! Pure and table-tested — no I/O, no threads, no state. The output is always
-//! ≤ the configured caps: this library recommends; `ikapp.yaml` enforces.
+//! ≤ the configured caps: this library recommends; `triq.yaml` enforces.
 
 use serde::{Deserialize, Serialize};
 

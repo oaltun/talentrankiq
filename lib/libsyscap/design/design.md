@@ -7,7 +7,7 @@ libbuild auto-discovers it — no registration needed).
 
 ## 1. Problem
 
-- `ikapp.yaml` `engine:` caps (`intra_threads` / `inter_threads` / `embed_batch`)
+- `triq.yaml` `engine:` caps (`intra_threads` / `inter_threads` / `embed_batch`)
   are static and deliberately conservative (this box: 4 cores / 16 GB, datamaker +
   kilo running in background). They cannot see *when* the machine is actually idle
   (wasted capability) or *when* the user is active (annoyance risk).
@@ -36,10 +36,10 @@ libbuild auto-discovers it — no registration needed).
   a memory-pressure score.
 - **Budget policy as pure functions**: `Inventory + LoadSnapshot + SyscapConfig
   + configured engine caps → Budget`. Fully table-testable, no I/O.
-- Config comes from `ikapp.yaml` only (new optional `syscap:` section via
+- Config comes from `triq.yaml` only (new optional `syscap:` section via
   libconfigreader). No env-var config (NOAI.md).
 - **Clamp invariant**: recommendations are always ≤ the caller's configured caps.
-  The lib *recommends*; ikapp.yaml stays the enforcement (AGENTS.md: don't raise
+  The lib *recommends*; triq.yaml stays the enforcement (AGENTS.md: don't raise
   engine caps).
 - No spawned processes, no panics on probe failure, no threads of its own (v1).
 
@@ -103,7 +103,7 @@ pub struct Budget {
     pub verdict:       Verdict,
 }
 pub fn budget(inv: &Inventory, load: &LoadSnapshot, cfg: &SyscapConfig,
-              caps: &EngineCaps /* caller's ikapp.yaml engine values */) -> Budget;
+              caps: &EngineCaps /* caller's triq.yaml engine values */) -> Budget;
 pub fn effective_intra_threads(caps: &EngineCaps, b: &Budget) -> usize; // cap or capacity, min
 pub fn effective_inter_threads(caps: &EngineCaps, b: &Budget) -> usize; // cap or 1, min
 ```
@@ -133,7 +133,7 @@ deviation 10:
 - Verdicts step multiplicatively (½ / ×2) so the budget is stable; hysteresis is
   a phase-2 watcher concern — v1 consumers sample at natural job boundaries.
 
-## 5. Config (`ikapp.yaml` + libconfigreader)
+## 5. Config (`triq.yaml` + libconfigreader)
 
 New optional `SyscapSection` in libconfigreader (Option fields, defaults as
 consts next to it — same pattern as `DEFAULT_SCOUT_CHUNK_SIZE`). Absent section =
@@ -209,7 +209,7 @@ that loses nothing: Metal covers GPU enumeration.
 1. No subprocesses, no panics on probe failure (Option fields + conservative
    defaults), no writes to config or disk (read-only probing), no env-var config.
 2. Budget output ≤ caller-configured caps, always. The lib never raises
-   `engine:` caps; enforcement stays in ikapp.yaml consumers.
+   `engine:` caps; enforcement stays in triq.yaml consumers.
 3. No threads of its own in v1 (pull-based). Phase 2 watcher is opt-in.
 4. Anything that only the gui needs goes through the libshortlistclient contract,
    never a direct domain-lib link.
@@ -225,7 +225,7 @@ that loses nothing: Metal covers GPU enumeration.
       disk free. Real-probe tests green on this box.
 - [x] **M3 — load sampler**: `LoadSampler` + rate-limit + sane-range tests.
 - [x] **M4 — budget + config**: policy fns + `SyscapSection` in libconfigreader
-      + `syscap:` docs in ikapp.yaml (commented defaults) + 11 policy table
+      + `syscap:` docs in triq.yaml (commented defaults) + 11 policy table
       tests (verdict ladder, clamp invariant, disabled mode, no-P/E machines).
 - [x] **M5a — consumers: tests-crate busy-gate**: the two expensive test
       binaries' `expensive_disabled()` helpers now also skip when
@@ -301,7 +301,7 @@ that loses nothing: Metal covers GPU enumeration.
    `engine.intra_threads: 2` then capped every runtime consumer below
    even that. Now: capacity counts E-cores at half weight
    (`P + E/2 − reserve`), `reserve_core_frac` default drops to 0.10
-   (capacity 10 here), `ikapp.yaml` engine caps are raised deliberately
+   (capacity 10 here), `triq.yaml` engine caps are raised deliberately
    (`intra_threads: 4`, `embed_batch: 8` — the low caps predate libsyscap
    and were guarding against *unbounded* ORT threads; the budget now
    provides that enforcement dynamically, halving under Polite and
@@ -310,7 +310,7 @@ that loses nothing: Metal covers GPU enumeration.
    replacement. `enabled: false` still reproduces the literal configured
    caps for A/B comparability (deviation 7).
 9. **No hardcoded machine-size defaults remain (user direction: "remove
-   any hard coded default everywhere")**: the `ikapp.yaml` engine caps are
+   any hard coded default everywhere")**: the `triq.yaml` engine caps are
    unset — `intra_threads`/`embed_batch` now DERIVE from the budget
    (`libsyscap::effective_intra_threads`/`effective_inter_threads`;
    shortlist-core `effective_embed_batch`), so Full uses the whole
@@ -361,7 +361,7 @@ that loses nothing: Metal covers GPU enumeration.
 this 4-core/16 GB box). This slice replaces the constant with the same
 budget every other consumer uses — one machine policy, no special cases.
 
-**Config** (`ikapp.yaml`, parsed in `libconfigreader::SyscapSection`):
+**Config** (`triq.yaml`, parsed in `libconfigreader::SyscapSection`):
 
 ```yaml
 syscap:
@@ -394,7 +394,7 @@ returning `(Budget, u32)` so callers can log the verdict.
 `jobs: u32` argument changes:
 
 - `ikbuild`: new optional `--config-file PATH` flag (default
-  `<repo_root>/ikapp.yaml`). If the config cannot be loaded it warns on
+  `<repo_root>/triq.yaml`). If the config cannot be loaded it warns on
   stderr and falls back to today's `2` — the build tool must stay usable
   even with a broken config. Logs `syscap: verdict=… jobs=N`.
 - `benchdriverrs`: `build_all_binaries(cfg, log)` resolves the same way

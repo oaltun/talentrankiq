@@ -33,7 +33,7 @@ impl InProcessServe {
     ///
     /// Config resolution is the usual discovery (env var, then repo root).
     /// Use [`InProcessServe::start_with_config`] to pin the serve thread to a
-    /// specific `ikapp.yaml` without process-global state.
+    /// specific `triq.yaml` without process-global state.
     pub fn start(app_dir: PathBuf, app_version: String) -> Result<Self, String> {
         Self::start_inner(app_dir, app_version, None)
     }

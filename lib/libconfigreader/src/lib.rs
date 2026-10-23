@@ -12,11 +12,11 @@ fn is_default_sha256(sha: &Option<String>) -> bool {
 
 pub mod config;
 
-/// Default `gui_idle_unload_secs` when `ikapp.yaml` does not set it: unload the
+/// Default `gui_idle_unload_secs` when `triq.yaml` does not set it: unload the
 /// model after 5 minutes without a request. `0` disables idle unloading.
 pub const DEFAULT_GUI_IDLE_UNLOAD_SECS: u64 = 300;
 
-/// Default rubric weights when `ikapp.yaml` sets no `rubric_defaults`:
+/// Default rubric weights when `triq.yaml` sets no `rubric_defaults`:
 /// job ad 50, like-feedback (this job) 10, like-feedback (all jobs) 5,
 /// each new criterion 10.
 pub const DEFAULT_RUBRIC_AD_POINTS: f64 = 50.0;
@@ -564,7 +564,7 @@ pub struct BinaryPaths {
 
 /// `judgetrainer:` section: every tunable for judge training sweeps
 /// (consumed by `judgetrainer` and `judge/judgetrainer/train-m0.nu` /
-/// `train-sweep.nu`). Paths are absolute or relative to the ikapp.yaml dir.
+/// `train-sweep.nu`). Paths are absolute or relative to the triq.yaml dir.
 /// Absent fields fall back to the `judgetrainer train` CLI defaults.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct JudgetrainerSection {

@@ -28,7 +28,7 @@ export function GeneralPane() {
   const savePreferences = useSavePreferences()
 
   // Effective CV-directory root while no custom root is saved (serve-side
-  // resolution: gui preference > ikapp.yaml > platform Documents/jobs).
+  // resolution: gui preference > triq.yaml > platform Documents/jobs).
   const { data: defaultCvDirRoot } = useQuery({
     queryKey: ['cv-dir-root'],
     queryFn: async () => {

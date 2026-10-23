@@ -22,7 +22,7 @@
 //! first pass, every candidate has a total**, and the background work only ever
 //! *upgrades its precision*.
 //!
-//! Which model it is comes from `cascade.scout_model` in `ikapp.yaml` — swapping
+//! Which model it is comes from `cascade.scout_model` in `triq.yaml` — swapping
 //! the scout is a one-line config change (the default is a Model2Vec-style static
 //! embedder chosen on measured speed, see `bench/results/scout/`).
 

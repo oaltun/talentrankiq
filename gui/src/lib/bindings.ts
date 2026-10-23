@@ -53,7 +53,7 @@ async savePreferences(preferences: AppPreferences) : Promise<Result<null, string
 /**
  * Effective root folder for new jobs' default CV directories, resolved
  * serve-side: the saved gui preference (Settings → General → CV directory)
- * when set, then `gui_cv_dir_root` from `ikapp.yaml`, then the platform
+ * when set, then `gui_cv_dir_root` from `triq.yaml`, then the platform
  * Documents dir + `jobs`. The Settings dialog shows it as the fallback while
  * no custom root is set.
  */
@@ -734,7 +734,7 @@ inference_model: string | null;
 /**
  * Root folder for new jobs' default CV directories (`<root>/job-N/cv`),
  * set from Settings → General → CV directory. If None, serve falls back
- * to `gui_cv_dir_root` from `ikapp.yaml`, then the platform Documents dir
+ * to `gui_cv_dir_root` from `triq.yaml`, then the platform Documents dir
  * + `jobs`.
  */
 cv_dir_root: string | null; 
@@ -980,7 +980,7 @@ export type GradeSpace =
  */
 "heavy"
 /**
- * One ONNX embedder from `ikapp.yaml` `gui_embedders`, enriched with on-disk state.
+ * One ONNX embedder from `triq.yaml` `gui_embedders`, enriched with on-disk state.
  */
 export type GuiEmbedder = { 
 /**

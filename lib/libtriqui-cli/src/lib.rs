@@ -10,7 +10,7 @@
 //! - `serve` (see [`serve::run_over`]): the long-lived request loop — the
 //!   host wires it to a transport itself; [`inprocess::InProcessServe`] is
 //!   the standard wiring. The host owns presentation only; the DB,
-//!   preferences, ikapp.yaml, engine runtime, model management, and CV-dir
+//!   preferences, triq.yaml, engine runtime, model management, and CV-dir
 //!   watching all live here.
 
 use std::path::PathBuf;

@@ -88,7 +88,7 @@ pub fn save_app_preferences(state: &ServeState, prefs: AppPreferences) -> Result
 }
 
 /// The effective root folder new jobs' default CV directories live under
-/// (saved preference when set, else `ikapp.yaml`, else the platform default).
+/// (saved preference when set, else `triq.yaml`, else the platform default).
 /// The Settings dialog shows it as the fallback while no custom root is set.
 pub fn get_cv_dir_root(state: &ServeState) -> Result<Value, ProtocolError> {
     ok_json(cv_root(state).to_string_lossy().to_string())

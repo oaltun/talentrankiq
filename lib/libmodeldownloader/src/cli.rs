@@ -19,7 +19,7 @@ pub enum Artifact {
     about = "Fetch model files (ONNX graphs, or MLX safetensors) into the modelcaller cache"
 )]
 pub struct Cli {
-    /// path to shared ikapp.yaml config
+    /// path to shared triq.yaml config
     #[arg(long)]
     pub config: Option<PathBuf>,
 

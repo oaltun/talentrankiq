@@ -27,7 +27,7 @@ use crate::serve::WATCH_DEBOUNCE;
 
 /// Root folder for new jobs' default CV directories (`<root>/job-N/cv`), first
 /// match wins: the saved gui preference (Settings → General → CV directory,
-/// stored in `preferences.json`), `gui_cv_dir_root` from `ikapp.yaml`, else
+/// stored in `preferences.json`), `gui_cv_dir_root` from `triq.yaml`, else
 /// the platform Documents dir + `jobs` (`~/Documents/jobs`, Windows Known
 /// Folder equivalent, XDG on Linux). Empty when not even a home dir can be
 /// found.
@@ -36,7 +36,7 @@ pub fn cv_root(state: &ServeState) -> PathBuf {
 }
 
 /// Pure resolution behind [`cv_root`]: a non-empty preference string wins,
-/// then `ikapp.yaml`'s `gui_cv_dir_root`, then the platform default.
+/// then `triq.yaml`'s `gui_cv_dir_root`, then the platform default.
 fn resolve_cv_root(pref: Option<String>) -> PathBuf {
     pref.map(|p| p.trim().to_string())
         .filter(|p| !p.is_empty())

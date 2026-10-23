@@ -35,7 +35,7 @@ pub type StatusHook = Arc<dyn Fn(&RuntimeStatusInfo) + Send + Sync>;
 
 /// Runtime config, discovered from env / `triq.yaml` (`model_dir`).
 pub struct RuntimeConfig {
-    /// Path to the config file (`triq.yaml` preferred, `ikapp.yaml` fallback).
+    /// Path to the config file (`triq.yaml` preferred, embedded default fallback).
     pub config_path: Option<std::path::PathBuf>,
     /// On-disk ONNX model cache root.
     pub model_dir: std::path::PathBuf,
@@ -49,13 +49,13 @@ pub struct RuntimeConfig {
 impl RuntimeConfig {
     /// Discover the toolchain from `triq.yaml`/env. `model` (`None` = env
     /// `SHORTLIST_EMBED_MODEL`, else the `gui_embedders` default from
-    /// `ikapp.yaml`) is resolved by the caller when it has extra sources
+    /// `triq.yaml`) is resolved by the caller when it has extra sources
     /// (the GUI layers user preferences on top).
     pub fn discover(model: Option<String>) -> Self {
         let model = model
             .or_else(|| std::env::var("SHORTLIST_EMBED_MODEL").ok())
             .unwrap_or_else(|| {
-                let cfg = app_config::load_ikapp();
+                let cfg = app_config::load_triq();
                 cfg.gui_embedders
                     .iter()
                     .find(|ge| ge.default)
@@ -63,7 +63,7 @@ impl RuntimeConfig {
                     .unwrap_or_default()
             });
         Self {
-            config_path: app_config::ikapp_config_path(),
+            config_path: app_config::triq_config_path(),
             model_dir: app_config::model_dir(),
             model,
             judge_artifacts: app_config::gui_judge_artifacts(),
@@ -468,7 +468,7 @@ impl EngineRuntime {
                     return;
                 }
             },
-            None => app_config::load_ikapp(),
+            None => app_config::load_triq(),
         };
 
         log::info!(
@@ -803,7 +803,7 @@ impl EngineRuntime {
     }
 
     /// Spawn the idle-unload monitor: a daemon thread that shuts the engine
-    /// down after `gui_idle_unload_secs` (`ikapp.yaml`, default 300) without
+    /// down after `gui_idle_unload_secs` (`triq.yaml`, default 300) without
     /// any request, freeing the model memory. `shutdown` is graceful —
     /// modelcaller closes the wrapper's request pipe, ending the wrapper
     /// thread and dropping the ORT sessions — and the engine restarts

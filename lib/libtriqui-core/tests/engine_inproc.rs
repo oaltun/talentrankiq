@@ -1,5 +1,5 @@
 //! In-process engine wiring: the exact `EngineRuntime::start` chain (registry
-//! from `ikapp.yaml` → `libmodelcaller::run_stdio_over` on a thread over an
+//! from `triq.yaml` → `libmodelcaller::run_stdio_over` on a thread over an
 //! in-memory duplex → `ModelCallerClient::over`). The ORT wrapper runs
 //! in-process as well (a dedicated wrapper thread inside modelcaller).
 //! Load hits the real ONNX model — skipped under `IK_SKIP_EXPENSIVE`
@@ -16,7 +16,7 @@ static ENGINE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn inproc_client() -> (ModelCallerClient, std::thread::JoinHandle<()>) {
     let _ = env_logger::try_init();
-    let cfg = libtriqui_core::app_config::load_ikapp();
+    let cfg = libtriqui_core::app_config::load_triq();
     let registry = Registry::from_config(&cfg);
     let args = StdioArgs {
         model_dir: Some(libtriqui_core::app_config::model_dir()),

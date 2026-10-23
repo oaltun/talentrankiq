@@ -38,7 +38,7 @@ use crate::types::DomainError;
 
 /// Budget for one cascade wave: `wave1_budget` candidates the heavy embedder
 /// embeds this wave, `pool_size` candidates the judge compares. Both come from
-/// `cascade:` in `ikapp.yaml`.
+/// `cascade:` in `triq.yaml`.
 #[derive(Clone, Copy, Debug)]
 pub struct CascadeBudget {
     pub wave1_budget: usize,

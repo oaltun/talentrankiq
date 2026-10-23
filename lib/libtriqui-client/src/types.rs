@@ -50,7 +50,7 @@ pub struct AppPreferences {
     pub inference_model: Option<String>,
     /// Root folder for new jobs' default CV directories (`<root>/job-N/cv`),
     /// set from Settings → General → CV directory. If None, serve falls back
-    /// to `gui_cv_dir_root` from `ikapp.yaml`, then the platform Documents dir
+    /// to `gui_cv_dir_root` from `triq.yaml`, then the platform Documents dir
     /// + `jobs`.
     pub cv_dir_root: Option<String>,
     /// Engine backend preference: "auto" | "ort" | "mlx".
@@ -1003,7 +1003,7 @@ pub struct ModelDownloadComplete {
     pub path: String,
 }
 
-/// One ONNX embedder from `ikapp.yaml` `gui_embedders`, enriched with on-disk state.
+/// One ONNX embedder from `triq.yaml` `gui_embedders`, enriched with on-disk state.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct GuiEmbedder {
     /// Model slug (also the cache directory name), e.g. `nomic-embed-text-v1.5`.

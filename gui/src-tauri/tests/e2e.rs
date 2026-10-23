@@ -154,7 +154,7 @@ fn import_two_txt_cvs(
 }
 
 /// Temp CV root for `tag`. `~/Documents/jobs` is the app's last-resort root when
-/// neither a saved preference nor `triq.yaml`/`ikapp.yaml` names one — and the repo
+/// neither a saved preference nor `triq.yaml`/`triq.yaml` names one — and the repo
 /// config leaves `gui_cv_dir_root` commented out. A serve started with
 /// that config would therefore mkdir a `job-N` folder in the developer's own
 /// Documents, once per `create_job`, every test run. Every serve in this file

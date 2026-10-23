@@ -99,7 +99,7 @@ each model gets its own session, spawned through the existing
 
 ## 14.5 registry / config
 
-- ikapp.yaml gains one family + one model:
+- triq.yaml gains one family + one model:
 
 ```yaml
 families:

@@ -96,7 +96,7 @@ pub async fn save_preferences(app: AppHandle, preferences: AppPreferences) -> Re
 
 /// Effective root folder for new jobs' default CV directories, resolved
 /// serve-side: the saved gui preference (Settings → General → CV directory)
-/// when set, then `gui_cv_dir_root` from `ikapp.yaml`, then the platform
+/// when set, then `gui_cv_dir_root` from `triq.yaml`, then the platform
 /// Documents dir + `jobs`. The Settings dialog shows it as the fallback while
 /// no custom root is set.
 #[tauri::command]

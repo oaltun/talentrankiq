@@ -13,7 +13,7 @@
 //! process, no `triqui-cli` binary (thin gui pattern).
 //!
 //! The host links only this crate plus the `triqui-cli` library that hosts
-//! the serve loop; the DB, ikapp.yaml, engine runtime, model management, and
+//! the serve loop; the DB, triq.yaml, engine runtime, model management, and
 //! CV watching all live behind it.
 
 pub mod client;

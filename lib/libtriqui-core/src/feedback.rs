@@ -343,7 +343,7 @@ fn persist_feedback(
 /// Turn the two feedback rows on at their configured weights the first time the
 /// user gives any signal.
 ///
-/// The weights come from `ikapp.yaml rubric_defaults`, like every other default in
+/// The weights come from `triq.yaml rubric_defaults`, like every other default in
 /// the system — they used to be hard-coded constants here, which meant a config
 /// that said `fb_job_points: 10` still got 40 on first feedback.
 fn enable_feedback_weights(conn: &Connection, job_id: &str) -> Result<(), DomainError> {

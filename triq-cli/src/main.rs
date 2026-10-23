@@ -21,13 +21,13 @@ fn main() {
     // Resolve app dir (same logic as GUI: env var > default)
     let app_dir = resolve_app_dir();
 
-    // Load config from ikapp.yaml (same as GUI)
+    // Load config from triq.yaml (same as GUI)
     let config_path = std::env::var("TRIQ_CONFIG")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
             std::env::current_dir()
                 .unwrap_or_else(|_| PathBuf::from("."))
-                .join("ikapp.yaml")
+                .join("triq.yaml")
         });
     let config = load_config();
     CONFIG.set(config).ok();
@@ -70,10 +70,10 @@ fn load_config() -> Config {
     let config_path = std::env::var("TRIQ_CONFIG")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
-            // Default to repo root / ikapp.yaml (same as libconfigreader default)
+            // Default to repo root / triq.yaml (same as libconfigreader default)
             std::env::current_dir()
                 .unwrap_or_else(|_| PathBuf::from("."))
-                .join("ikapp.yaml")
+                .join("triq.yaml")
         });
     let config = libconfigreader::load(&config_path, &libconfigreader::CliOverrides::new()).unwrap_or_else(|e| {
         log::warn!("Failed to load config from {}: {e}; using embedded defaults", config_path.display());

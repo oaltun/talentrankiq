@@ -1,17 +1,15 @@
-//! Shared discovery of the embedded default config (`triq.yaml` replaced by
-//! baked-in YAML) and the engine's paths.
+//! Shared discovery of the config file (`triq.yaml`) and the engine's paths.
 //!
-//! At startup the app builds its `Config` from the embedded
-//! `libconfigreader::config::DEFAULT_CONFIG_YAML`. User preferences (engine
-//! backend, thread caps, etc.) from `AppPreferences` are layered on top via
-//! `Config::with_user_overrides()`. Optional `ikapp.yaml`/`triq.yaml` files
-//! are still loaded for development overrides; if absent the embedded
-//! default is used.
+//! At startup the app builds its `Config` from the bundled `triq.yaml` file.
+//! User preferences (engine backend, thread caps, etc.) from `AppPreferences`
+//! are layered on top via `Config::with_user_overrides()`. Optional
+//! `triq.yaml` files are still loaded for development overrides; if absent
+//! the embedded default is used.
 //!
 //! Both the engine runtime and the model-management commands need the same
 //! paths (config, model dir), so the lookup logic lives here. Everything
 //! falls back gracefully: an explicit env var wins, then the config file
-//! (ikapp.yaml/triq.yaml for dev), then the embedded default.
+//! (triq.yaml for dev), then the embedded default.
 //!
 //! `modelcaller`, `modeldownloader`, and `onnxwrapperrs` are all in-process
 //! now — the gui runs the whole engine inside its own binary and needs no
@@ -22,7 +20,7 @@ use std::path::{Path, PathBuf};
 use libconfigreader::Config;
 
 thread_local! {
-    /// Per-thread config override (`triq.yaml`/`ikapp.yaml` path). Set on the serve thread by
+    /// Per-thread config override (`triq.yaml` path). Set on the serve thread by
     /// `InProcessServe::start_with_config` (tests, tools) so one process can
     /// host several serves, each with its own config, without process-global
     /// state like `TRIQI_MODELCALLER_CONFIG` — concurrent serves in test
@@ -50,7 +48,7 @@ pub fn config_path_override() -> Option<PathBuf> {
 /// `TRIQI_MODELCALLER_CONFIG` env var. Returns `None` if neither is set
 /// or the env var points to a missing file. Callers should fall back to
 /// the embedded default (`Config::default_from_embedded`).
-pub fn ikapp_config_path() -> Option<PathBuf> {
+pub fn triq_config_path() -> Option<PathBuf> {
     if let Some(p) = CONFIG_PATH_OVERRIDE.with(|o| o.borrow().clone()) {
         return Some(p);
     }
@@ -68,14 +66,14 @@ pub fn ikapp_config_path() -> Option<PathBuf> {
 /// Load the config from the config path override or `TRIQI_MODELCALLER_CONFIG`
 /// env var, falling back to the embedded default YAML (`triq.yaml` in the binary).
 /// User preference overrides (from `AppPreferences`) are applied if set.
-pub fn load_ikapp() -> Config {
-    let cfg = match ikapp_config_path() {
+pub fn load_triq() -> Config {
+    let cfg = match triq_config_path() {
         Some(path) => {
-            log::debug!("load_ikapp: loading from {}", path.display());
+            log::debug!("load_triq: loading from {}", path.display());
             match libconfigreader::load(&path, &libconfigreader::CliOverrides::new()) {
                 Ok(c) => c,
                 Err(e) => {
-                    log::warn!("load_ikapp: failed to load {}: {e}; using embedded default", path.display());
+                    log::warn!("load_triq: failed to load {}: {e}; using embedded default", path.display());
                     embedded_default()
                 }
             }
@@ -135,7 +133,7 @@ pub fn model_dir() -> PathBuf {
             return expand_home(&p);
         }
     }
-    let cfg = load_ikapp();
+    let cfg = load_triq();
     if !cfg.model_dir.as_os_str().is_empty() {
         return cfg.model_dir;
     }
@@ -144,7 +142,7 @@ pub fn model_dir() -> PathBuf {
 
 /// ONNX model revision (HF tag/branch/commit) used for cache resolution.
 pub fn revision() -> String {
-    let cfg = load_ikapp();
+    let cfg = load_triq();
     cfg.revision
 }
 
@@ -153,23 +151,23 @@ pub fn verbose() -> bool {
     std::env::var("TRIQI_MODELCALLER_VERBOSE")
         .map(|v| !v.is_empty() && v != "0" && v != "false")
         .unwrap_or(false)
-        || load_ikapp().verbose
+        || load_triq().verbose
 }
 
 /// Idle-unload timeout for the embedding engine, from `gui_idle_unload_secs` in
-/// `ikapp.yaml` (default 300 s = 5 minutes, `0` disables idle unloading).
+/// `triq.yaml` (default 300 s = 5 minutes, `0` disables idle unloading).
 pub fn gui_idle_unload_secs() -> u64 {
-    load_ikapp().gui_idle_unload_secs
+    load_triq().gui_idle_unload_secs
 }
 
-/// Texts per embeddings request. `engine.embed_batch` in `ikapp.yaml` is an
+/// Texts per embeddings request. `engine.embed_batch` in `triq.yaml` is an
 /// optional ceiling; unset, the batch derives from the libsyscap budget:
 /// the budget's batch when it has an opinion, else the thread cap
 /// (capacity when idle — 10 on this box — halved under Polite, 1 under
 /// Backoff/Hold). Sampled once per process (the value is read into a
 /// `LazyLock` by the embedding path; libsyscap design §7.3).
 pub fn engine_embed_batch() -> usize {
-    let cfg = load_ikapp();
+    let cfg = load_triq();
     let b = crate::syscap::budget_now(
         &cfg.syscap.clone(),
         &cfg.engine.clone(),
@@ -177,38 +175,38 @@ pub fn engine_embed_batch() -> usize {
     crate::syscap::effective_embed_batch(&b)
 }
 
-/// `true` when `engine.no_cache` is set in `ikapp.yaml`: never serve a
+/// `true` when `engine.no_cache` is set in `triq.yaml`: never serve a
 /// vector-embedding or judge verdict from cache — recompute everything for
 /// honest cold timings. Writes still happen, so a benchmark run leaves the
 /// warm caches intact.
 pub fn engine_no_cache() -> bool {
-    load_ikapp().engine.no_cache.unwrap_or(false)
+    load_triq().engine.no_cache.unwrap_or(false)
 }
 
 /// Judge stage artifacts for the gui rubric, from `gui_judge_artifact` in
-/// `ikapp.yaml` (empty = judge stage disabled).
+/// `triq.yaml` (empty = judge stage disabled).
 pub fn gui_judge_artifacts() -> libconfigreader::GuiJudgeArtifacts {
-    load_ikapp().gui_judge_artifact.unwrap_or_default()
+    load_triq().gui_judge_artifact.unwrap_or_default()
 }
 
 /// Default rubric weights for new jobs and new criteria, from `rubric_defaults`
-/// in `ikapp.yaml` (ad 50, fb-job 10, fb-profile 5, criterion 10 when unset).
+/// in `triq.yaml` (ad 50, fb-job 10, fb-profile 5, criterion 10 when unset).
 pub fn rubric_defaults() -> libconfigreader::RubricDefaults {
-    load_ikapp().rubric_defaults
+    load_triq().rubric_defaults
 }
 
 /// Root folder for new jobs' default CV directories, from `gui_cv_dir_root` in
-/// `ikapp.yaml` (`~` and relative paths are resolved by `libconfigreader`).
+/// `triq.yaml` (`~` and relative paths are resolved by `libconfigreader`).
 /// Fallback only: a saved gui preference (Settings → General → CV directory,
 /// `AppPreferences::cv_dir_root`) wins over this; when both are unset the
 /// caller uses the platform Documents dir + `jobs`.
 pub fn cv_dir_root() -> Option<PathBuf> {
-    load_ikapp().gui_cv_dir_root
+    load_triq().gui_cv_dir_root
 }
 
-/// Cascade config for progressive ranking, from `cascade:` in `ikapp.yaml`.
+/// Cascade config for progressive ranking, from `cascade:` in `triq.yaml`.
 pub fn cascade_config() -> libconfigreader::CascadeSection {
-    load_ikapp().cascade
+    load_triq().cascade
 }
 
 /// Best-effort: convert a `PathBuf` to a `&str` for passing to the client.
@@ -216,12 +214,12 @@ pub fn as_str(p: &Path) -> &str {
     p.to_str().unwrap_or("")
 }
 
-/// Chunk size for a given model slug from `gui_embedders` in `ikapp.yaml`, and
+/// Chunk size for a given model slug from `gui_embedders` in `triq.yaml`, and
 /// from `cascade.scout_chunk_size` for the cascade's scout (which is not a
 /// `gui_embedders` entry — it is a stage, not a user-selectable embedder).
 /// Returns 0 (no chunking) if the model is in neither list.
 pub fn chunk_size_for_model(slug: &str) -> usize {
-    let cfg = load_ikapp();
+    let cfg = load_triq();
     if let Some(ge) = cfg.gui_embedders.iter().find(|ge| ge.slug == slug) {
         return ge.chunk_size as usize;
     }
@@ -251,7 +249,7 @@ static ENGINE_OVERRIDE: std::sync::OnceLock<
 > = std::sync::OnceLock::new();
 
 /// Replace the engine knobs every `EngineRuntime` starts with, regardless of
-/// what `ikapp.yaml` says — the `--cpu-only` gui flag sets this before the
+/// what `triq.yaml` says — the `--cpu-only` gui flag sets this before the
 /// serve (and therefore the engine) comes up: ONNX on the CPU EP with
 /// one-thread sessions and small batches, i.e. a deliberately slow floor for
 /// testing progressive-ranking behaviour on weak machines. Fields the
@@ -297,7 +295,7 @@ pub fn registry_ctx() -> std::sync::Arc<RegistryCtx> {
     static CTX: std::sync::OnceLock<std::sync::Arc<RegistryCtx>> =
         std::sync::OnceLock::new();
     CTX.get_or_init(|| {
-        let cfg = load_ikapp();
+        let cfg = load_triq();
         let backend = cfg.engine.backend.unwrap_or_default();
         let revision = cfg.revision.clone();
         std::sync::Arc::new(RegistryCtx {
