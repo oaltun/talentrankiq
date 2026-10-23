@@ -327,9 +327,9 @@ fn prefs_default_model(app_dir: &std::path::Path) -> Option<String> {
 
 /// Convert saved AppPreferences engine overrides into the libconfigreader
 /// `UserOverrides` shape used by `Config::with_user_overrides()`.
-fn user_overrides_from_prefs(app_dir: &std::path::Path) -> libconfigreader::config::UserOverrides {
+fn user_overrides_from_prefs(app_dir: &std::path::Path) -> libconfigreader::UserOverrides {
     let prefs = load_app_preferences(app_dir);
-    libconfigreader::config::UserOverrides {
+    libconfigreader::UserOverrides {
         engine_backend: prefs.engine_backend,
         engine_exec_provider: prefs.engine_exec_provider,
         engine_embed_batch: prefs.engine_embed_batch.map(|v| v as usize),

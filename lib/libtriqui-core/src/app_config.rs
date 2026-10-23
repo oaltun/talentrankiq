@@ -97,17 +97,17 @@ fn embedded_default() -> Config {
 thread_local! {
     /// Per-thread user overrides (from AppPreferences), applied on top of the
     /// config file or embedded default. Set once at serve startup.
-    static USER_OVERRIDES: std::cell::RefCell<Option<libconfigreader::config::UserOverrides>> =
+    static USER_OVERRIDES: std::cell::RefCell<Option<libconfigreader::UserOverrides>> =
         std::cell::RefCell::new(None);
 }
 
 /// Set user preference overrides for the calling thread. Pass `None` to clear.
-pub fn set_user_overrides(o: Option<libconfigreader::config::UserOverrides>) {
+pub fn set_user_overrides(o: Option<libconfigreader::UserOverrides>) {
     USER_OVERRIDES.with(|cell| *cell.borrow_mut() = o);
 }
 
 /// The calling thread's user overrides (see [`set_user_overrides`]).
-pub fn user_overrides() -> Option<libconfigreader::config::UserOverrides> {
+pub fn user_overrides() -> Option<libconfigreader::UserOverrides> {
     USER_OVERRIDES.with(|cell| cell.borrow().clone())
 }
 

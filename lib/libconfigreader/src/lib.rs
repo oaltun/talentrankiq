@@ -4,13 +4,64 @@ use std::path::{Path, PathBuf};
 use serde::de::{Deserializer, Error as DeError, Visitor};
 use serde::{Deserialize, Serialize};
 
+/// Embedded default configuration YAML (used when no triq.yaml is found).
+/// This is a minimal valid config with sensible defaults.
+pub const DEFAULT_CONFIG_YAML: &str = r#"
+model_dir: "~/.cache/ik/models"
+verbose: false
+revision: main
+gui_idle_unload_secs: 300
+engine:
+  backend: auto
+syscap:
+  on_battery_polite: true
+  build_jobs: auto
+  reserve_cores: 1
+  reserve_core_frac: 0.10
+rubric_defaults:
+  ad_points: 50
+  fb_job_points: 10
+  fb_profile_points: 5
+  criterion_points: 10
+families: []
+models: []
+gui_embedders: []
+"#;
+
+/// User preference overrides for engine settings (from app preferences).
+#[derive(Debug, Default, Clone, Deserialize, Serialize)]
+pub struct UserOverrides {
+    pub engine_backend: Option<String>,
+    pub engine_exec_provider: Option<String>,
+    pub engine_embed_batch: Option<usize>,
+    pub engine_intra_threads: Option<usize>,
+    pub engine_inter_threads: Option<usize>,
+    pub engine_embed_sessions: Option<usize>,
+    pub engine_provider_logging: Option<bool>,
+    pub engine_max_cores: Option<usize>,
+    pub engine_no_cache: Option<bool>,
+}
+
+impl UserOverrides {
+    /// Returns true if all fields are `None` (i.e., no overrides set).
+    pub fn is_default(&self) -> bool {
+        self.engine_backend.is_none()
+            && self.engine_exec_provider.is_none()
+            && self.engine_embed_batch.is_none()
+            && self.engine_intra_threads.is_none()
+            && self.engine_inter_threads.is_none()
+            && self.engine_embed_sessions.is_none()
+            && self.engine_provider_logging.is_none()
+            && self.engine_max_cores.is_none()
+            && self.engine_no_cache.is_none()
+    }
+}
+
 /// Returns true when `sha256` is `None` or empty — the skip-serializing guard
 /// so the field is omitted from YAML when no checksum is configured.
 fn is_default_sha256(sha: &Option<String>) -> bool {
     sha.as_deref().map_or(true, |s| s.is_empty())
 }
-
-pub mod config;
 
 /// Default `gui_idle_unload_secs` when `triq.yaml` does not set it: unload the
 /// model after 5 minutes without a request. `0` disables idle unloading.
@@ -1249,14 +1300,14 @@ impl Config {
     /// `config_path` is used for resolving relative paths and is typically the
     /// path to the config file (or a synthetic path for the embedded fallback).
     pub fn default_from_embedded(config_path: PathBuf) -> Self {
-        let raw: RawConfig = serde_yaml::from_str(crate::config::DEFAULT_CONFIG_YAML)
+        let raw: RawConfig = serde_yaml::from_str(crate::DEFAULT_CONFIG_YAML)
             .expect("embedded DEFAULT_CONFIG_YAML must parse");
         crate::from_raw(raw, &config_path).expect("embedded config must validate")
     }
 
     /// Merge user preference overrides on top of the embedded config.
     /// Only fields set in `overrides` replace the defaults; the rest stay.
-    pub fn with_user_overrides(mut self, overrides: &crate::config::UserOverrides) -> Self {
+    pub fn with_user_overrides(mut self, overrides: &crate::UserOverrides) -> Self {
         if let Some(ref b) = overrides.engine_backend {
             if let Ok(backend) = b.parse::<Backend>() {
                 self.engine.backend = Some(backend);
