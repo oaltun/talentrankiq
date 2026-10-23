@@ -51,62 +51,34 @@ families:
 
 models:
 
-  - slug: nomic-embed-text-v1.5
-    family: nomic-embed-text-v1
-    kind: embedder
-    dim: 768
-    max_context_window: 2048
-    artifacts:
-      - backend: ort
-        quantization: "none"
-        source: hf:nomic-ai/nomic-embed-text-v1.5
-        url: https://huggingface.co/nomic-ai/nomic-embed-text-v1.5/resolve/main/onnx/model.onnx
-
-  - slug: bge-small-en-v1.5
-    family: bge-small-en-v1.5
-    kind: embedder
-    dim: 384
-    max_context_window: 512
-    artifacts:
-      - backend: ort
-        quantization: "none"
-        source: hf:Xenova/bge-small-en-v1.5
-        url: https://huggingface.co/Xenova/bge-small-en-v1.5/resolve/main/onnx/model.onnx
-
-  - slug: multilingual-e5-large
-    family: multilingual-e5-large
-    kind: embedder
-    dim: 1024
-    max_context_window: 512
-    artifacts:
-      - backend: ort
-        quantization: "qint8_avx512_vnni"
-        source: hf:Xenova/multilingual-e5-large
-        url: https://huggingface.co/Xenova/multilingual-e5-large/resolve/main/onnx/model_quantized.onnx
-
-  - slug: harrier-oss-v1-0.6b
+  # Harrier 600M ONNX
+  - slug: harrier-oss-v1-0.6b-ONNX-q4
     family: harrier-oss-v1
     kind: embedder
     dim: 1024
     max_context_window: 32768
     artifacts:
       - backend: ort
-        quantization: "fp16"
-        source: hf:onnx-community/harrier-oss-v1-0.6b-ONNX
-        url: https://huggingface.co/onnx-community/harrier-oss-v1-0.6b-ONNX/resolve/main/onnx/model_fp16.onnx
-        sha256: "460cf6e8d8da587e60976b1e36bb5e433c79e5af9681dbab48abad9353d4957c"
-      - backend: ort
         quantization: "q4"
         source: hf:onnx-community/harrier-oss-v1-0.6b-ONNX
         url: https://huggingface.co/onnx-community/harrier-oss-v1-0.6b-ONNX/resolve/main/onnx/model_q4.onnx
         sha256: "4a41218d088c2e31fd6a3953d838d08536a27e98cf987796104a9511f9d9a671"
+
+  # Harrier 600M MLX (separate model entry)
+  - slug: harrier-oss-v1-0.6b-MLX-4bit
+    family: harrier-oss-v1
+    kind: embedder
+    dim: 1024
+    max_context_window: 32768
+    artifacts:
       - backend: mlx
         quantization: "4bit"
         source: hf:majentik/harrier-oss-v1-0.6b-MLX-4bit
         url: https://huggingface.co/majentik/harrier-oss-v1-0.6b-MLX-4bit/resolve/main/model.safetensors
         sha256: "362866d8cd7476138d095b1123599d25d5a590d6d9a9130892e0516b8b57481c"
 
-  - slug: harrier-oss-v1-270m
+  # Harrier 270M ONNX (DEFAULT)
+  - slug: harrier-oss-v1-270m-ONNX-q4f16
     family: harrier-oss-v1
     kind: embedder
     dim: 640
@@ -117,6 +89,14 @@ models:
         source: hf:onnx-community/harrier-oss-v1-270m-ONNX
         url: https://huggingface.co/onnx-community/harrier-oss-v1-270m-ONNX/resolve/main/onnx/model_q4f16.onnx
         sha256: "e844fc75743d24f9bea799c35018f8d47efec3fd34d74f43906ee0a1899bcc83"
+
+  # Harrier 270M MLX (separate model entry)
+  - slug: harrier-oss-v1-270m-MLX-4bit
+    family: harrier-oss-v1
+    kind: embedder
+    dim: 640
+    max_context_window: 32768
+    artifacts:
       - backend: mlx
         quantization: "4bit"
         source: hf:majentik/harrier-oss-v1-270m-MLX-4bit
@@ -301,20 +281,28 @@ models:
         url: https://huggingface.co/sentence-transformers/static-similarity-mrl-multilingual-v1/resolve/main/onnx/model_int8.onnx
 
 gui_embedders:
-  - slug: harrier-oss-v1-0.6b
-    name: Harrier 600M
-    memory_mb: 2200
+  - slug: harrier-oss-v1-270m-ONNX-q4f16    # Default (small, fast)
+    name: Harrier 270M ONNX
+    memory_mb: 600
     default: true
     chunk_size: 1024
-  - slug: harrier-oss-v1-270m
-    name: Harrier 270M
+  - slug: harrier-oss-v1-270m-MLX-4bit
+    name: Harrier 270M MLX (Metal)
     memory_mb: 600
+    chunk_size: 1024
+  - slug: harrier-oss-v1-0.6b-ONNX-q4
+    name: Harrier 600M ONNX
+    memory_mb: 2200
+    chunk_size: 1024
+  - slug: harrier-oss-v1-0.6b-MLX-4bit
+    name: Harrier 600M MLX (Metal)
+    memory_mb: 2200
     chunk_size: 1024
 
 # gui judge stage artifacts
 gui_judge_artifact:
   default: "gui/judges/harrier-600m-v1.json"
-  harrier-oss-v1-270m: "gui/judges/harrier-270m-v1.json"
+  harrier-oss-v1-270m-ONNX-q4f16: "gui/judges/harrier-270m-v1.json"
 
 # Progressive-ranking cascade
 cascade:
@@ -349,10 +337,14 @@ pub struct UserOverrides {
     pub engine_intra_threads: Option<usize>,
     /// Override inter-op thread count.
     pub engine_inter_threads: Option<usize>,
+    /// Override embed sessions (pool size).
+    pub engine_embed_sessions: Option<usize>,
+    /// Override provider logging.
+    pub engine_provider_logging: Option<bool>,
+    /// Override no-cache flag.
+    pub engine_no_cache: Option<bool>,
     /// Override max cores cap.
     pub engine_max_cores: Option<usize>,
-    /// Disable the embedding cache (benchmark mode).
-    pub engine_no_cache: Option<bool>,
 }
 
 impl UserOverrides {
@@ -367,7 +359,9 @@ impl UserOverrides {
             && self.engine_embed_batch.is_none()
             && self.engine_intra_threads.is_none()
             && self.engine_inter_threads.is_none()
-            && self.engine_max_cores.is_none()
+            && self.engine_embed_sessions.is_none()
+            && self.engine_provider_logging.is_none()
             && self.engine_no_cache.is_none()
+            && self.engine_max_cores.is_none()
     }
 }

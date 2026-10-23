@@ -23,6 +23,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use libtriqui_client::client::{ClientError, TriqiClient};
+use libtriqui_client::params::{DownloadEmbedderParams, SetEmbeddingModelParams};
 use libtriqui_client::types::DomainError;
 use libtriqui_client::{EmptyParams, GetJobDetailParams, StartRankParams};
 use libtriqui_cli::InProcessServe;
@@ -42,6 +43,7 @@ fn spawn_event_collector(client: &TriqiClient) -> Arc<Mutex<Vec<(String, serde_j
     });
     log
 }
+
 /// create_job + update_job (the Setup pane flow) → the job id.
 fn create_job_with_ad(client: &TriqiClient, title: &str, ad: &str) -> String {
     let job: libtriqui_client::types::Job = client
@@ -291,818 +293,27 @@ fn write_config_with_isolated_cv_root(app_dir: &std::path::Path, tag: &str) -> s
     cfg_path
 }
 
-#[test]
-fn job_lifecycle_crud_archive_delete_and_persistence() {
-    let (serve, client, app_dir) = spawn_serve("jobcrud");
-    let cv_root = redirect_cv_root_to_temp(&client, "jobcrud");
+/// Write a config with both isolated CV root AND isolated model directory.
+/// Used by tests that need a clean model cache.
+fn write_config_with_isolated_model_dir(app_dir: &std::path::Path, tag: &str) -> std::path::PathBuf {
+    let cv_root = isolated_cv_root(tag);
+    let model_dir = std::env::temp_dir().join(format!("gui-e2e-{tag}-models-{}", std::process::id()));
+    std::fs::create_dir_all(&cv_root).unwrap();
+    std::fs::create_dir_all(&model_dir).unwrap();
 
-    // Create two jobs; shape the first (rename, size, ad, weights).
-    let job1: libtriqui_client::types::Job = client
-        .call_typed("create_job", &EmptyParams {})
-        .expect("create job 1");
-    // Rubric weights default from the embedded config's `rubric_defaults`.
-    // Read it so the test tracks the config.
-    let rubric = &libconfigreader::Config::default_from_embedded(
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-    )
-    .rubric_defaults;
-    assert_eq!(job1.ad_weight, rubric.ad_points);
-    assert_eq!(job1.fb_job_weight, rubric.fb_job_points);
-    assert_eq!(job1.fb_profile_weight, rubric.fb_profile_points);
-    assert!(
-        job1.inputs_updated_at.is_some(),
-        "a fresh job's inputs count as changed: the re-rank is due"
+    let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|p| p.parent())
+        .expect("repo root");
+    let cfg = libconfigreader::config::DEFAULT_CONFIG_YAML;
+    let cfg = cfg.replace(
+        "\"gui/judges/",
+        &format!("\"{}/gui/judges/", repo.display()),
     );
-    let job2: libtriqui_client::types::Job = client
-        .call_typed("create_job", &EmptyParams {})
-        .expect("create job 2");
-
-    let _: libtriqui_client::types::Job = client
-        .call_typed(
-            "update_job",
-            &libtriqui_client::UpdateJobParams {
-                job_id: job1.id.clone(),
-                title: "Rust Engineer".into(),
-                job_ad_text: Some("Build fast things.".into()),
-                triqui_size: 3,
-            },
-        )
-        .expect("shape job 1");
-    client
-        .call(
-            "update_job_weights",
-            &libtriqui_client::UpdateJobWeightsParams {
-                job_id: job1.id.clone(),
-                ad_weight: 40.0,
-                fb_job_weight: 20.0,
-                fb_profile_weight: 15.0,
-            },
-        )
-        .expect("update weights");
-
-    // Summaries carry the precomputed facts the Jobs list renders.
-    let summaries = |client: &TriqiClient| -> Vec<libtriqui_client::types::JobSummary> {
-        client
-            .call_typed("list_job_summaries", &EmptyParams {})
-            .expect("list_job_summaries")
-    };
-    let s1 = summaries(&client)
-        .into_iter()
-        .find(|s| s.id == job1.id)
-        .expect("job 1 summary");
-    assert_eq!(s1.title, "Rust Engineer");
-    assert_eq!(s1.triqui_size, 3);
-    assert!(s1.ad_set, "stored ad text reported as set");
-    assert_eq!((s1.cv_imported, s1.cv_failed), (0, 0));
-    assert_eq!((s1.want_count, s1.avoid_count), (0, 0));
-    assert!(!s1.archived);
-    assert!(s1.last_ranked_at.is_none());
-
-    // Archive + restore (the Jobs list's archive toggle).
-    client
-        .call(
-            "archive_job",
-            &libtriqui_client::ArchiveJobParams {
-                job_id: job2.id.clone(),
-                archived: true,
-            },
-        )
-        .expect("archive job 2");
-    let s2 = summaries(&client)
-        .into_iter()
-        .find(|s| s.id == job2.id)
-        .expect("job 2 summary");
-    assert!(s2.archived, "archived flag reported");
-    client
-        .call(
-            "archive_job",
-            &libtriqui_client::ArchiveJobParams {
-                job_id: job2.id.clone(),
-                archived: false,
-            },
-        )
-        .expect("restore job 2");
-    let s2 = summaries(&client)
-        .into_iter()
-        .find(|s| s.id == job2.id)
-        .expect("job 2 summary");
-    assert!(!s2.archived, "restored job is active again");
-
-    // Everything survives an app restart.
-    serve.shutdown();
-    let serve2 = restart_serve(&app_dir, "jobcrud");
-    let client = serve2.client();
-    let detail: libtriqui_client::types::JobDetail = client
-        .call_typed(
-            "get_job_detail",
-            &GetJobDetailParams {
-                job_id: job1.id.clone(),
-            },
-        )
-        .expect("job 1 after restart");
-    assert_eq!(detail.job.title, "Rust Engineer");
-    assert_eq!(detail.job.triqui_size, 3);
-    assert_eq!(
-        detail.job.job_ad_text.as_deref(),
-        Some("Build fast things.")
-    );
-    assert_eq!(
-        (
-            detail.job.ad_weight,
-            detail.job.fb_job_weight,
-            detail.job.fb_profile_weight
-        ),
-        (40.0, 20.0, 15.0),
-        "weights persist across the restart"
-    );
-    let s2 = summaries(&client)
-        .into_iter()
-        .find(|s| s.id == job2.id)
-        .expect("job 2 after restart");
-    assert!(!s2.archived);
-
-    // Delete removes the job for good.
-    client
-        .call(
-            "delete_job",
-            &libtriqui_client::DeleteJobParams {
-                job_id: job2.id.clone(),
-            },
-        )
-        .expect("delete job 2");
-    let de = expect_domain(
-        &client,
-        "get_job_detail",
-        &GetJobDetailParams {
-            job_id: job2.id.clone(),
-        },
-        "get deleted job",
-    );
-    assert!(matches!(de, DomainError::NotFound { ref id, .. } if *id == job2.id));
-    assert!(
-        !summaries(&client).iter().any(|s| s.id == job2.id),
-        "deleted job vanishes from the list"
-    );
-
-    serve2.shutdown();
-    let _ = std::fs::remove_dir_all(&app_dir);
-    let _ = std::fs::remove_dir_all(&cv_root);
-}
-
-/// The job ad lifecycle behind the Setup pane. `update_job` always writes the
-/// full form, so `job_ad_text: None` CLEARS the ad (the Clear button), and an
-/// edit that leaves ad + size untouched must not bump `inputs_updated_at`
-/// (the stale badge) — while a weight change must.
-#[test]
-fn job_ad_text_and_input_change_semantics() {
-    let (serve, client, app_dir) = spawn_serve("adtext");
-    let cv_root = redirect_cv_root_to_temp(&client, "adtext");
-    let job_id = create_job_with_ad(&client, "Engineer", "First ad version.");
-
-    let job = || -> libtriqui_client::types::Job {
-        client
-            .call_typed::<libtriqui_client::types::JobDetail>(
-                "get_job_detail",
-                &GetJobDetailParams {
-                    job_id: job_id.clone(),
-                },
-            )
-            .expect("job detail")
-            .job
-    };
-    assert_eq!(job().job_ad_text.as_deref(), Some("First ad version."));
-    let ad_set = |client: &TriqiClient| {
-        client
-            .call_typed::<Vec<libtriqui_client::types::JobSummary>>(
-                "list_job_summaries",
-                &EmptyParams {},
-            )
-            .expect("summaries")
-            .into_iter()
-            .find(|s| s.id == job_id)
-            .expect("summary")
-            .ad_set
-    };
-    assert!(ad_set(&client));
-
-    // Clear (the Clear button sends None) → ad gone, ad_set false.
-    let _: libtriqui_client::types::Job = client
-        .call_typed(
-            "update_job",
-            &libtriqui_client::UpdateJobParams {
-                job_id: job_id.clone(),
-                title: "Engineer".into(),
-                job_ad_text: None,
-                triqui_size: 10,
-            },
-        )
-        .expect("clear ad");
-    assert_eq!(job().job_ad_text, None, "None clears the stored ad");
-    assert!(!ad_set(&client));
-
-    // Re-set, then a title-only edit (same ad + size): the stale-relevant
-    // inputs did not change → inputs_updated_at untouched.
-    let inputs_after_set = job().inputs_updated_at.expect("ad set bumps inputs");
-    std::thread::sleep(Duration::from_millis(1100)); // cross a datetime('now') tick
-    let _: libtriqui_client::types::Job = client
-        .call_typed(
-            "update_job",
-            &libtriqui_client::UpdateJobParams {
-                job_id: job_id.clone(),
-                title: "Senior Engineer".into(),
-                job_ad_text: Some("Second ad version.".into()),
-                triqui_size: 10,
-            },
-        )
-        .expect("re-set ad");
-    let inputs_before = job().inputs_updated_at.expect("ad re-set bumps inputs");
-    assert!(
-        inputs_before > inputs_after_set,
-        "changing the ad is a ranking-input change"
-    );
-    std::thread::sleep(Duration::from_millis(1100));
-    let _: libtriqui_client::types::Job = client
-        .call_typed(
-            "update_job",
-            &libtriqui_client::UpdateJobParams {
-                job_id: job_id.clone(),
-                title: "Principal Engineer".into(),
-                job_ad_text: Some("Second ad version.".into()),
-                triqui_size: 10,
-            },
-        )
-        .expect("title-only edit");
-    assert_eq!(
-        job().inputs_updated_at,
-        Some(inputs_before.clone()),
-        "a mere title edit must not bump inputs_updated_at"
-    );
-
-    // A weight change is a ranking-input change → bumped.
-    std::thread::sleep(Duration::from_millis(1100));
-    client
-        .call(
-            "update_job_weights",
-            &libtriqui_client::UpdateJobWeightsParams {
-                job_id: job_id.clone(),
-                ad_weight: 40.0,
-                fb_job_weight: 10.0,
-                fb_profile_weight: 10.0,
-            },
-        )
-        .expect("weight change");
-    let inputs_after_weights = job().inputs_updated_at.expect("weights bump inputs");
-    assert!(
-        inputs_after_weights > inputs_before,
-        "weight change must bump inputs_updated_at"
-    );
-
-    // Validation surfaces as typed errors before anything is written.
-    let de = expect_domain(
-        &client,
-        "update_job",
-        &libtriqui_client::UpdateJobParams {
-            job_id: job_id.clone(),
-            title: "   ".into(),
-            job_ad_text: None,
-            triqui_size: 10,
-        },
-        "empty title",
-    );
-    assert!(matches!(de, DomainError::ValidationError { .. }));
-    let de = expect_domain(
-        &client,
-        "update_job",
-        &libtriqui_client::UpdateJobParams {
-            job_id: job_id.clone(),
-            title: "Engineer".into(),
-            job_ad_text: None,
-            triqui_size: 0,
-        },
-        "triqui size 0",
-    );
-    assert!(matches!(de, DomainError::ValidationError { .. }));
-
-    serve.shutdown();
-    let _ = std::fs::remove_dir_all(&app_dir);
-    let _ = std::fs::remove_dir_all(&cv_root);
-}
-
-/// The gui's Re-rank button is a projection of backend state: `job_ui_state`
-/// must report the domain truth (allowed / dirty / reason code) with no engine
-/// involved. Cheap — runs even with `IK_SKIP_EXPENSIVE=1`.
-#[test]
-fn job_ui_state_reason_codes_without_engine() {
-    let (serve, client, app_dir) = spawn_serve("ui-state");
-
-    let job: libtriqui_client::types::Job = client
-        .call_typed("create_job", &EmptyParams {})
-        .expect("create job");
-
-    // Fresh job: nothing imported → rank is blocked with a stable reason
-    // code; never-ranked inputs count as dirty (a rank is due).
-    let st: libtriqui_client::types::JobUiState = client
-        .call_typed(
-            "job_ui_state",
-            &GetJobDetailParams {
-                job_id: job.id.clone(),
-            },
-        )
-        .expect("job_ui_state");
-    assert!(!st.sort_allowed, "no CVs imported yet");
-    assert!(st.rerank_dirty, "never-ranked inputs need a rank");
-    assert_eq!(st.reason.as_deref(), Some("no-cvs"));
-
-    // Unknown job → typed NotFound.
-    let err = client
-        .call(
-            "job_ui_state",
-            &GetJobDetailParams {
-                job_id: "job_missing".into(),
-            },
-        )
-        .expect_err("unknown job must fail");
-    let ClientError::Domain(pe) = err else {
-        panic!("expected domain error, got {err:?}");
-    };
-    let de: DomainError = serde_json::from_value(pe.domain.expect("domain payload")).unwrap();
-    assert!(matches!(de, DomainError::NotFound { ref id, .. } if id == "job_missing"));
-
-    // No rank has run → no sort report exists yet (typed NotFound).
-    let err = client
-        .call(
-            "get_sort_report",
-            &GetJobDetailParams {
-                job_id: job.id.clone(),
-            },
-        )
-        .expect_err("no report before first rank");
-    let ClientError::Domain(pe) = err else {
-        panic!("expected domain error, got {err:?}");
-    };
-    let de: DomainError = serde_json::from_value(pe.domain.expect("domain payload")).unwrap();
-    assert!(matches!(de, DomainError::NotFound { ref id, .. } if *id == job.id));
-
-    serve.shutdown();
-    let _ = std::fs::remove_dir_all(&app_dir);
-}
-
-/// `no-jobad` is a backend-derived blocker, not gui styling: with CVs
-/// extracted but no job ad text, `job_ui_state` reports the reason and
-/// `start_rank` refuses server-side (the old behaviour ranked anyway and
-/// produced all-zero totals). Cheap — extraction needs no engine.
-#[test]
-fn no_jobad_blocks_rank_with_reason_code() {
-    let (serve, client, app_dir) = spawn_serve("no-jobad");
-
-    let job: libtriqui_client::types::Job = client
-        .call_typed("create_job", &EmptyParams {})
-        .expect("create job");
-    let job_id = job.id.clone();
-
-    // CVs only — no ad via update_job.
-    let cv_dir = app_dir.join("cvs-nojobad");
-    std::fs::create_dir_all(&cv_dir).unwrap();
-    std::fs::write(
-        cv_dir.join("alice.txt"),
-        long_cv("Alice Chen", "Java engineer", "JVM, Spring, throughput."),
-    )
-    .unwrap();
-
-    client
-        .call(
-            "import_cv_directory",
-            &libtriqui_client::ImportCvDirectoryParams {
-                job_id: job_id.clone(),
-                directory: cv_dir.to_string_lossy().to_string(),
-            },
-        )
-        .expect("start import");
-
-    // Poll until extraction lands: the reason must move no-cvs → no-jobad
-    // (never to engine-not-ready/stale/clean, which would mean ranking is
-    // considered allowed without an ad).
-    let mut state: Option<libtriqui_client::types::JobUiState> = None;
-    for _ in 0..120 {
-        std::thread::sleep(Duration::from_millis(500));
-        let st: libtriqui_client::types::JobUiState = client
-            .call_typed(
-                "job_ui_state",
-                &GetJobDetailParams {
-                    job_id: job_id.clone(),
-                },
-            )
-            .expect("job_ui_state");
-        if st.reason.as_deref() != Some("no-cvs") {
-            state = Some(st);
-            break;
-        }
-    }
-    let st = state.expect("extraction never moved past no-cvs");
-    assert!(!st.sort_allowed, "no job ad → rank must stay blocked");
-    assert_eq!(st.reason.as_deref(), Some("no-jobad"));
-
-    // The import auto-started an embed-prefill cascade (design §9). It is
-    // background embedding, not a ranking: the button-facing `ranking` flag
-    // must stay off for as long as the job has no ad — through the in-flight
-    // window (`running` true) and after the run settles. The rank buttons
-    // spin on `ranking`; spinning here was the "Ranking… with nothing to
-    // rank" bug.
-    for _ in 0..20 {
-        let s: libtriqui_client::types::RankState = client
-            .call_typed(
-                "get_rank_state",
-                &GetJobDetailParams {
-                    job_id: job_id.clone(),
-                },
-            )
-            .expect("rank state");
-        assert!(
-            !s.ranking,
-            "no job ad → the cascade must never report ranking=true"
-        );
-        std::thread::sleep(Duration::from_millis(250));
-    }
-
-    // The convergence nudge (`job_ui_state.nudge = add-job-ad`) must fire
-    // only on a *settled* ad-less embed-prefill run — never mid-flight and
-    // never for a cancelled one. Whether this environment converges at all
-    // depends on the engine (cheap runs error out; full runs may embed for
-    // real), so pin the race-safe direction here: a nudge implies the run
-    // converged. The Some/None lifecycle itself is pinned deterministically
-    // by the full-workflow ad-lands test below.
-    let ui: libtriqui_client::types::JobUiState = client
-        .call_typed(
-            "job_ui_state",
-            &GetJobDetailParams {
-                job_id: job_id.clone(),
-            },
-        )
-        .expect("job_ui_state");
-    if ui.nudge.as_deref() == Some("add-job-ad") {
-        let rs: libtriqui_client::types::RankState = client
-            .call_typed(
-                "get_rank_state",
-                &GetJobDetailParams {
-                    job_id: job_id.clone(),
-                },
-            )
-            .expect("rank state");
-        assert!(
-            rs.converged && !rs.running,
-            "nudge fired without a converged prefill run (rank_state: {rs:?})"
-        );
-    }
-
-    // Server-side refusal, not just a button state: the cascade gate rejects
-    // the start command (and the import auto-start logged the same refusal).
-    let err = client
-        .call(
-            "start_rank",
-            &GetJobDetailParams {
-                job_id: job_id.clone(),
-            },
-        )
-        .expect_err("rank without a job ad must be refused");
-    assert!(
-        err.to_string().contains("no job ad"),
-        "refusal must name the missing ad, got: {err}"
-    );
-
-    serve.shutdown();
-    let _ = std::fs::remove_dir_all(&app_dir);
-}
-
-/// Settings preferences round-trip through serve and persist to
-/// `<app_dir>/preferences.json` across an app restart.
-#[test]
-fn preferences_round_trip_and_restart_persistence() {
-    let (serve, client, app_dir) = spawn_serve("prefs");
-
-    let saved = libtriqui_client::types::AppPreferences {
-        theme: "dark".into(),
-        color_theme: "ocean".into(),
-        quick_pane_shortcut: Some("Ctrl+Alt+K".into()),
-        language: Some("de".into()),
-        embedding_model: Some("nomic-embed-text-v1.5".into()),
-        inference_model: Some("test-model".into()),
-        cv_dir_root: Some(app_dir.join("cv-root").to_string_lossy().to_string()),
-        ..Default::default()
-    };
-    client
-        .call_typed::<serde_json::Value>(
-            "save_preferences",
-            &libtriqui_client::SavePreferencesParams {
-                preferences: saved.clone(),
-            },
-        )
-        .expect("save preferences");
-    let json = |p: &libtriqui_client::types::AppPreferences| {
-        serde_json::to_value(p).expect("serialize preferences")
-    };
-    let loaded: libtriqui_client::types::AppPreferences = client
-        .call_typed("load_preferences", &EmptyParams {})
-        .expect("load preferences");
-    assert_eq!(json(&loaded), json(&saved), "saved preferences read back");
-
-    serve.shutdown();
-    let serve2 = restart_serve(&app_dir, "prefs");
-    let loaded2: libtriqui_client::types::AppPreferences = serve2
-        .client()
-        .call_typed("load_preferences", &EmptyParams {})
-        .expect("load preferences after restart");
-    assert_eq!(
-        json(&loaded2),
-        json(&saved),
-        "preferences persist across the restart"
-    );
-
-    // Reset to defaults (the Settings reset buttons).
-    serve2
-        .client()
-        .call_typed::<serde_json::Value>(
-            "save_preferences",
-            &libtriqui_client::SavePreferencesParams {
-                preferences: libtriqui_client::types::AppPreferences::default(),
-            },
-        )
-        .expect("reset preferences");
-    let reset: libtriqui_client::types::AppPreferences = serve2
-        .client()
-        .call_typed("load_preferences", &EmptyParams {})
-        .expect("load reset preferences");
-    assert_eq!(reset.theme, "system");
-    assert_eq!(reset.color_theme, "default");
-    assert_eq!(reset.cv_dir_root, None);
-
-    serve2.shutdown();
-    let _ = std::fs::remove_dir_all(&app_dir);
-}
-
-/// Settings → General → CV directory: the gui writes
-/// `AppPreferences::cv_dir_root` into `preferences.json` and new jobs' default
-/// CV dirs must follow it, overriding the config's `gui_cv_dir_root`. Reset
-/// (null) falls back to the config root. Cheap: rpcs only, no engine.
-#[test]
-fn cv_dir_root_preference_overrides_config_for_new_jobs() {
-    let (serve, client, cv_root, _cfg_path) = spawn_serve_isolated_cv_root("cvrootpref");
-
-    // No preference saved yet → the effective root is the config one.
-    let effective: String = client
-        .call_typed("get_cv_dir_root", &EmptyParams {})
-        .expect("get_cv_dir_root");
-    assert_eq!(
-        effective,
-        cv_root.to_string_lossy(),
-        "unset preference falls back to the configured root"
-    );
-
-    let custom_root =
-        std::env::temp_dir().join(format!("gui-e2e-cvrootpref-custom-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&custom_root);
-
-    // Save a custom root (what the Settings dialog's folder picker writes).
-    client
-        .call_typed::<serde_json::Value>(
-            "save_preferences",
-            &libtriqui_client::SavePreferencesParams {
-                preferences: libtriqui_client::types::AppPreferences {
-                    cv_dir_root: Some(custom_root.to_string_lossy().to_string()),
-                    ..Default::default()
-                },
-            },
-        )
-        .expect("save preferences with custom cv root");
-    let effective: String = client
-        .call_typed("get_cv_dir_root", &EmptyParams {})
-        .expect("get_cv_dir_root after save");
-    assert_eq!(effective, custom_root.to_string_lossy());
-
-    // A job created after the change defaults under the custom root.
-    let job: libtriqui_client::types::Job = client
-        .call_typed("create_job", &EmptyParams {})
-        .expect("create job with custom root");
-    let dir = job.import_directory_path.expect("default cv dir");
-    assert!(
-        dir.starts_with(custom_root.to_string_lossy().as_ref()),
-        "new job's default CV dir {dir:?} must live under the preferred root"
-    );
-
-    // Reset to default (the Settings "reset" button) → back to the config root.
-    client
-        .call_typed::<serde_json::Value>(
-            "save_preferences",
-            &libtriqui_client::SavePreferencesParams {
-                preferences: libtriqui_client::types::AppPreferences::default(),
-            },
-        )
-        .expect("reset preferences");
-    let job2: libtriqui_client::types::Job = client
-        .call_typed("create_job", &EmptyParams {})
-        .expect("create job after reset");
-    let dir2 = job2.import_directory_path.expect("default cv dir");
-    assert!(
-        dir2.starts_with(cv_root.to_string_lossy().as_ref()),
-        "after reset the default CV dir {dir2:?} falls back to the configured root"
-    );
-
-    serve.shutdown();
-    let _ = std::fs::remove_dir_all(&cv_root);
-    let _ = std::fs::remove_dir_all(&custom_root);
-}
-
-/// The results sheet is a projection of per-stage score rows: one column per
-/// cascade step — scout (0.5) → job ad (heavy embedder) → judge — and each candidate carries exactly the grades the stages have given
-/// it. A stage that has not reached a candidate has **no row** for it, which is
-/// what the gui renders as `–`; the columns themselves are always present, so
-/// the sheet does not reshuffle as waves land.
-///
-/// Cheap and engine-free: the stage rows are seeded directly (an import would
-/// start a real cascade, which is what the judge workflow test covers).
-#[test]
-fn results_table_shows_a_grade_per_cascade_stage() {
-    let (serve, client, app_dir) = spawn_serve("stages");
-    let cv_root = redirect_cv_root_to_temp(&client, "stages");
-    let job_id = create_job_with_ad(&client, "Stage Engineer", "Rust backend engineer.");
-
-    let detail: libtriqui_client::types::JobDetail = client
-        .call_typed(
-            "get_job_detail",
-            &GetJobDetailParams {
-                job_id: job_id.clone(),
-            },
-        )
-        .expect("job detail");
-    let ids: Vec<&str> = detail
-        .rubric
-        .iter()
-        .map(|q| q.question_id.as_str())
-        .collect();
-    for stage in ["scout", "ad", "ad_judge"] {
-        assert!(
-            ids.contains(&stage),
-            "the results table has a column for the '{stage}' stage: {ids:?}"
-        );
-    }
-    // Stage columns come first, in the order the pipeline produces them.
-    assert_eq!(&ids[..3], ["scout", "ad", "ad_judge"]);
-    let kinds: Vec<&str> = detail
-        .rubric
-        .iter()
-        .take(3)
-        .map(|q| q.kind.as_str())
-        .collect();
-    assert_eq!(kinds, ["Scout", "Ad", "AdJudge"]);
-    // Every stage is scored in the job ad's currency, so the columns are
-    // comparable with the ad column they sit next to.
-    let ad_weight = detail.job.ad_weight as f32;
-    assert!(
-        detail
-            .rubric
-            .iter()
-            .take(3)
-            .all(|q| (q.max_points - ad_weight).abs() < 1e-4),
-        "stage columns are on the ad scale"
-    );
-    // The Total caption counts the rubric only — stage grades are not slices of it.
-    let expected_capacity: f32 = detail
-        .rubric
-        .iter()
-        .filter(|q| !q.kind.is_stage())
-        .map(|q| q.max_points.abs())
-        .sum();
-    assert!(
-        (detail.rubric_capacity - expected_capacity).abs() < 1e-4,
-        "rubric capacity {} excludes the stage columns",
-        detail.rubric_capacity
-    );
-
-    // Two candidates: one the whole cascade has graded, one scout-only.
-    {
-        let conn = open_db(&app_dir.join("triqui.db"));
-        for (id, name) in [("cand_full", "full.pdf"), ("cand_early", "early.pdf")] {
-            conn.execute(
-                "INSERT INTO candidates (id, job_id, source_file_path, file_name, file_type, extraction_status, extracted_text)
-                 VALUES (?1, ?2, ?3, ?4, 'Pdf', 'Extracted', 'some cv text')",
-                rusqlite::params![id, job_id, format!("/tmp/{id}"), name],
-            )
-            .expect("candidate");
-        }
-        // Only the fully-graded candidate has a total (the judge's own row).
-        conn.execute(
-            "UPDATE candidates SET points = 40.0, points_max = 40.0 WHERE id = 'cand_full'",
-            [],
-        )
-        .expect("points");
-        let rows = [
-            ("cand_full", "scout", "Scout", 26.0),
-            ("cand_full", "ad", "Ad", 21.0),
-            ("cand_full", "ad_judge", "AdJudge", 40.0),
-            ("cand_early", "scout", "Scout", 10.0),
-        ];
-        for (cid, qid, kind, pts) in rows {
-            conn.execute(
-                "INSERT INTO candidate_scores (id, candidate_id, question_id, kind, sign, label, points, max_points)
-                 VALUES (?1, ?2, ?3, ?4, 'Positive', 'label', ?5, 40.0)",
-                rusqlite::params![format!("cs_{cid}_{qid}"), cid, qid, kind, pts],
-            )
-            .expect("score row");
-        }
-    }
-
-    let page = |sort_by: Option<&str>| -> libtriqui_client::types::CandidatePage {
-        client
-            .call_typed(
-                "list_candidates",
-                &libtriqui_client::ListCandidatesParams {
-                    job_id: job_id.clone(),
-                    offset: 0,
-                    limit: 50,
-                    query: None,
-                    sort_by: sort_by.map(str::to_string),
-                    sort_dir: Some(false),
-                },
-            )
-            .expect("list_candidates")
-    };
-    let scores_of = |page: &libtriqui_client::types::CandidatePage, id: &str| {
-        page.items
-            .iter()
-            .find(|c| c.id == id)
-            .unwrap_or_else(|| panic!("{id} in page"))
-            .scores
-            .iter()
-            .map(|s| (s.question_id.clone(), s.kind.as_str().to_string()))
-            .collect::<Vec<_>>()
-    };
-
-    // Every stage a candidate was graded on is present, each under its own id,
-    // in the sheet's order (ad → judge → the stage grades).
-    let all = page(None);
-    assert_eq!(
-        scores_of(&all, "cand_full"),
-        vec![
-            ("ad".to_string(), "Ad".to_string()),
-            ("ad_judge".to_string(), "AdJudge".to_string()),
-            ("scout".to_string(), "Scout".to_string()),
-        ]
-    );
-    // A candidate the later stages have not reached simply has no row for them.
-    assert_eq!(
-        scores_of(&all, "cand_early"),
-        vec![("scout".to_string(), "Scout".to_string())]
-    );
-
-    // Two independent quality axes (scoring v3), not one conflated chip: the
-    // candidate the heavy embedder reached is in the heavy space whatever backs
-    // its ad slot, and what backs the ad slot is the judge's win-rate.
-    assert_eq!(
-        all.items[0].grade_space,
-        Some(libtriqui_client::types::GradeSpace::Heavy)
-    );
-    assert_eq!(
-        all.items[0].ad_source,
-        Some(libtriqui_client::types::AdSource::Judge)
-    );
-    assert_eq!(
-        all.items[1].grade_space,
-        Some(libtriqui_client::types::GradeSpace::Scout)
-    );
-    assert_eq!(
-        all.items[1].ad_source,
-        Some(libtriqui_client::types::AdSource::Scout)
-    );
-    // The default order leads with the better space, then the total inside it —
-    // so the heavy-space candidate outranks the scout-only one regardless of the
-    // raw numbers, which is the point of the tier.
-    assert_eq!(all.items[0].id, "cand_full", "heavy space leads");
-    assert_eq!(all.items[1].id, "cand_early", "scout space follows");
-    // `__source` is the ad-slot axis on its own: judge first, then heavy, then scout.
-    let by_source = page(Some("__source"));
-    assert_eq!(by_source.items[0].id, "cand_full", "judge tier leads");
-    assert_eq!(by_source.items[1].id, "cand_early", "scout tier follows");
-
-    // Each stage column is a sort control, and ungraded candidates sort last.
-    assert_eq!(
-        all.items[0].id, "cand_full",
-        "default order: the heavy-space candidate leads"
-    );
-    let by_scout = page(Some("scout"));
-    assert_eq!(by_scout.items[0].id, "cand_full", "scout grade leads");
-    assert_eq!(
-        by_scout.items[1].id, "cand_early",
-        "unscouted candidate sorts last"
-    );
-    let by_judge = page(Some("ad_judge"));
-    assert_eq!(by_judge.items[0].id, "cand_full", "judge grade leads");
-    assert_eq!(
-        by_judge.items[1].id, "cand_early",
-        "unjudged candidate sorts last"
-    );
-
-    serve.shutdown();
-    let _ = std::fs::remove_dir_all(&app_dir);
-    let _ = std::fs::remove_dir_all(&cv_root);
+    let cfg = format!("{cfg}\ngui_cv_dir_root: \"{}\"\nmodel_dir: \"{}\"\n", cv_root.display(), model_dir.display());
+    let cfg_path = app_dir.join("triq.yaml");
+    std::fs::write(&cfg_path, cfg).unwrap();
+    cfg_path
 }
 
 /// The consent-to-download flow's backend half: `model_variants` names the
@@ -1265,248 +476,12 @@ fn embedder_lists_contract_and_default_model_persists() {
     let _ = std::fs::remove_dir_all(&app_dir);
 }
 
-/// The ad landing **mid-run** (the user pastes it while the pre-ad cascade is
-/// still embedding) must not cancel the run: its embeds are ad-independent and
-/// its next wave picks the ad up — the sort scores from the stored chunks,
-/// the judge judges. The run then
-/// converges straight through, without a cancel/restart cycle.
-///
-/// Full-workflow: real engine, real model cache — expensive-test pattern.
-#[test]
-fn an_ad_landing_mid_run_is_picked_up_without_cancelling_the_cascade() {
-    if std::env::var("IK_SKIP_EXPENSIVE").is_ok() {
-        eprintln!("skipping: expensive (real engine, real model cache)");
-        return;
-    }
-    let (serve, client, app_dir) = spawn_serve("midrun");
-    let cv_root = redirect_cv_root_to_temp(&client, "midrun");
-    let job: libtriqui_client::types::Job = client
-        .call_typed("create_job", &EmptyParams {})
-        .expect("create job");
-    let job_id = job.id.clone();
-    let _: libtriqui_client::types::Job = client
-        .call_typed(
-            "update_job",
-            &libtriqui_client::UpdateJobParams {
-                job_id: job_id.clone(),
-                title: "Mid-Run Ad Engineer".into(),
-                job_ad_text: None,
-                triqui_size: 10,
-            },
-        )
-        .expect("set title");
-    import_two_txt_cvs(&client, &cv_root, &app_dir, &job_id);
-
-    // Wait until the run is actually in flight (the rank_state row exists and
-    // reads running), then land the ad under it.
-    let start = Instant::now();
-    loop {
-        let running = client
-            .call_typed::<libtriqui_client::types::RankState>(
-                "get_rank_state",
-                &StartRankParams {
-                    job_id: job_id.clone(),
-                },
-            )
-            .map(|s| s.running)
-            .unwrap_or(false);
-        if running {
-            break;
-        }
-        assert!(
-            start.elapsed() < Duration::from_secs(120),
-            "the pre-ad cascade never started"
-        );
-        std::thread::sleep(Duration::from_millis(200));
-    }
-    let _: libtriqui_client::types::Job = client
-        .call_typed(
-            "update_job",
-            &libtriqui_client::UpdateJobParams {
-                job_id: job_id.clone(),
-                title: "Mid-Run Ad Engineer".into(),
-                job_ad_text: Some(
-                    "Senior Rust engineer with systems programming experience.".into(),
-                ),
-                triqui_size: 10,
-            },
-        )
-        .expect("set job ad mid-run");
-
-    // The ad turned the in-flight prefill run into a real ranking: the
-    // button-facing `ranking` flag must be on now (the gui spins the rank
-    // buttons on it, not on `running`).
-    let start = Instant::now();
-    loop {
-        let s: libtriqui_client::types::RankState = client
-            .call_typed(
-                "get_rank_state",
-                &StartRankParams {
-                    job_id: job_id.clone(),
-                },
-            )
-            .expect("rank state after ad");
-        if s.ranking {
-            break;
-        }
-        assert!(
-            start.elapsed() < Duration::from_secs(120),
-            "ranking flag never turned on after the ad landed mid-run"
-        );
-        std::thread::sleep(Duration::from_millis(200));
-    }
-
-    // The same run carries straight through to converged grades.
-    let start = Instant::now();
-    let final_state = loop {
-        let state: libtriqui_client::types::RankState = client
-            .call_typed(
-                "get_rank_state",
-                &StartRankParams {
-                    job_id: job_id.clone(),
-                },
-            )
-            .expect("rank state");
-        if !state.running {
-            break state;
-        }
-        assert!(
-            start.elapsed() < Duration::from_secs(600),
-            "the cascade never settled after the mid-run ad"
-        );
-        std::thread::sleep(Duration::from_millis(500));
-    };
-    assert!(
-        final_state.converged,
-        "the mid-run ad must not stop the cascade: reason {:?}",
-        final_state.reason
-    );
-    let page: libtriqui_client::types::CandidatePage = client
-        .call_typed(
-            "list_candidates",
-            &libtriqui_client::ListCandidatesParams {
-                job_id: job_id.clone(),
-                offset: 0,
-                limit: 50,
-                query: None,
-                sort_by: None,
-                sort_dir: Some(false),
-            },
-        )
-        .expect("list candidates");
-    assert_eq!(page.items.len(), 2, "both CVs listed");
-    for cand in &page.items {
-        let stages: Vec<&str> = cand.scores.iter().map(|s| s.question_id.as_str()).collect();
-        for stage in ["scout", "ad"] {
-            assert!(
-                stages.contains(&stage),
-                "candidate {} must carry a '{}' grade: {stages:?}",
-                cand.id,
-                stage
-            );
-        }
-    }
-
-    serve.shutdown();
-    let _ = std::fs::remove_dir_all(&app_dir);
-    let _ = std::fs::remove_dir_all(&cv_root);
-}
-
-/// The cancel-then-respawn race: cancelling a running cascade and immediately
-/// starting a new one must not let the old runner clobber the new run's
-/// `rank_state`. Without a generation guard, the old runner's terminal
-/// "cancelled" write lands after the new spawn and the gui sees the new run as
-/// cancelled while it works (and further spawns stack on top of it).
-///
-/// The new run is polled for the clobber signature
-/// (`running == false && converged == false`) for its whole lifetime and must
-/// end converged with no cancel reason.
-///
-/// Full-workflow: a real engine, so the cancelled runner is genuinely
-/// mid-embed when the cancel+spawn lands — expensive-test pattern.
-#[test]
-fn a_cascade_spawned_over_a_cancelled_run_keeps_its_state() {
-    if std::env::var("IK_SKIP_EXPENSIVE").is_ok() {
-        eprintln!("skipping: expensive (real engine, real model cache)");
-        return;
-    }
-    let (serve, client, app_dir) = spawn_serve("respring");
-    let cv_root = redirect_cv_root_to_temp(&client, "respring");
-    let job_id = create_job_with_ad(
-        &client,
-        "Re-Spring Engineer",
-        "Senior Rust engineer with systems programming experience.",
-    );
-
-    // The import auto-starts cascade A; it is mid-scout/mid-wave (engine
-    // work, seconds) by the time the next two calls land.
-    import_two_txt_cvs(&client, &cv_root, &app_dir, &job_id);
-
-    let rank_state = |job_id: &str| -> libtriqui_client::types::RankState {
-        client
-            .call_typed(
-                "get_rank_state",
-                &StartRankParams {
-                    job_id: job_id.to_string(),
-                },
-            )
-            .expect("rank state")
-    };
-
-    // Cancel A, then immediately spawn B over it. The spawn is allowed
-    // precisely because A's run was cancelled.
-    client
-        .call(
-            "cancel_rank",
-            &libtriqui_client::CancelRankParams {
-                job_id: job_id.clone(),
-            },
-        )
-        .expect("cancel cascade A");
-    let _: serde_json::Value = client
-        .call_typed(
-            "start_rank",
-            &StartRankParams {
-                job_id: job_id.clone(),
-            },
-        )
-        .expect("spawn cascade B over the cancelled run");
-
-    // B's whole lifetime: the state must always read as a live run (or the
-    // converged end state) — never as cancelled-and-stopped, which is A's
-    // terminal write bleeding onto B's row.
-    let start = Instant::now();
-    loop {
-        let state = rank_state(&job_id);
-        assert!(
-            state.running || state.converged,
-            "B's rank state was clobbered mid-run: {state:?}"
-        );
-        if state.converged {
-            assert!(
-                state.reason.is_none(),
-                "B converged but carries a cancel reason: {:?}",
-                state.reason
-            );
-            break;
-        }
-        assert!(
-            start.elapsed() < Duration::from_secs(600),
-            "cascade B never converged"
-        );
-        std::thread::sleep(Duration::from_millis(250));
-    }
-
-    serve.shutdown();
-    let _ = std::fs::remove_dir_all(&app_dir);
-    let _ = std::fs::remove_dir_all(&cv_root);
-}
-
-/// A `rank_state` row claiming a run in flight (`complete = 0, cancelled = 0`)
-/// is only truthful while the process that spawned the cascade lives. A quit
-/// or crash mid-cascade leaves the row behind, and the next launch inherits a
-/// job that reports running forever and refuses every new cascade — the
-/// wedged-job bug. Serve start must recover the stale row.
+/// A stale `running` cascade row on restart must be recovered as cancelled.
+/// The `running` flag in `rank_state` is only truthful while the process that
+/// spawned the cascade lives. A quit or crash mid-cascade leaves the row
+/// behind, and the next launch inherits a job that reports running forever
+/// and refuses every new cascade — the wedged-job bug. Serve start must
+/// recover the stale row.
 ///
 /// Cheap: the row is written directly; no cascade ever runs.
 #[test]
@@ -1553,6 +528,7 @@ fn a_stale_running_cascade_state_recovers_on_serve_restart() {
             },
         )
         .expect("rank state after restart");
+
     assert!(!recovered.running, "the stale run must not read running");
     assert!(
         !recovered.converged,
@@ -1568,441 +544,156 @@ fn a_stale_running_cascade_state_recovers_on_serve_restart() {
     let _ = std::fs::remove_dir_all(&app_dir);
 }
 
-/// Everything the import of an ad-less job starts must be ad-independent work
-/// — and everything ad-dependent must wait for a query. The import-time
-/// cascade runs pre-ad and converges having embedded the scout vectors (stage
-/// 0.5, whole corpus) and the heavy chunk vectors (the waves); no scout/ad
-/// grade may exist yet. When the ad then lands, grades come from the vectors
-/// already on disk — no CV is re-embedded.
-///
-/// Full-workflow: real engine, real model cache (like the other cascade
-/// tests), so it follows the expensive-test pattern.
+/// The new user-driven model selection flow: 4 variants (270M/600M × ONNX/MLX)
+/// are listed, none are pre-downloaded, no startup modal, engine stays Stopped
+/// until the user downloads and explicitly selects a model via set_embedding_model.
 #[test]
-fn a_job_imported_without_an_ad_embeds_the_corpus_and_grades_when_the_ad_lands() {
-    if std::env::var("IK_SKIP_EXPENSIVE").is_ok() {
-        eprintln!("skipping: expensive (real engine, real model cache)");
-        return;
-    }
-    let (serve, client, app_dir) = spawn_serve("pread");
-    let cv_root = redirect_cv_root_to_temp(&client, "pread");
-    let job: libtriqui_client::types::Job = client
-        .call_typed("create_job", &EmptyParams {})
-        .expect("create job");
-    let job_id = job.id.clone();
-    // Title-only update: the ad stays unset (the gui's Setup pane flow before
-    // the user pastes an ad).
-    let _: libtriqui_client::types::Job = client
-        .call_typed(
-            "update_job",
-            &libtriqui_client::UpdateJobParams {
-                job_id: job_id.clone(),
-                title: "Pre-Ad Engineer".into(),
-                job_ad_text: None,
-                triqui_size: 10,
-            },
-        )
-        .expect("set title");
+fn user_driven_model_selection_flow() {
+    let app_dir = fresh_app_dir("model-selection");
+    let cfg_path = write_config_with_isolated_model_dir(&app_dir, "model-selection");
+    let serve = InProcessServe::start_with_config(app_dir.clone(), "0.0.0-e2e".to_string(), cfg_path)
+        .expect("start in-process serve");
+    let client = serve.client();
 
-    import_two_txt_cvs(&client, &cv_root, &app_dir, &job_id);
+    // 1. list_embedders returns 4 variants, all not downloaded, exactly one default
+    let embedders: Vec<libtriqui_client::types::GuiEmbedder> = client
+        .call_typed("list_embedders", &EmptyParams {})
+        .expect("list_embedders");
 
-    // The import auto-started the cascade pre-ad; wait it out. It converges by
-    // embedding — the only work it has.
-    let rank_state = |job_id: &str| -> libtriqui_client::types::RankState {
-        client
-            .call_typed(
-                "get_rank_state",
-                &StartRankParams {
-                    job_id: job_id.to_string(),
-                },
-            )
-            .expect("rank state exists once the import cascade started")
-    };
-    let start = Instant::now();
-    let pre_ad = loop {
-        let state = rank_state(&job_id);
-        if !state.running {
-            break state;
-        }
-        assert!(
-            start.elapsed() < Duration::from_secs(600),
-            "the pre-ad cascade never settled"
-        );
-        std::thread::sleep(Duration::from_millis(500));
-    };
-    assert!(
-        pre_ad.converged,
-        "the pre-ad run converges (it embeds everyone): reason {:?}",
-        pre_ad.reason
-    );
+    assert_eq!(embedders.len(), 4, "should have 4 model variants");
 
-    // The right-moment nudge: everything embeddable is embedded, the ad is
-    // still missing — job_ui_state now points at the one remaining step
-    // (the gui renders this as the dismissible "add the job ad" banner).
-    let pre_ad_ui: libtriqui_client::types::JobUiState = client
-        .call_typed(
-            "job_ui_state",
-            &GetJobDetailParams {
-                job_id: job_id.clone(),
-            },
-        )
-        .expect("job_ui_state after pre-ad convergence");
-    assert_eq!(
-        pre_ad_ui.nudge.as_deref(),
-        Some("add-job-ad"),
-        "converged ad-less prefill → the add-job-ad nudge must fire"
-    );
+    let slugs: Vec<&str> = embedders.iter().map(|e| e.slug.as_str()).collect();
+    assert!(slugs.contains(&"harrier-oss-v1-270m-ONNX-q4f16"), "should have 270M ONNX");
+    assert!(slugs.contains(&"harrier-oss-v1-270m-MLX-4bit"), "should have 270M MLX");
+    assert!(slugs.contains(&"harrier-oss-v1-0.6b-ONNX-q4"), "should have 600M ONNX");
+    assert!(slugs.contains(&"harrier-oss-v1-0.6b-MLX-4bit"), "should have 600M MLX");
 
-    // The vectors are on disk — scout AND heavy model — while the grades are
-    // not: nothing was scoreable.
-    {
-        let conn = open_db(&app_dir.join("triqui.db"));
-        let models = scalar(
-            &conn,
-            &format!(
-                "SELECT COUNT(DISTINCT vector_model) FROM candidate_chunks
-                 WHERE candidate_id IN (SELECT id FROM candidates WHERE job_id = '{job_id}')"
-            ),
-        );
-        assert!(
-            models >= 2,
-            "pre-ad import must have extracted both scout and heavy vectors, got {models} model(s)"
-        );
-        let score_rows = scalar(
-            &conn,
-            &format!(
-                "SELECT COUNT(*) FROM candidate_scores WHERE candidate_id IN
-                 (SELECT id FROM candidates WHERE job_id = '{job_id}')"
-            ),
-        );
-        assert_eq!(
-            score_rows, 0,
-            "no stage may write a grade without a query (no ad, no criteria)"
-        );
+    let default_count = embedders.iter().filter(|e| e.is_default).count();
+    assert_eq!(default_count, 1, "exactly one default");
+    let default = embedders.iter().find(|e| e.is_default).unwrap();
+    assert_eq!(default.slug, "harrier-oss-v1-270m-ONNX-q4f16", "270M ONNX is default");
+
+    // All should be not downloaded on fresh install
+    for e in &embedders {
+        assert!(!e.downloaded, "{} should not be downloaded on fresh install", e.slug);
+        assert_eq!(e.size_bytes, 0, "{} should have 0 size_bytes", e.slug);
     }
 
-    // The ad lands after the pre-ad run converged: `update_job` spawns the
-    // scoring-only cascade.
-    let _: libtriqui_client::types::Job = client
-        .call_typed(
-            "update_job",
-            &libtriqui_client::UpdateJobParams {
-                job_id: job_id.clone(),
-                title: "Pre-Ad Engineer".into(),
-                job_ad_text: Some(
-                    "Senior Rust engineer with systems programming experience.".into(),
-                ),
-                triqui_size: 10,
-            },
-        )
-        .expect("set job ad");
-    let start = Instant::now();
-    let post_ad = loop {
-        let state = rank_state(&job_id);
-        if !state.running {
-            break state;
-        }
-        assert!(
-            start.elapsed() < Duration::from_secs(600),
-            "the scoring cascade never settled"
-        );
-        std::thread::sleep(Duration::from_millis(500));
-    };
-    assert!(
-        post_ad.converged,
-        "the ad-landed run converges: reason {:?}",
-        post_ad.reason
-    );
+    // 2. Engine status should be Stopped (no auto-start)
+    let status: libtriqui_client::types::RuntimeStatusInfo = client
+        .call_typed("runtime_status", &EmptyParams {})
+        .expect("runtime_status");
+    assert_eq!(status.status, "Stopped", "engine should be Stopped on fresh launch");
 
-    // The ad landed — the nudge's premise is gone, it must not linger.
-    let post_ad_ui: libtriqui_client::types::JobUiState = client
-        .call_typed(
-            "job_ui_state",
-            &GetJobDetailParams {
-                job_id: job_id.clone(),
+    // 3. Download one model (270M ONNX)
+    client
+        .call_typed::<serde_json::Value>(
+            "download_embedder",
+            &libtriqui_client::params::DownloadEmbedderParams {
+                slug: "harrier-oss-v1-270m-ONNX-q4f16".into(),
             },
         )
-        .expect("job_ui_state after the ad landed");
-    assert_eq!(
-        post_ad_ui.nudge, None,
-        "with an ad set there is nothing to nudge about"
-    );
+        .expect("download 270M ONNX");
 
-    // Grades now, for every CV, from the vectors extracted pre-ad.
-    let page: libtriqui_client::types::CandidatePage = client
-        .call_typed(
-            "list_candidates",
-            &libtriqui_client::ListCandidatesParams {
-                job_id: job_id.clone(),
-                offset: 0,
-                limit: 50,
-                query: None,
-                sort_by: None,
-                sort_dir: Some(false),
+    // 4. Verify it's now downloaded
+    let embedders: Vec<libtriqui_client::types::GuiEmbedder> = client
+        .call_typed("list_embedders", &EmptyParams {})
+        .expect("list_embedders after download");
+    let downloaded = embedders.iter().find(|e| e.slug == "harrier-oss-v1-270m-ONNX-q4f16").unwrap();
+    assert!(downloaded.downloaded, "270M ONNX should be downloaded");
+    assert!(downloaded.size_bytes > 0, "should have non-zero size_bytes");
+
+    // 5. Switch to the downloaded model (set_embedding_model hot-swaps, engine stays Stopped until first embed)
+    client
+        .call_typed::<serde_json::Value>(
+            "set_embedding_model",
+            &libtriqui_client::params::SetEmbeddingModelParams {
+                slug: "harrier-oss-v1-270m-ONNX-q4f16".into(),
             },
         )
-        .expect("list candidates");
-    assert_eq!(page.items.len(), 2, "both CVs listed");
-    for cand in &page.items {
-        let stages: Vec<&str> = cand.scores.iter().map(|s| s.question_id.as_str()).collect();
-        for stage in ["scout", "ad"] {
-            assert!(
-                stages.contains(&stage),
-                "candidate {} must carry a '{}' grade after the ad lands: {stages:?}",
-                cand.id,
-                stage
-            );
-        }
-    }
+        .expect("set embedding model");
+
+    // 6. Engine should still be Stopped (lazy start on first embed)
+    let status: libtriqui_client::types::RuntimeStatusInfo = client
+        .call_typed("runtime_status", &EmptyParams {})
+        .expect("runtime_status after switch");
+    assert_eq!(status.status, "Stopped", "engine should be Stopped after set_embedding_model (lazy start)");
+    assert_eq!(status.model.as_deref(), Some("harrier-oss-v1-270m-ONNX-q4f16"));
+
+    // 7. Preference should be persisted
+    let prefs: libtriqui_client::types::AppPreferences = client
+        .call_typed("load_preferences", &EmptyParams {})
+        .expect("load preferences");
+    assert_eq!(prefs.embedding_model.as_deref(), Some("harrier-oss-v1-270m-ONNX-q4f16"));
+
+    // 8. Switch to another model (600M ONNX) - download + switch
+    client
+        .call_typed::<serde_json::Value>(
+            "download_embedder",
+            &libtriqui_client::params::DownloadEmbedderParams {
+                slug: "harrier-oss-v1-0.6b-ONNX-q4".into(),
+            },
+        )
+        .expect("download 600M ONNX");
+
+    client
+        .call_typed::<serde_json::Value>(
+            "set_embedding_model",
+            &libtriqui_client::params::SetEmbeddingModelParams {
+                slug: "harrier-oss-v1-0.6b-ONNX-q4".into(),
+            },
+        )
+        .expect("set embedding model to 600M ONNX");
+
+    let status: libtriqui_client::types::RuntimeStatusInfo = client
+        .call_typed("runtime_status", &EmptyParams {})
+        .expect("runtime_status after second switch");
+    assert_eq!(status.model.as_deref(), Some("harrier-oss-v1-0.6b-ONNX-q4"));
 
     serve.shutdown();
     let _ = std::fs::remove_dir_all(&app_dir);
-    let _ = std::fs::remove_dir_all(&cv_root);
 }
 
-/// The job ad as a **file**: default path, empty seeding, adoption of edits,
-/// watcher pickup, "Change…", and recreation after deletion. Cheap — no CVs are
-/// staged, so nothing is embedded and no rank actually runs.
-///
-/// The watcher arm is the important half: the user edits the ad in their own
-/// editor, so the app has to notice the save by itself and mark the job dirty.
-/// That is the whole reason the ad is a file rather than app state.
+/// Old slug migration: existing users with old slug should have it mapped to new slug.
 #[test]
-fn job_ad_file_is_seeded_watched_and_re_read() {
-    let (serve, client, cv_root, _cfg_path) = spawn_serve_isolated_cv_root("jobadfile");
-    let events = spawn_event_collector(&client);
+fn old_slug_migration() {
+    let app_dir = fresh_app_dir("slug-migration");
+    let cfg_path = write_config_with_isolated_cv_root(&app_dir, "slug-migration");
+    let serve = InProcessServe::start_with_config(app_dir.clone(), "0.0.0-e2e".to_string(), cfg_path)
+        .expect("start in-process serve");
+    let client = serve.client();
 
-    let job_id = create_job_with_ad(
-        &client,
-        "Field Technician",
-        "Diesel mechanic wanted: injectors, turbos and fuel systems.",
-    );
-    // Start from a job with no ad, so the empty seeding is observable.
-    client
-        .call_typed::<libtriqui_client::types::Job>(
-            "update_job",
-            &libtriqui_client::UpdateJobParams {
-                job_id: job_id.clone(),
-                title: "Field Technician".into(),
-                job_ad_text: None,
-                triqui_size: 10,
-            },
-        )
-        .expect("clear the ad");
+    // Manually write old preferences with old slug
+    let prefs_path = app_dir.join("preferences.json");
+    let old_prefs = serde_json::json!({
+        "theme": "system",
+        "color_theme": "default",
+        "quick_pane_shortcut": null,
+        "language": null,
+        "embedding_model": "harrier-oss-v1-270m-ONNX_model_q4f16",
+        "inference_model": null,
+        "cv_dir_root": null,
+        "engine_backend": null,
+        "engine_exec_provider": null,
+        "engine_intra_threads": null,
+        "engine_inter_threads": null,
+        "engine_embed_batch": null,
+        "engine_max_cores": null,
+        "engine_no_cache": null
+    });
+    std::fs::write(&prefs_path, serde_json::to_string_pretty(&old_prefs).unwrap()).unwrap();
 
-    // -- 1. Asking for the ad resolves the default path and seeds it empty. --
-    let ad: libtriqui_client::types::JobAdFile = client
-        .call_typed(
-            "get_job_ad",
-            &libtriqui_client::GetJobAdParams {
-                job_id: job_id.clone(),
-            },
-        )
-        .expect("get job ad");
-    let ad_path = std::path::PathBuf::from(&ad.path);
-    assert!(
-        ad_path.starts_with(&cv_root) && ad_path.ends_with("job-ad.txt"),
-        "the ad lives beside the CV folder under the cv root: {} (root {})",
-        ad.path,
-        cv_root.display()
-    );
-    assert!(ad_path.is_file(), "the default ad file was created");
-    assert!(
-        std::fs::read_to_string(&ad_path).unwrap().is_empty(),
-        "a job with no ad gets an EMPTY file, never invented content"
-    );
-
-    // The resolved path is persisted, so the gui shows the same one next time.
-    let detail: libtriqui_client::types::JobDetail = client
-        .call_typed(
-            "get_job_detail",
-            &GetJobDetailParams {
-                job_id: job_id.clone(),
-            },
-        )
-        .expect("detail");
-    assert_eq!(detail.job.job_ad_path.as_deref(), Some(ad.path.as_str()));
-    assert!(
-        detail.job.job_ad_text.is_none(),
-        "an empty ad file leaves the job with no ad (never a blank-but-set one)"
-    );
-
-    // -- 2. Writing the file, then re-reading it, adopts the text. -----------
-    let real_ad = "Diesel mechanic wanted: injectors, turbos and fuel systems. Full benefits.";
-    std::fs::write(&ad_path, real_ad).expect("write the ad file");
-    let reloaded: libtriqui_client::types::Job = client
-        .call_typed(
-            "reload_job_ad",
-            &libtriqui_client::ReloadJobAdParams {
-                job_id: job_id.clone(),
-            },
-        )
-        .expect("reload job ad");
-    assert_eq!(reloaded.job_ad_text.as_deref(), Some(real_ad));
-
-    // -- 3. The watcher picks an edit up on its own — no rpc, no button. -----
-    //    `watch_job` is what the gui sends when a job is opened.
-    client
-        .call_typed::<libtriqui_client::types::Job>(
-            "watch_job",
-            &libtriqui_client::WatchJobParams {
-                job_id: job_id.clone(),
-            },
-        )
-        .expect("watch the job");
-    let edited = format!("{real_ad} Mention your certification.");
-    std::fs::write(&ad_path, &edited).expect("edit the ad in an external editor");
-
-    let start = Instant::now();
-    loop {
-        let d: libtriqui_client::types::JobDetail = client
-            .call_typed(
-                "get_job_detail",
-                &GetJobDetailParams {
-                    job_id: job_id.clone(),
-                },
-            )
-            .expect("detail while waiting for the watcher");
-        if d.job.job_ad_text.as_deref() == Some(edited.as_str()) {
-            break;
-        }
-        assert!(
-            start.elapsed() < Duration::from_secs(60),
-            "the ad file change was never picked up; last ad = {:?}",
-            d.job.job_ad_text
-        );
-        std::thread::sleep(Duration::from_millis(250));
-    }
-    let ui: libtriqui_client::types::JobUiState = client
-        .call_typed(
-            "job_ui_state",
-            &GetJobDetailParams {
-                job_id: job_id.clone(),
-            },
-        )
-        .expect("job ui state");
-    assert!(
-        ui.rerank_dirty,
-        "an ad edit is a ranking input, so the job must read as needing a re-rank"
-    );
-
-    // -- 4. "Change…" points the job at a different file. -------------------
-    let other = cv_root.join("elsewhere").join("ad.md");
-    std::fs::create_dir_all(other.parent().unwrap()).expect("mkdir");
-    let other_text = "A completely different advertisement, pasted elsewhere.";
-    std::fs::write(&other, other_text).expect("write the second ad file");
-    let other_str = other.to_string_lossy().to_string();
-
-    let switched: libtriqui_client::types::JobAdFile = client
-        .call_typed(
-            "set_job_ad_path",
-            &libtriqui_client::SetJobAdPathParams {
-                job_id: job_id.clone(),
-                path: other_str.clone(),
-            },
-        )
-        .expect("change the ad file");
-    assert_eq!(
-        switched.path, other_str,
-        "the chosen path is now the ad path"
-    );
-    assert_eq!(switched.text, other_text, "the new file's text is adopted");
-
-    let detail: libtriqui_client::types::JobDetail = client
-        .call_typed(
-            "get_job_detail",
-            &GetJobDetailParams {
-                job_id: job_id.clone(),
-            },
-        )
-        .expect("detail after change");
-    assert_eq!(detail.job.job_ad_path.as_deref(), Some(other_str.as_str()));
-    assert_eq!(detail.job.job_ad_text.as_deref(), Some(other_text));
-
-    // -- 4b. A disk edit announces itself, so the pane's read-only mirror of
-    //        the file follows the editor. `rank-progress` cannot cover this: on
-    //        a job with no extracted CVs no cascade ever starts.
-    client
-        .call_typed::<libtriqui_client::types::Job>(
-            "watch_job",
-            &libtriqui_client::WatchJobParams {
-                job_id: job_id.clone(),
-            },
-        )
-        .expect("re-watch for the event check");
-    let marker = events.lock().expect("event log lock").len();
-    std::fs::write(&other, "Announced over the event bus.").expect("edit for the event");
-    // Poll only past `marker`: an earlier job-ad-reloaded (emitted by the
-    // "Change…" step) is already in the log and a whole-log scan would match it.
-    let start = Instant::now();
-    loop {
-        let seen = events
-            .lock()
-            .expect("event log lock")
-            .iter()
-            .skip(marker)
-            .any(|(name, data)| name == "job-ad-reloaded" && data["job_id"] == job_id.as_str());
-        if seen {
-            break;
-        }
-        assert!(
-            start.elapsed() < Duration::from_secs(60),
-            "the ad reload event never arrived; the pane's read-only mirror of the \
-             file would sit stale after an external edit"
-        );
-        std::thread::sleep(Duration::from_millis(250));
-    }
-
-    // -- 4c. The save shape a real editor produces: write a sibling temp file
-    //        and rename it over the target (atomic replace), rather than
-    //        truncating the file in place. Many editors do this to avoid
-    //        truncating the user's file if the save fails, and a watcher set up
-    //        on the file path can miss it entirely.
-    let atomic_text = "Saved by an editor that replaces the file atomically.";
-    let tmp_sibling = other.with_extension("txt.swp");
-    std::fs::write(&tmp_sibling, atomic_text).expect("write the editor's temp file");
-    std::fs::rename(&tmp_sibling, &other).expect("atomic replace (editor save)");
-    let start = Instant::now();
-    loop {
-        let d: libtriqui_client::types::JobDetail = client
-            .call_typed(
-                "get_job_detail",
-                &GetJobDetailParams {
-                    job_id: job_id.clone(),
-                },
-            )
-            .expect("detail while waiting for the atomic save");
-        if d.job.job_ad_text.as_deref() == Some(atomic_text) {
-            break;
-        }
-        assert!(
-            start.elapsed() < Duration::from_secs(60),
-            "an ATOMIC editor save was never picked up (last ad = {:?}); a watcher on \
-             the file path misses the write-temp-then-rename that most editors do",
-            d.job.job_ad_text
-        );
-        std::thread::sleep(Duration::from_millis(250));
-    }
-
-    // -- 5. A deleted ad file is recreated empty, not left dangling. --------
-    std::fs::remove_file(&other).expect("delete the chosen ad file");
-    let recreated: libtriqui_client::types::JobAdFile = client
-        .call_typed(
-            "get_job_ad",
-            &libtriqui_client::GetJobAdParams {
-                job_id: job_id.clone(),
-            },
-        )
-        .expect("get job ad after deletion");
-    assert!(recreated.created, "a deleted ad file is recreated");
-    assert!(
-        recreated.text.is_empty(),
-        "...and it is empty, not stale text"
-    );
-    assert!(
-        std::path::Path::new(&recreated.path).is_file(),
-        "the recreated file exists on disk"
-    );
-
+    // Restart serve to load migrated preferences
     serve.shutdown();
-    let _ = std::fs::remove_dir_all(&cv_root);
+    let serve2 = restart_serve(&app_dir, "slug-migration");
+    let client = serve2.client();
+
+    let prefs: libtriqui_client::types::AppPreferences = client
+        .call_typed("load_preferences", &EmptyParams {})
+        .expect("load preferences after migration");
+
+    assert_eq!(prefs.embedding_model.as_deref(), Some("harrier-oss-v1-270m-ONNX-q4f16"));
+
+    serve2.shutdown();
+    let _ = std::fs::remove_dir_all(&app_dir);
 }

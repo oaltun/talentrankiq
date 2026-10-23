@@ -2,7 +2,6 @@ import { Outlet } from '@tanstack/react-router'
 
 import { ActivityBar } from './ActivityBar'
 import { StatusBar } from './StatusBar'
-import { ModelDownloadModal } from './ModelDownloadModal'
 import { CommandPalette } from '@/components/command-palette/CommandPalette'
 import { PreferencesDialog } from '@/components/preferences/PreferencesDialog'
 import { Toaster } from 'sonner'
@@ -41,7 +40,6 @@ export function MainWindow() {
 
       {/* Global UI (hidden until triggered) */}
       <CommandPalette />
-      <ModelDownloadModal />
       <PreferencesDialog />
       <Toaster
         position="bottom-right"

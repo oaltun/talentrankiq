@@ -1,6 +1,4 @@
 import { useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
 import {
   Loader2,
   Download,
@@ -9,16 +7,10 @@ import {
   Cpu,
   HardDrive,
   FlaskConical,
+  Play,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { errorMessage } from '@/lib/errors'
 import {
@@ -26,11 +18,9 @@ import {
   useDownloadEmbedder,
   useRemoveEmbedder,
   useSetDefaultEmbedder,
+  useSetEmbeddingModel,
   useModelDownloadProgress,
   useModelDownloadCompleteToast,
-  useModelVariants,
-  fetchModelVariants,
-  downloadEmbedder,
   type GuiEmbedder,
 } from '@/services/models'
 import { usePreferences } from '@/services/preferences'
@@ -48,6 +38,13 @@ function fmtMemory(mb: number): string {
   return `${mb} MB`
 }
 
+// Determine arm from slug/backend (not runtime resolve)
+function getArmFromSlug(slug: string): string | null {
+  if (slug.includes('-MLX-')) return 'MLX'
+  if (slug.includes('-ONNX-')) return 'ONNX'
+  return null
+}
+
 function EmbedderCard({
   embedder,
   isDefault,
@@ -57,6 +54,7 @@ function EmbedderCard({
   onRemove,
   onSetDefault,
   onTry,
+  onUseModel,
 }: {
   embedder: GuiEmbedder
   isDefault: boolean
@@ -66,18 +64,9 @@ function EmbedderCard({
   onRemove: (slug: string) => void
   onSetDefault: (slug: string) => void
   onTry: (slug: string, name: string) => void
+  onUseModel: (slug: string) => void
 }) {
-  const { t } = useTranslation()
-  const { data: variants } = useModelVariants(embedder.slug)
-  // The arm `backend: auto` resolves to on THIS machine (slug names are
-  // historical) — MLX · Metal on an Apple-Silicon Mac with an mlx variant,
-  // ONNX · CPU everywhere else.
-  const arm =
-    variants?.runtime === 'mlx'
-      ? t('status.arm.mlx')
-      : variants?.runtime === 'ort'
-        ? t('status.arm.ort')
-        : null
+  const arm = getArmFromSlug(embedder.slug)
   const {
     slug,
     name,
@@ -106,11 +95,6 @@ function EmbedderCard({
             {arm && (
               <span className="rounded bg-foreground/5 px-1.5 text-[10px] tracking-wide text-muted-foreground">
                 {arm}
-              </span>
-            )}
-            {variants && !variants.present && (
-              <span className="rounded bg-amber-500/15 px-1.5 text-[10px] text-amber-700 dark:text-amber-400">
-                {t('models.armMissing')}
               </span>
             )}
           </div>
@@ -193,6 +177,13 @@ function EmbedderCard({
             </Button>
             <Button
               size="sm"
+              variant="default"
+              onClick={() => onUseModel(slug)}
+            >
+              <Play className="size-3" /> Use this model
+            </Button>
+            <Button
+              size="sm"
               variant="destructive"
               onClick={() => onRemove(slug)}
             >
@@ -219,12 +210,12 @@ function EmbedderCard({
 }
 
 function EmbeddingPane() {
-  const { t } = useTranslation()
   const { data, isLoading, error } = useEmbedders()
   const { data: prefs } = usePreferences()
   const download = useDownloadEmbedder()
   const remove = useRemoveEmbedder()
   const setDefault = useSetDefaultEmbedder()
+  const setEmbeddingModel = useSetEmbeddingModel()
   const progress = useModelDownloadProgress()
   useModelDownloadCompleteToast()
 
@@ -236,44 +227,8 @@ function EmbeddingPane() {
     ? (data ?? []).find(e => e.slug === trySlug)
     : null
 
-  // Consent gate for switching to a model whose effective arm is missing
-  // (e.g. an mlx-only variant not yet fetched on this Mac): the download is
-  // multi-hundred-MB, so it only starts after an explicit yes.
-  const [consent, setConsent] = useState<{
-    slug: string
-    name: string
-    arm: string
-  } | null>(null)
-  const [consenting, setConsenting] = useState(false)
-
-  const handleSetDefault = async (slug: string, name: string) => {
-    const variants = await fetchModelVariants(slug)
-    if (variants && !variants.present) {
-      setConsent({
-        slug,
-        name,
-        arm:
-          variants.runtime === 'mlx'
-            ? t('status.arm.mlx')
-            : t('status.arm.ort'),
-      })
-      return
-    }
-    setDefault.mutate(slug)
-  }
-
-  const handleConsentAccept = async () => {
-    if (!consent) return
-    setConsenting(true)
-    try {
-      await downloadEmbedder(consent.slug)
-      setDefault.mutate(consent.slug)
-      setConsent(null)
-    } catch (e) {
-      toast.error(t('models.consentFailed'), { description: errorMessage(e) })
-    } finally {
-      setConsenting(false)
-    }
+  const handleUseModel = (slug: string) => {
+    setEmbeddingModel.mutate(slug)
   }
 
   if (isLoading) {
@@ -294,13 +249,28 @@ function EmbeddingPane() {
   }
 
   const embedders = [...(data ?? [])].sort((a, b) => a.memory_mb - b.memory_mb)
+  const anyDownloaded = embedders.some(e => e.downloaded)
 
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
-        On-device ONNX embedders from the app&apos;s model registry. Download,
-        remove, and pick the default model used for ranking CVs.
+        On-device embedding models from the app&apos;s model registry. Download,
+        remove, and pick the model used for ranking CVs. The engine starts when
+        you click "Use this model" on a downloaded model.
       </p>
+
+      {!anyDownloaded && (
+        <div className="flex flex-col items-center justify-center py-12 text-center">
+          <HardDrive className="size-12 text-muted-foreground/50 mb-4" />
+          <p className="text-lg font-medium mb-2">
+            No models downloaded
+          </p>
+          <p className="text-sm text-muted-foreground max-w-md">
+            Download a model to enable AI ranking. The engine will start
+            when you click "Use this model" on a downloaded model.
+          </p>
+        </div>
+      )}
 
       {embedders.length === 0 ? (
         <p className="text-sm text-muted-foreground">
@@ -322,11 +292,12 @@ function EmbeddingPane() {
               downloading={downloading}
               onDownload={slug => download.mutate(slug)}
               onRemove={slug => remove.mutate(slug)}
-              onSetDefault={slug => void handleSetDefault(slug, e.name)}
+              onSetDefault={slug => setDefault.mutate(slug)}
               onTry={(slug, name) => {
                 setTrySlug(slug)
                 setTryName(name)
               }}
+              onUseModel={handleUseModel}
             />
           )
         })
@@ -340,38 +311,6 @@ function EmbeddingPane() {
         slug={trySlug ?? ''}
         modelName={tryEmbedder?.name ?? tryName}
       />
-
-      <Dialog open={!!consent} onOpenChange={open => !open && setConsent(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>
-              {t('models.consentTitle', { name: consent?.name ?? '' })}
-            </DialogTitle>
-            <DialogDescription>
-              {t('models.consentDescription', {
-                name: consent?.name ?? '',
-                arm: consent?.arm ?? '',
-              })}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setConsent(null)}>
-              {t('modelDownload.decline')}
-            </Button>
-            <Button
-              onClick={() => void handleConsentAccept()}
-              disabled={consenting}
-            >
-              {consenting ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Download className="size-4" />
-              )}
-              {t('modelDownload.accept')}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

@@ -20,6 +20,8 @@ use libtriqui_client::types::{
 };
 use libtriqui_core::app_config;
 use libtriqui_core::embed::Embedder;
+use libmodeldownloader::cli::Artifact;
+use libmodeldownloader::modelcache::verify_safetensors_present;
 
 use crate::serve::handlers::prefs::{load_app_preferences, save_app_preferences};
 use crate::serve::handlers::{ok_json, string_err};
@@ -31,7 +33,7 @@ use crate::serve::ServeState;
 /// lands — the vector nuke must wait for the threads, not just the flag.
 const CASCADE_RETIRE_WAIT: std::time::Duration = std::time::Duration::from_secs(120);
 
-/// List the curated ONNX embedders (`gui_embedders`) with download/default state.
+/// List the curated embedders (`gui_embedders`) with download/default state.
 pub fn list_embedders(state: &Arc<ServeState>) -> Result<serde_json::Value, ProtocolError> {
     let cfg = app_config::load_triq();
     let model_dir = app_config::model_dir();
@@ -53,7 +55,25 @@ pub fn list_embedders(state: &Arc<ServeState>) -> Result<serde_json::Value, Prot
         let model_def = model_map
             .get(ge.slug.as_str())
             .ok_or_else(|| string_err(format!("gui_embedders slug '{}' not in models", ge.slug)))?;
-        let downloaded = libmodelstorage::onnx_exists(&model_dir, &ge.slug, &revision);
+        
+        // Each model entry has only one artifact (Ort OR Mlx)
+        let artifact = model_def.artifacts.first()
+            .ok_or_else(|| string_err(format!("model '{}' has no artifact", ge.slug)))?;
+        
+        let downloaded = match artifact.backend {
+            libconfigreader::Backend::Ort => {
+                libmodelstorage::onnx_exists(&model_dir, &ge.slug, &revision)
+            }
+            libconfigreader::Backend::Mlx => {
+                let target = libmodelstorage::slug_dir(&model_dir, &ge.slug).join(&revision);
+                verify_safetensors_present(&target)
+            }
+            libconfigreader::Backend::Auto => {
+                // Auto should not appear in the model registry for gui_embedders
+                false
+            }
+        };
+        
         let size = if downloaded {
             dir_size(&libmodelstorage::slug_dir(&model_dir, &ge.slug))
         } else {
@@ -228,7 +248,7 @@ pub fn model_variants(
     })
 }
 
-/// Download an ONNX embedder via `modeldownloader`, emitting progress events.
+/// Download an embedder (ONNX or MLX) via `modeldownloader`, emitting progress events.
 /// If the engine is running with a different model loaded, that model is
 /// unloaded first to minimise RAM pressure during the download.
 pub fn download_embedder(state: &Arc<ServeState>, slug: &str) -> Result<(), ProtocolError> {
@@ -248,14 +268,33 @@ pub fn download_embedder(state: &Arc<ServeState>, slug: &str) -> Result<(), Prot
         .find(|m| m.slug == slug)
         .ok_or_else(|| string_err(format!("model '{slug}' not in models registry")))?;
     
-    // Find the ONNX artifact to download
-    let onnx_art = model_def
+    // Each model entry now has only one artifact (Ort OR Mlx)
+    let artifact = model_def
         .artifacts
-        .iter()
-        .find(|a| a.backend == libconfigreader::Backend::Ort)
-        .ok_or_else(|| string_err(format!("model '{slug}' has no ONNX artifact")))?;
+        .first()
+        .ok_or_else(|| string_err(format!("model '{slug}' has no artifact")))?;
     
-    run_embedder_download(state, slug, &onnx_art.url, onnx_art.sha256.clone(), &onnx_art.extra_files)
+    match artifact.backend {
+        libconfigreader::Backend::Ort => {
+            // ONNX uses URL mode
+            run_embedder_download(
+                state, 
+                slug, 
+                &artifact.url, 
+                artifact.sha256.clone(), 
+                &artifact.extra_files
+            )
+        }
+        libconfigreader::Backend::Mlx => {
+            // MLX uses repo mode
+            run_mlx_download(state, slug, artifact)
+        }
+        libconfigreader::Backend::Auto => {
+            // Each model entry should have exactly one artifact (Ort OR Mlx).
+            // Auto should not appear in the model registry.
+            Err(string_err(format!("model '{slug}' has invalid backend: Auto")))
+        }
+    }
 }
 
 /// The one shared embedder download (the Models activity AND the startup
@@ -338,6 +377,86 @@ pub fn remove_embedder(slug: &str) -> Result<(), ProtocolError> {
         fs::remove_dir_all(&dir)
             .map_err(|e| string_err(format!("failed to remove {slug}: {e}")))?;
     }
+    Ok(())
+}
+
+/// Download an MLX embedder via `modeldownloader` (repo mode), emitting progress events.
+/// MLX artifacts are fetched from a HuggingFace repo listing (all .safetensors shards + metadata).
+fn run_mlx_download(
+    state: &ServeState,
+    slug: &str,
+    artifact: &libconfigreader::ModelArtifact,
+) -> Result<(), ProtocolError> {
+    let model_dir = app_config::model_dir();
+    let revision = app_config::revision();
+    
+    // Check if already present
+    let target = libmodelstorage::slug_dir(&model_dir, slug).join(&revision);
+    if verify_safetensors_present(&target) {
+        emit_progress(state, slug, "", 1, Some(1));
+        return Ok(());
+    }
+    
+    emit_progress(state, slug, "", 0, None);
+    
+    // Use modeldownloader in repo mode with Artifact::Mlx
+    let cli = libmodeldownloader::cli::Cli {
+        config: None,
+        model: Some(slug.to_string()),
+        source: Some(artifact.source.clone()),
+        url: None,
+        slug: Some(slug.to_string()),
+        revision: revision.clone(),
+        model_dir: Some(model_dir.clone()),
+        force: false,
+        dry_run: false,
+        files: vec![],
+        extra_files: artifact.extra_files.clone(),
+        artifact: Artifact::Mlx,
+        sha256: artifact.sha256.clone(),
+        verbose: app_config::verbose(),
+        logfile: None,
+    };
+    
+    let events = state.events.clone();
+    let events_complete = events.clone();
+    let slug_owned = slug.to_string();
+    let agg = Arc::new(Mutex::new(DownloadProgressAggregate::default()));
+    let agg_cb = Arc::clone(&agg);
+    
+    let progress_sink: libmodeldownloader::ProgressSink = Arc::new(Mutex::new(move |ev| {
+        let mut agg = agg_cb.lock().unwrap();
+        if agg.apply(ev) {
+            events.emit(
+                "model-download-progress",
+                &ModelDownloadProgress {
+                    repo_id: slug_owned.clone(),
+                    filename: agg.current.clone().unwrap_or_default(),
+                    done: agg.done(),
+                    total: agg.total(),
+                },
+            );
+        }
+    }));
+    
+    libmodeldownloader::Downloader::run_with_progress(cli, Some(progress_sink))
+        .map_err(|e| string_err(format!("modeldownloader failed for MLX '{slug}': {e}")))?;
+    
+    // Settle the bar at 100%
+    let agg = agg.lock().unwrap();
+    let done: u64 = agg.done();
+    let total = agg.total().unwrap_or(done).max(done);
+    emit_progress(state, slug, "", total, Some(total));
+    
+    // Emit completion event
+    let save_path = libmodelstorage::slug_dir(&model_dir, slug);
+    events_complete.emit(
+        "model-download-complete",
+        &libtriqui_client::types::ModelDownloadComplete {
+            slug: slug.to_string(),
+            path: save_path.to_string_lossy().to_string(),
+        },
+    );
     Ok(())
 }
 
@@ -561,7 +680,31 @@ pub fn set_embedding_model(state: &Arc<ServeState>, slug: &str) -> Result<(), Pr
     if !cfg.gui_embedders.iter().any(|ge| ge.slug == slug) {
         return Err(string_err(format!("unknown embedding model '{slug}'")));
     }
-    if !libmodelstorage::onnx_exists(&app_config::model_dir(), slug, &app_config::revision()) {
+    
+    // Check if model is downloaded (ONNX or MLX)
+    let model_def = cfg.models.iter().find(|m| m.slug == slug)
+        .ok_or_else(|| string_err(format!("model '{slug}' not in models registry")))?;
+    
+    let artifact = model_def.artifacts.first()
+        .ok_or_else(|| string_err(format!("model '{slug}' has no artifact")))?;
+    
+    let model_dir = app_config::model_dir();
+    let revision = app_config::revision();
+    let downloaded = match artifact.backend {
+        libconfigreader::Backend::Ort => {
+            libmodelstorage::onnx_exists(&model_dir, slug, &revision)
+        }
+        libconfigreader::Backend::Mlx => {
+            let target = libmodelstorage::slug_dir(&model_dir, slug).join(&revision);
+            verify_safetensors_present(&target)
+        }
+        libconfigreader::Backend::Auto => {
+            // Auto should not appear in the model registry for gui_embedders
+            false
+        }
+    };
+    
+    if !downloaded {
         return Err(string_err(
             "Model not downloaded — download it in the Models screen first",
         ));

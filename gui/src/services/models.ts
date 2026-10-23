@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { listen } from '@tauri-apps/api/event'
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
 
 import { commands, unwrapResult } from '@/lib/tauri-bindings'
@@ -53,123 +53,6 @@ export function useModelVariants(slug: string | undefined, enabled = true) {
     enabled: enabled && !!slug,
     staleTime: 1000 * 30,
   })
-}
-
-/**
- * At startup, checks whether the default embedding model's EFFECTIVE arm
- * (what `backend: auto` resolves to on this machine) is on disk. When it is
- * missing, the hook holds in `consent` — nothing downloads and the engine
- * does not start until the user agrees. Consent starts the shared
- * [`downloadEmbedder`] and reports progress for `ModelDownloadModal`; the
- * engine starts only once the model is usable (or on decline, with the
- * engine left unloaded — a later rank attempt surfaces engine-not-ready
- * instead of silently fetching gigabytes).
- */
-export type StartupModelDownloadStatus =
-  | 'checking'
-  | 'consent'
-  | 'downloading'
-  | 'ready'
-  | 'declined'
-  | 'error'
-
-export interface StartupConsent {
-  model: GuiEmbedder
-  variants: EmbedderVariants
-}
-
-export function useStartupModelDownload() {
-  const qc = useQueryClient()
-  const [status, setStatus] = useState<StartupModelDownloadStatus>('checking')
-  const [model, setModel] = useState<GuiEmbedder | null>(null)
-  const [consent, setConsent] = useState<StartupConsent | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  // Slug the user already consented to: a retry after a failed download
-  // goes straight back to downloading instead of re-asking.
-  const consentedSlug = useRef<string | null>(null)
-
-  const startEngine = useCallback(() => {
-    commands.startRuntime().catch(() => undefined)
-  }, [])
-
-  const run = useCallback(async () => {
-    setStatus('checking')
-    setError(null)
-    setConsent(null)
-    try {
-      const embedders = unwrapResult(await commands.listEmbedders())
-      const active = embedders.find(e => e.is_default)
-      if (!active) {
-        setStatus('ready')
-        startEngine()
-        return
-      }
-      // Consent keys on the EFFECTIVE arm: the onnx graph may be cached
-      // while the resolved arm (e.g. MLX on macOS) is not. Ask the registry
-      // which arm would serve and whether its weights exist; a failed
-      // resolve falls back to trusting the downloaded flag.
-      const variants = await fetchModelVariants(active.slug)
-      if (!variants ? active.downloaded : variants.present) {
-        setStatus('ready')
-        startEngine()
-        return
-      }
-      setModel(active)
-      if (consentedSlug.current === active.slug) {
-        // Already consented — resume the download (the retry path).
-        setStatus('downloading')
-        await downloadEmbedder(active.slug)
-        qc.invalidateQueries({ queryKey: embeddersQueryKey })
-        setStatus('ready')
-        startEngine()
-        return
-      }
-      setConsent({
-        model: active,
-        variants: variants ?? {
-          model: active.slug,
-          runtime: 'ort',
-          present: false,
-          onnx_present: active.downloaded,
-          mlx_present: null,
-        },
-      })
-      setStatus('consent')
-    } catch (e) {
-      setError(errorMessage(e))
-      setStatus('error')
-    }
-  }, [qc, startEngine])
-
-  const accept = useCallback(async () => {
-    if (!consent) return
-    consentedSlug.current = consent.model.slug
-    setStatus('downloading')
-    setError(null)
-    try {
-      await downloadEmbedder(consent.model.slug)
-      qc.invalidateQueries({ queryKey: embeddersQueryKey })
-      setStatus('ready')
-      startEngine()
-    } catch (e) {
-      setError(errorMessage(e))
-      setStatus('error')
-    }
-  }, [consent, qc, startEngine])
-
-  const decline = useCallback(() => {
-    setConsent(null)
-    setStatus('declined')
-  }, [])
-
-  useEffect(() => {
-    // Deferred off the synchronous effect body: run() flips the status state,
-    // and a sync setState here would cascade renders (react-hooks/set-state-in-effect).
-    const id = setTimeout(() => void run(), 0)
-    return () => clearTimeout(id)
-  }, [run])
-
-  return { status, model, consent, error, retry: run, accept, decline }
 }
 
 /** Payload for the `model-download-progress` string event (not specta-typed). */

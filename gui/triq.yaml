@@ -68,64 +68,65 @@ families:
     usage: extraction-json
 
 models:
-
-  - slug: nomic-embed-text-v1.5
-    family: nomic-embed-text-v1
-    kind: embedder
-    dim: 768
-    max_context_window: 2048
-    source: hf:nomic-ai/nomic-embed-text-v1.5
-    onnx_url: https://huggingface.co/nomic-ai/nomic-embed-text-v1.5/resolve/main/onnx/model.onnx
-
-  - slug: bge-small-en-v1.5
-    family: bge-small-en-v1.5
-    kind: embedder
-    dim: 384
-    max_context_window: 512
-    source: hf:Xenova/bge-small-en-v1.5
-    onnx_url: https://huggingface.co/Xenova/bge-small-en-v1.5/resolve/main/onnx/model.onnx
-
-  - slug: multilingual-e5-large_model_qint8_avx512_vnni
-    family: multilingual-e5-large
-    kind: embedder
-    dim: 1024
-    max_context_window: 512
-    source: hf:Xenova/multilingual-e5-large
-    onnx_url: https://huggingface.co/Xenova/multilingual-e5-large/resolve/main/onnx/model_quantized.onnx
-
-  - slug: harrier-oss-v1-0.6b-ONNX-fp16
-    family: harrier-oss-v1
-    kind: embedder
-    dim: 1024
-    max_context_window: 32768
-    source: hf:onnx-community/harrier-oss-v1-0.6b-ONNX
-    onnx_url: https://huggingface.co/onnx-community/harrier-oss-v1-0.6b-ONNX/resolve/main/onnx/model_fp16.onnx
-
+  # Harrier 600M ONNX
   - slug: harrier-oss-v1-0.6b-ONNX-q4
     family: harrier-oss-v1
     kind: embedder
     dim: 1024
     max_context_window: 32768
     source: hf:onnx-community/harrier-oss-v1-0.6b-ONNX
-    onnx_url: https://huggingface.co/onnx-community/harrier-oss-v1-0.6b-ONNX/resolve/main/onnx/model_q4.onnx
-    # Metal arm (design 15 §15.5.3): the same weights as an MLX-quantized
-    # safetensors checkpoint. Used only when the active backend resolves to
-    # `mlx`, so bench (which pins `ort` for result comparability) keeps using
-    # the ONNX artifact above and there is no second model list to drift.
-    mlx:
-      slug: harrier-oss-v1-0.6b-MLX-4bit
-      source: hf:majentik/harrier-oss-v1-0.6b-MLX-4bit
+    artifacts:
+      - backend: ort
+        url: https://huggingface.co/onnx-community/harrier-oss-v1-0.6b-ONNX/resolve/main/onnx/model_q4.onnx
+        sha256: null
+        extra_files:
+          - onnx/tokenizer.json
+          - onnx/config.json
 
-  - slug: harrier-oss-v1-270m-ONNX_model_q4f16
+  # Harrier 600M MLX (separate model entry)
+  - slug: harrier-oss-v1-0.6b-MLX-4bit
+    family: harrier-oss-v1
+    kind: embedder
+    dim: 1024
+    max_context_window: 32768
+    source: hf:majentik/harrier-oss-v1-0.6b-MLX-4bit
+    artifacts:
+      - backend: mlx
+        url: ""
+        sha256: null
+        extra_files:
+          - tokenizer.json
+          - config.json
+
+  # Harrier 270M ONNX (DEFAULT)
+  - slug: harrier-oss-v1-270m-ONNX-q4f16
     family: harrier-oss-v1
     kind: embedder
     dim: 640
     max_context_window: 32768
     source: hf:onnx-community/harrier-oss-v1-270m-ONNX
-    onnx_url: https://huggingface.co/onnx-community/harrier-oss-v1-270m-ONNX/resolve/main/onnx/model_q4f16.onnx
-    mlx:
-      slug: harrier-oss-v1-270m-MLX-4bit
-      source: hf:majentik/harrier-oss-v1-270m-MLX-4bit
+    artifacts:
+      - backend: ort
+        url: https://huggingface.co/onnx-community/harrier-oss-v1-270m-ONNX/resolve/main/onnx/model_q4f16.onnx
+        sha256: null
+        extra_files:
+          - onnx/tokenizer.json
+          - onnx/config.json
+
+  # Harrier 270M MLX (separate model entry)
+  - slug: harrier-oss-v1-270m-MLX-4bit
+    family: harrier-oss-v1
+    kind: embedder
+    dim: 640
+    max_context_window: 32768
+    source: hf:majentik/harrier-oss-v1-270m-MLX-4bit
+    artifacts:
+      - backend: mlx
+        url: ""
+        sha256: null
+        extra_files:
+          - tokenizer.json
+          - config.json
 
   # LLM evidence extractor
   - slug: qwen3-4b-instruct-2507-onnx-q4
@@ -134,7 +135,13 @@ models:
     dim: 0
     max_context_window: 4096
     source: hf:onnx-community/Qwen3-4B-Instruct-2507-ONNX
-    onnx_url: https://huggingface.co/onnx-community/Qwen3-4B-Instruct-2507-ONNX/resolve/main/onnx/model_q4.onnx
+    artifacts:
+      - backend: ort
+        url: https://huggingface.co/onnx-community/Qwen3-4B-Instruct-2507-ONNX/resolve/main/onnx/model_q4.onnx
+        sha256: null
+        extra_files:
+          - onnx/tokenizer.json
+          - onnx/config.json
 
   - slug: bge-reranker-v2-m3
     family: bge-reranker-v2-m3
@@ -142,7 +149,13 @@ models:
     dim: 0
     max_context_window: 8192
     source: hf:onnx-community/bge-reranker-v2-m3-ONNX
-    onnx_url: https://huggingface.co/onnx-community/bge-reranker-v2-m3-ONNX/resolve/main/onnx/model_quantized.onnx
+    artifacts:
+      - backend: ort
+        url: https://huggingface.co/onnx-community/bge-reranker-v2-m3-ONNX/resolve/main/onnx/model_quantized.onnx
+        sha256: null
+        extra_files:
+          - onnx/tokenizer.json
+          - onnx/config.json
 
   - slug: jina-reranker-v1-tiny-en
     family: jina-reranker-v1-tiny-en
@@ -150,7 +163,13 @@ models:
     dim: 0
     max_context_window: 512
     source: hf:jinaai/jina-reranker-v1-tiny-en
-    onnx_url: https://huggingface.co/jinaai/jina-reranker-v1-tiny-en/resolve/main/onnx/model.onnx
+    artifacts:
+      - backend: ort
+        url: https://huggingface.co/jinaai/jina-reranker-v1-tiny-en/resolve/main/onnx/model.onnx
+        sha256: null
+        extra_files:
+          - onnx/tokenizer.json
+          - onnx/config.json
 
   - slug: granite-embedding-311m-multilingual-r2
     family: granite-embedding-311m-multilingual-r2
@@ -158,15 +177,13 @@ models:
     dim: 768
     max_context_window: 32768
     source: hf:ibm-granite/granite-embedding-311m-multilingual-r2
-    onnx_url: https://huggingface.co/ibm-granite/granite-embedding-311m-multilingual-r2/resolve/main/onnx/model.onnx
-
-  - slug: granite-embedding-311m-multilingual-r2__model__quint8_avx2
-    family: granite-embedding-311m-multilingual-r2
-    kind: embedder
-    dim: 768
-    max_context_window: 32768
-    source: hf:ibm-granite/granite-embedding-311m-multilingual-r2
-    onnx_url: https://huggingface.co/ibm-granite/granite-embedding-311m-multilingual-r2/resolve/main/onnx/model_quint8_avx2.onnx
+    artifacts:
+      - backend: ort
+        url: https://huggingface.co/ibm-granite/granite-embedding-311m-multilingual-r2/resolve/main/onnx/model.onnx
+        sha256: null
+        extra_files:
+          - onnx/tokenizer.json
+          - onnx/config.json
 
   - slug: mlateon
     family: mlateon
@@ -174,16 +191,13 @@ models:
     dim: 128
     max_context_window: 8192
     source: hf:lightonai/mLateOn
-    onnx_url: https://huggingface.co/lightonai/mLateOn/resolve/main/model.onnx
-    multi_vector: true
-
-  - slug: mlateon__model__int8
-    family: mlateon
-    kind: embedder
-    dim: 128
-    max_context_window: 8192
-    source: hf:lightonai/mLateOn
-    onnx_url: https://huggingface.co/lightonai/mLateOn/resolve/main/model_int8.onnx
+    artifacts:
+      - backend: ort
+        url: https://huggingface.co/lightonai/mLateOn/resolve/main/model.onnx
+        sha256: null
+        extra_files:
+          - tokenizer.json
+          - config.json
     multi_vector: true
 
   # --- Additional fast multilingual embedders ---
@@ -193,7 +207,13 @@ models:
     dim: 384
     max_context_window: 512
     source: hf:intfloat/multilingual-e5-small
-    onnx_url: https://huggingface.co/intfloat/multilingual-e5-small/resolve/main/onnx/model.onnx
+    artifacts:
+      - backend: ort
+        url: https://huggingface.co/intfloat/multilingual-e5-small/resolve/main/onnx/model.onnx
+        sha256: null
+        extra_files:
+          - onnx/tokenizer.json
+          - onnx/config.json
 
   - slug: paraphrase-multilingual-MiniLM-L12-v2
     family: paraphrase-multilingual-MiniLM-L12-v2
@@ -201,7 +221,13 @@ models:
     dim: 384
     max_context_window: 128
     source: hf:sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
-    onnx_url: https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/onnx/model.onnx
+    artifacts:
+      - backend: ort
+        url: https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/onnx/model.onnx
+        sha256: null
+        extra_files:
+          - onnx/tokenizer.json
+          - onnx/config.json
 
   - slug: snowflake-arctic-embed-xs
     family: snowflake-arctic-embed-xs
@@ -209,7 +235,13 @@ models:
     dim: 384
     max_context_window: 512
     source: hf:Snowflake/snowflake-arctic-embed-xs
-    onnx_url: https://huggingface.co/Snowflake/snowflake-arctic-embed-xs/resolve/main/onnx/model_int8.onnx
+    artifacts:
+      - backend: ort
+        url: https://huggingface.co/Snowflake/snowflake-arctic-embed-xs/resolve/main/onnx/model_int8.onnx
+        sha256: null
+        extra_files:
+          - onnx/tokenizer.json
+          - onnx/config.json
 
   - slug: snowflake-arctic-embed-s
     family: snowflake-arctic-embed-s
@@ -217,7 +249,13 @@ models:
     dim: 384
     max_context_window: 512
     source: hf:Snowflake/snowflake-arctic-embed-s
-    onnx_url: https://huggingface.co/Snowflake/snowflake-arctic-embed-s/resolve/main/onnx/model.onnx
+    artifacts:
+      - backend: ort
+        url: https://huggingface.co/Snowflake/snowflake-arctic-embed-s/resolve/main/onnx/model.onnx
+        sha256: null
+        extra_files:
+          - onnx/tokenizer.json
+          - onnx/config.json
 
   - slug: snowflake-arctic-embed-m-v2.0
     family: snowflake-arctic-embed-m-v2.0
@@ -225,15 +263,13 @@ models:
     dim: 768
     max_context_window: 8192
     source: hf:Snowflake/snowflake-arctic-embed-m-v2.0
-    onnx_url: https://huggingface.co/Snowflake/snowflake-arctic-embed-m-v2.0/resolve/main/onnx/model.onnx
-
-  - slug: granite-embedding-97M-Multilingual-R2
-    family: granite-embeding-97M-Multilingual-R2
-    kind: embedder
-    dim: 384
-    max_context_window: 8192
-    source: hf:ibm-granite/granite-embedding-97M-Multilingual-R2
-    onnx_url: https://huggingface.co/ibm-granite/granite-embedding-97M-Multilingual-R2/resolve/main/onnx/model.onnx
+    artifacts:
+      - backend: ort
+        url: https://huggingface.co/Snowflake/snowflake-arctic-embed-m-v2.0/resolve/main/onnx/model.onnx
+        sha256: null
+        extra_files:
+          - onnx/tokenizer.json
+          - onnx/config.json
 
   - slug: amaretto-embed-148m-ONNX
     family: amaretto-embed-148m
@@ -241,7 +277,13 @@ models:
     dim: 384
     max_context_window: 512
     source: hf:AmarettoLabs/amaretto-embed-148m-ONNX
-    onnx_url: https://huggingface.co/AmarettoLabs/amaretto-embed-148m-ONNX/resolve/main/model.onnx
+    artifacts:
+      - backend: ort
+        url: https://huggingface.co/AmarettoLabs/amaretto-embed-148m-ONNX/resolve/main/model.onnx
+        sha256: null
+        extra_files:
+          - tokenizer.json
+          - config.json
 
   - slug: multilingual-e5-base
     family: multilingual-e5-base
@@ -249,7 +291,13 @@ models:
     dim: 768
     max_context_window: 512
     source: hf:intfloat/multilingual-e5-base
-    onnx_url: https://huggingface.co/intfloat/multilingual-e5-base/resolve/main/onnx/model.onnx
+    artifacts:
+      - backend: ort
+        url: https://huggingface.co/intfloat/multilingual-e5-base/resolve/main/onnx/model.onnx
+        sha256: null
+        extra_files:
+          - onnx/tokenizer.json
+          - onnx/config.json
 
   - slug: embeddinggemma-300m-ONNX
     family: embeddinggemma-300m
@@ -257,7 +305,13 @@ models:
     dim: 768
     max_context_window: 2048
     source: hf:thoratsr7/embeddinggemma-300m-ONNX
-    onnx_url: https://huggingface.co/thoratsr7/embeddinggemma-300m-ONNX/resolve/main/onnx/model.onnx
+    artifacts:
+      - backend: ort
+        url: https://huggingface.co/thoratsr7/embeddinggemma-300m-ONNX/resolve/main/onnx/model.onnx
+        sha256: null
+        extra_files:
+          - onnx/tokenizer.json
+          - onnx/config.json
 
   # Cascade scout (stage 0.5): cheap multilingual gate
   - slug: static-similarity-mrl-multilingual-v1
@@ -266,23 +320,37 @@ models:
     dim: 1024
     max_context_window: 512
     source: hf:sentence-transformers/static-similarity-mrl-multilingual-v1
-    onnx_url: https://huggingface.co/sentence-transformers/static-similarity-mrl-multilingual-v1/resolve/main/onnx/model_int8.onnx
+    artifacts:
+      - backend: ort
+        url: https://huggingface.co/sentence-transformers/static-similarity-mrl-multilingual-v1/resolve/main/onnx/model_int8.onnx
+        sha256: null
+        extra_files:
+          - onnx/tokenizer.json
+          - onnx/config.json
 
 gui_embedders:
-  - slug: harrier-oss-v1-0.6b-ONNX-q4
-    name: Harrier 600M Q4
-    memory_mb: 2200
-    chunk_size: 1024
-  - slug: harrier-oss-v1-270m-ONNX_model_q4f16
-    name: Harrier 270M Q4F16
+  - slug: harrier-oss-v1-270m-ONNX-q4f16    # Default (small, fast)
+    name: Harrier 270M ONNX
     memory_mb: 600
     default: true
+    chunk_size: 1024
+  - slug: harrier-oss-v1-270m-MLX-4bit
+    name: Harrier 270M MLX (Metal)
+    memory_mb: 600
+    chunk_size: 1024
+  - slug: harrier-oss-v1-0.6b-ONNX-q4
+    name: Harrier 600M ONNX
+    memory_mb: 2200
+    chunk_size: 1024
+  - slug: harrier-oss-v1-0.6b-MLX-4bit
+    name: Harrier 600M MLX (Metal)
+    memory_mb: 2200
     chunk_size: 1024
 
 # gui judge stage artifacts
 gui_judge_artifact:
   default: "gui/judges/harrier-600m-v1.json"
-  harrier-oss-v1-270m-ONNX_model_q4f16: "gui/judges/harrier-270m-v1.json"
+  harrier-oss-v1-270m-ONNX-q4f16: "gui/judges/harrier-270m-v1.json"
 
 # Progressive-ranking cascade
 cascade:

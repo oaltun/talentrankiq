@@ -334,6 +334,8 @@ fn user_overrides_from_prefs(app_dir: &std::path::Path) -> libconfigreader::conf
         engine_embed_batch: prefs.engine_embed_batch.map(|v| v as usize),
         engine_intra_threads: prefs.engine_intra_threads.map(|v| v as usize),
         engine_inter_threads: prefs.engine_inter_threads.map(|v| v as usize),
+        engine_embed_sessions: None,
+        engine_provider_logging: None,
         engine_max_cores: prefs.engine_max_cores.map(|v| v as usize),
         engine_no_cache: prefs.engine_no_cache,
     }

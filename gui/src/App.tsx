@@ -57,9 +57,8 @@ function App() {
     commands
       .logStdout('[SPLASH] webview mounted, starting frontend init')
       .catch(() => undefined)
-    // The embedding engine is started by the startup model flow
-    // (`useStartupModelDownload`), never here: a missing arm must surface as
-    // a consent question, not as a silent multi-hundred-MB auto-download.
+    // No automatic engine start on launch. The engine stays Stopped
+    // until the user explicitly downloads and selects a model in the Models screen.
     logger.info('🚀 Frontend application starting up')
     initializeCommandSystem()
     logger.debug('Command system initialized')

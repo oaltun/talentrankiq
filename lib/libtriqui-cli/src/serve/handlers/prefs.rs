@@ -16,6 +16,14 @@ pub fn preferences_path(state: &ServeState) -> PathBuf {
     state.app_dir.join("preferences.json")
 }
 
+/// Migrate old embedding model slugs to new ones.
+fn migrate_embedding_slug(slug: &str) -> &str {
+    match slug {
+        "harrier-oss-v1-270m-ONNX_model_q4f16" => "harrier-oss-v1-270m-ONNX-q4f16",
+        _ => slug,
+    }
+}
+
 /// Load the full preferences struct from disk.
 /// Returns `AppPreferences::default()` if the file is missing or unparseable.
 pub fn load_app_preferences(state: &ServeState) -> AppPreferences {
@@ -24,7 +32,14 @@ pub fn load_app_preferences(state: &ServeState) -> AppPreferences {
         return AppPreferences::default();
     }
     match std::fs::read_to_string(&path) {
-        Ok(contents) => serde_json::from_str(&contents).unwrap_or_default(),
+        Ok(contents) => {
+            let mut prefs: AppPreferences = serde_json::from_str(&contents).unwrap_or_default();
+            // Migrate old slugs
+            if let Some(embedding_model) = &prefs.embedding_model {
+                prefs.embedding_model = Some(migrate_embedding_slug(embedding_model).to_string());
+            }
+            prefs
+        }
         Err(_) => AppPreferences::default(),
     }
 }
@@ -40,10 +55,14 @@ pub fn load_preferences(state: &ServeState) -> Result<Value, ProtocolError> {
         log::error!("failed to read preferences file: {e}");
         string_err(format!("Failed to read preferences file: {e}"))
     })?;
-    let preferences: AppPreferences = serde_json::from_str(&contents).map_err(|e| {
+    let mut preferences: AppPreferences = serde_json::from_str(&contents).map_err(|e| {
         log::error!("failed to parse preferences JSON: {e}");
         ProtocolError::string(format!("Failed to parse preferences: {e}"))
     })?;
+    // Migrate old slugs
+    if let Some(embedding_model) = &preferences.embedding_model {
+        preferences.embedding_model = Some(migrate_embedding_slug(embedding_model).to_string());
+    }
     ok_json(preferences)
 }
 
