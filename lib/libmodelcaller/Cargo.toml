@@ -20,14 +20,15 @@ libmodeldownloader = { path = "../libmodeldownloader" }
 libonnxwrapperrs = { path = "../libonnxwrapperrs" }
 # The Metal arm of the backend ladder (design 15 §15.5.3).
 #
-# On macOS the `mlx` feature is ON: "Metal by default on macOS" is the whole
-# point, and a host that has to be told to enable it would put the rung behind
-# a flag nobody flips. Off macOS the feature is absent, so `AVAILABLE` is
-# false, the ladder serves every model on the ONNX CPU EP, and nothing compiles
-# MLX or links Metal. The cost on macOS is a first build that cmake-compiles
-# MLX from source (~2m40s, ~2.1 GB under target/, cached afterwards).
+# On macOS the `mlx` feature is ON by default for Metal acceleration.
+# Opt-out with `--no-default-features` if MLX compilation is problematic.
+# Off macOS the feature is absent, so `AVAILABLE` is false.
+[features]
+default = ["mlx"]
+mlx = ["libmlxembed/mlx"]
+
 [target.'cfg(target_os = "macos")'.dependencies]
-libmlxembed = { path = "../libmlxembed", features = ["mlx"] }
+libmlxembed = { path = "../libmlxembed" }
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 libmlxembed = { path = "../libmlxembed" }
