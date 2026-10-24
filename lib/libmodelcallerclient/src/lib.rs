@@ -28,6 +28,9 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Value};
 use thiserror::Error;
 
+#[cfg(feature = "inprocess")]
+use libconfigreader::expand_home;
+
 #[derive(Debug, Error)]
 pub enum ModelCallerError {
     #[error("failed to start modelcaller ({0}): {1}")]
@@ -279,8 +282,9 @@ impl ModelCallerClient {
             })?;
         let registry = libmodelcaller::Registry::from_config(&cfg);
         let (backend, exec_provider) = effective_engine_io(&engine, &cfg);
+        let model_dir = expand_home(cfg.model_dir.to_str().unwrap_or(""));
          let args = libmodelcaller::StdioArgs {
-            model_dir: Some(cfg.model_dir.clone()),
+            model_dir: Some(model_dir),
             revision: cfg.revision.clone(),
             backend,
             exec_provider,

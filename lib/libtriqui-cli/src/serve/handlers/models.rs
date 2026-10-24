@@ -199,16 +199,17 @@ pub fn model_variants(
     params: &libtriqui_client::params::ModelVariantsParams,
 ) -> Result<Value, ProtocolError> {
     let cfg = app_config::load_triq();
+    let model_dir = app_config::model_dir();
     let model_def = cfg
         .models
         .iter()
         .find(|m| m.slug == params.model)
         .ok_or_else(|| string_err(format!("model '{}' not in models registry", params.model)))?;
-    let registry = libtriqui_core::app_config::registry_ctx();
-    let status = libtriqui_core::app_config::variant_status(
+    let registry = app_config::registry_ctx();
+    let status = app_config::variant_status(
         &registry.registry,
         registry.backend,
-        &cfg.model_dir,
+        &model_dir,
         registry.revision.as_str(),
         &params.model,
     )

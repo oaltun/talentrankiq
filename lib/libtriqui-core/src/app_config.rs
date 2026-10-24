@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use libconfigreader::{Config, EngineConfig, UserOverrides};
+use libconfigreader::{Config, EngineConfig, UserOverrides, expand_home};
 
 /// Load the embedded configuration.
 /// User preference overrides (from `AppPreferences`) are applied if set.
@@ -37,21 +37,6 @@ pub fn user_overrides() -> Option<UserOverrides> {
     USER_OVERRIDES.with(|cell| cell.borrow().clone())
 }
 
-/// Expand a leading `~` in a path to the user's home directory.
-fn expand_home(path: &str) -> PathBuf {
-    if let Some(rest) = path.strip_prefix("~/") {
-        if let Some(home) = std::env::var_os("HOME") {
-            return PathBuf::from(home).join(rest);
-        }
-    }
-    if path == "~" {
-        if let Some(home) = std::env::var_os("HOME") {
-            return PathBuf::from(home);
-        }
-    }
-    PathBuf::from(path)
-}
-
 /// Model cache root: env `TRIQI_MODEL_DIR` > config `model_dir` > `~/.cache/talentrankiq/models`.
 pub fn model_dir() -> PathBuf {
     if let Ok(p) = std::env::var("TRIQI_MODEL_DIR") {
@@ -61,7 +46,7 @@ pub fn model_dir() -> PathBuf {
     }
     let cfg = load_triq();
     if !cfg.model_dir.as_os_str().is_empty() {
-        return cfg.model_dir;
+        return expand_home(cfg.model_dir.to_str().unwrap_or(""));
     }
     expand_home("~/.cache/talentrankiq/models")
 }

@@ -72,6 +72,7 @@ pub fn list_vetted_embedders(
     _state: &std::sync::Arc<ServeState>,
 ) -> Result<serde_json::Value, ProtocolError> {
     let cfg = libtriqui_core::app_config::load_triq();
+    let model_dir = libtriqui_core::app_config::model_dir();
 
     let ram_mb = system_ram_mb();
 
@@ -88,7 +89,7 @@ pub fn list_vetted_embedders(
             memory_mb: ge.memory_mb,
             dim: model_def.dim,
             max_context_window: model_def.max_context_window,
-            downloaded: is_downloaded(&cfg.model_dir, &ge.slug),
+            downloaded: is_downloaded(&model_dir, &ge.slug),
         });
     }
 

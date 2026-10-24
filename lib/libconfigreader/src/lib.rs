@@ -5,6 +5,8 @@
 //! There is no YAML parsing anymore — the configuration is embedded as
 //! typed Rust data in `config.rs`.
 
+use std::path::PathBuf;
+
 pub use config::*;
 
 // Backward-compatible re-exports for dependent crates
@@ -16,6 +18,21 @@ pub use config::GuiJudgeArtifact as GuiJudgeArtifacts;
 // Types that keep the same name are already exported via `pub use config::*;`
 
 mod config;
+
+/// Expand a leading `~` in a path to the user's home directory.
+pub fn expand_home(path: &str) -> PathBuf {
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Some(home) = std::env::var_os("HOME") {
+            return PathBuf::from(home).join(rest);
+        }
+    }
+    if path == "~" {
+        if let Some(home) = std::env::var_os("HOME") {
+            return PathBuf::from(home);
+        }
+    }
+    PathBuf::from(path)
+}
 
 /// Embedded default configuration constants (kept for reference).
 /// The actual defaults are now in `Config::load()`.
