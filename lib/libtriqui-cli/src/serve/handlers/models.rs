@@ -61,16 +61,12 @@ pub fn list_embedders(state: &Arc<ServeState>) -> Result<serde_json::Value, Prot
             .ok_or_else(|| string_err(format!("model '{}' has no artifact", ge.slug)))?;
         
         let downloaded = match artifact.backend {
-            libconfigreader::Backend::Ort => {
+            libconfigreader::BackendKind::Ort => {
                 libmodelstorage::onnx_exists(&model_dir, &ge.slug, &revision)
             }
-            libconfigreader::Backend::Mlx => {
+            libconfigreader::BackendKind::Mlx => {
                 let target = libmodelstorage::slug_dir(&model_dir, &ge.slug).join(&revision);
                 verify_safetensors_present(&target)
-            }
-            libconfigreader::Backend::Auto => {
-                // Auto should not appear in the model registry for gui_embedders
-                false
             }
         };
         
@@ -225,7 +221,7 @@ pub fn model_variants(
     let onnx_art = model_def
         .artifacts
         .iter()
-        .find(|a| a.backend == libconfigreader::Backend::Ort);
+        .find(|a| a.backend == libconfigreader::BackendKind::Ort);
     let onnx_file = onnx_art
         .map(|a| a.url.rsplit('/').next().unwrap_or(&a.url).to_string())
         .unwrap_or_default();
@@ -238,7 +234,7 @@ pub fn model_variants(
     let has_mlx = model_def
         .artifacts
         .iter()
-        .any(|a| a.backend == libconfigreader::Backend::Mlx);
+        .any(|a| a.backend == libconfigreader::BackendKind::Mlx);
     ok_json(libtriqui_client::types::EmbedderVariants {
         model: params.model.clone(),
         runtime: status.runtime.to_string(),
@@ -275,7 +271,7 @@ pub fn download_embedder(state: &Arc<ServeState>, slug: &str) -> Result<(), Prot
         .ok_or_else(|| string_err(format!("model '{slug}' has no artifact")))?;
     
     match artifact.backend {
-        libconfigreader::Backend::Ort => {
+        libconfigreader::BackendKind::Ort => {
             // ONNX uses URL mode
             run_embedder_download(
                 state, 
@@ -285,14 +281,9 @@ pub fn download_embedder(state: &Arc<ServeState>, slug: &str) -> Result<(), Prot
                 &artifact.extra_files
             )
         }
-        libconfigreader::Backend::Mlx => {
+        libconfigreader::BackendKind::Mlx => {
             // MLX uses repo mode
             run_mlx_download(state, slug, artifact)
-        }
-        libconfigreader::Backend::Auto => {
-            // Each model entry should have exactly one artifact (Ort OR Mlx).
-            // Auto should not appear in the model registry.
-            Err(string_err(format!("model '{slug}' has invalid backend: Auto")))
         }
     }
 }
@@ -385,7 +376,7 @@ pub fn remove_embedder(slug: &str) -> Result<(), ProtocolError> {
 fn run_mlx_download(
     state: &ServeState,
     slug: &str,
-    artifact: &libconfigreader::ModelArtifact,
+    artifact: &libconfigreader::Artifact,
 ) -> Result<(), ProtocolError> {
     let model_dir = app_config::model_dir();
     let revision = app_config::revision();
@@ -691,16 +682,12 @@ pub fn set_embedding_model(state: &Arc<ServeState>, slug: &str) -> Result<(), Pr
     let model_dir = app_config::model_dir();
     let revision = app_config::revision();
     let downloaded = match artifact.backend {
-        libconfigreader::Backend::Ort => {
+        libconfigreader::BackendKind::Ort => {
             libmodelstorage::onnx_exists(&model_dir, slug, &revision)
         }
-        libconfigreader::Backend::Mlx => {
+        libconfigreader::BackendKind::Mlx => {
             let target = libmodelstorage::slug_dir(&model_dir, slug).join(&revision);
             verify_safetensors_present(&target)
-        }
-        libconfigreader::Backend::Auto => {
-            // Auto should not appear in the model registry for gui_embedders
-            false
         }
     };
     

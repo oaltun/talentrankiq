@@ -65,13 +65,9 @@ impl InProcessServe {
         let handle = thread::Builder::new()
             .name("triqui-serve".into())
             .spawn(move || {
-                if let Some(p) = config_override {
-                    libtriqui_core::app_config::set_config_path_override(Some(p));
-                }
                 if let Err(e) = serve::run_over(Some(app_dir), app_version, b_read, b_write) {
                     log::error!("in-process serve loop failed: {e}");
                 }
-                libtriqui_core::app_config::set_config_path_override(None);
             })
             .map_err(|e| format!("spawn serve thread: {e}"))?;
         let client = TriqiClient::over(Box::new(a_read), Box::new(a_write));

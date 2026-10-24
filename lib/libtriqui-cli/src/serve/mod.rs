@@ -87,7 +87,7 @@ pub struct ServeState {
     pub events: EventSink,
     pub watch: WatchHandle,
     /// Cascade config for progressive ranking (from `cascade:` in `triq.yaml`).
-    pub config: libtriqui_core::config::CascadeSection,
+    pub config: libtriqui_core::config::CascadeConfig,
     /// Live cascade runners per job (see [`handlers::rank::CascadeGens`]).
     pub cascade_gens: Arc<crate::serve::handlers::rank::CascadeGens>,
 }
@@ -141,10 +141,7 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
         Err(e) => log::warn!("serve: could not recover stale cascade states: {e}"),
     }
 
-    // Per-thread config override (see `InProcessServe::start_with_config`):
-    // this loop thread has it; workers spawned below don't inherit
-    // thread-locals, so each re-applies the captured value.
-    let cfg_override = libtriqui_core::app_config::config_path_override();
+    // User preference overrides from AppPreferences.
     let user_overrides = user_overrides_from_prefs(&app_dir);
     let user_ovr_opt = if user_overrides.is_default() {
         None
@@ -209,12 +206,10 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
 
     {
         let state = Arc::clone(&state);
-        let cfg_override = cfg_override.clone();
         let user_ovr = user_ovr_opt.clone();
         std::thread::Builder::new()
             .name("cv-watch-coordinator".into())
             .spawn(move || {
-                libtriqui_core::app_config::set_config_path_override(cfg_override);
                 libtriqui_core::app_config::set_user_overrides(user_ovr);
                 watch::coordinate(state, jobs_rx)
             })
@@ -223,12 +218,10 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
 
     {
         let state = Arc::clone(&state);
-        let cfg_override = cfg_override.clone();
         let user_ovr = user_ovr_opt.clone();
         std::thread::Builder::new()
             .name("ad-watch-coordinator".into())
             .spawn(move || {
-                libtriqui_core::app_config::set_config_path_override(cfg_override);
                 libtriqui_core::app_config::set_user_overrides(user_ovr);
                 watch::coordinate_ad(state, ad_rx)
             })
@@ -265,12 +258,10 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
         };
         let state = Arc::clone(&state);
         let events = events.clone();
-        let cfg_override = cfg_override.clone();
         let user_ovr = user_ovr_opt.clone();
         std::thread::Builder::new()
             .name(format!("cmd-{}", request.cmd))
             .spawn(move || {
-                libtriqui_core::app_config::set_config_path_override(cfg_override);
                 libtriqui_core::app_config::set_user_overrides(user_ovr);
                 let response = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(
                     || handlers::handle(&state, &request),

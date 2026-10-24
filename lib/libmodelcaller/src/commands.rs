@@ -138,9 +138,7 @@ impl State {
                 .map(|p| p.as_str().to_string())
                 .unwrap_or_else(|| args.exec_provider.clone()),
             precision: args.precision.clone(),
-            backend: engine
-                .backend
-                .unwrap_or_else(|| parse_backend(&args.backend)),
+            backend: engine.backend,
             engine,
             syscap,
             threads: std::sync::OnceLock::new(),

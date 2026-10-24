@@ -2,7 +2,7 @@
 resolver = "2"
 members = [
     "gui/src-tauri",
-    "triq-cli",
+    "cli",
     "lib/libtriqui-core",
     "lib/libtriqui-cli",
     "lib/libtriqui-client",

@@ -50,7 +50,7 @@ impl Registry {
     pub fn from_config(cfg: &libconfigreader::Config) -> Self {
         let mut families = HashMap::new();
         for f in &cfg.families {
-            families.insert(f.family.clone(), f.usage.clone());
+            families.insert(f.family.clone(), usage_to_string(f.usage));
         }
         let models = cfg
             .models
@@ -58,15 +58,15 @@ impl Registry {
             .map(|m| ModelDef {
                 slug: m.slug.clone(),
                 family: m.family.clone(),
-                kind: m.kind.clone(),
+                kind: model_kind_to_string(m.kind),
                 dim: m.dim,
                 max_context_window: m.max_context_window,
                 artifacts: m
                     .artifacts
                     .iter()
                     .map(|a| ModelArtifact {
-                        backend: a.backend.clone(),
-                        quantization: a.quantization.clone(),
+                        backend: backend_kind_to_backend(a.backend),
+                        quantization: quantization_to_string(a.quantization),
                         source: a.source.clone(),
                         url: a.url.clone(),
                         extra_files: a.extra_files.clone(),
@@ -170,7 +170,50 @@ pub fn unknown_usage_err(usage: &str) -> String {
         usage
     )
 }
-
+ 
+/// Convert ModelKind enum to string for internal representation.
+fn model_kind_to_string(kind: libconfigreader::ModelKind) -> String {
+    match kind {
+        libconfigreader::ModelKind::Embedder => "embedder".to_string(),
+        libconfigreader::ModelKind::Extractor => "extractor".to_string(),
+        libconfigreader::ModelKind::Reranker => "reranker".to_string(),
+    }
+}
+ 
+/// Convert BackendKind enum to libconfigreader::Backend enum.
+fn backend_kind_to_backend(kind: libconfigreader::BackendKind) -> libconfigreader::Backend {
+    match kind {
+        libconfigreader::BackendKind::Ort => libconfigreader::Backend::Ort,
+        libconfigreader::BackendKind::Mlx => libconfigreader::Backend::Mlx,
+    }
+}
+ 
+/// Convert Quantization enum to string for internal representation.
+fn quantization_to_string(q: libconfigreader::Quantization) -> String {
+    match q {
+        libconfigreader::Quantization::Q4 => "q4".to_string(),
+        libconfigreader::Quantization::Q4F16 => "q4f16".to_string(),
+        libconfigreader::Quantization::FourBit => "4bit".to_string(),
+        libconfigreader::Quantization::Quantized => "quantized".to_string(),
+        libconfigreader::Quantization::Int8 => "int8".to_string(),
+        libconfigreader::Quantization::None => "none".to_string(),
+    }
+}
+ 
+/// Convert Usage enum to string for internal representation.
+fn usage_to_string(usage: libconfigreader::Usage) -> String {
+    match usage {
+        libconfigreader::Usage::Plain => "plain".to_string(),
+        libconfigreader::Usage::NomicPrefix => "nomic-prefix".to_string(),
+        libconfigreader::Usage::BgePrefix => "bge-prefix".to_string(),
+        libconfigreader::Usage::E5Prefix => "e5-prefix".to_string(),
+        libconfigreader::Usage::HarrierInstruct => "harrier-instruct".to_string(),
+        libconfigreader::Usage::PlainPair => "plain-pair".to_string(),
+        libconfigreader::Usage::ColbertPrefix => "colbert-prefix".to_string(),
+        libconfigreader::Usage::ExtractionJson => "extraction-json".to_string(),
+    }
+}
+ 
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -241,6 +284,6 @@ models:
                 models: file.models,
                 families,
             })
-        }
-    }
+}
+}
 }

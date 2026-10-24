@@ -33,17 +33,15 @@ use libtriqui_license::{load_judge_license, License};
 /// `runtime-status` Tauri event so the UI can react (e.g. enable Sort).
 pub type StatusHook = Arc<dyn Fn(&RuntimeStatusInfo) + Send + Sync>;
 
-/// Runtime config, discovered from env / `triq.yaml` (`model_dir`).
+/// Runtime config, discovered from env / embedded config (`model_dir`).
 pub struct RuntimeConfig {
-    /// Path to the config file (`triq.yaml` preferred, embedded default fallback).
-    pub config_path: Option<std::path::PathBuf>,
     /// On-disk ONNX model cache root.
     pub model_dir: std::path::PathBuf,
     /// Embedding model slug resolved against the `modelcaller` registry.
     pub model: String,
     /// Judge stage artifacts (`gui_judge_artifact`): per-embedder overrides
     /// plus a default; empty = judge disabled.
-    pub judge_artifacts: libconfigreader::GuiJudgeArtifacts,
+    pub judge_artifacts: libconfigreader::GuiJudgeArtifact,
 }
 
 impl RuntimeConfig {
@@ -63,7 +61,6 @@ impl RuntimeConfig {
                     .unwrap_or_default()
             });
         Self {
-            config_path: app_config::triq_config_path(),
             model_dir: app_config::model_dir(),
             model,
             judge_artifacts: app_config::gui_judge_artifacts(),
@@ -457,19 +454,7 @@ impl EngineRuntime {
             g.epoch
         };
 
-        let cfg = match &self.cfg.config_path {
-            Some(config) => match libconfigreader::load(config, &libconfigreader::CliOverrides::new()) {
-                Ok(c) => c,
-                Err(e) => {
-                    self.set_status_if_current(
-                        Status::Error(format!("failed to load {}: {e}", config.display())),
-                        my_epoch,
-                    );
-                    return;
-                }
-            },
-            None => app_config::load_triq(),
-        };
+        let cfg = app_config::load_triq();
 
         log::info!(
             "engine runtime: starting in-process modelcaller (ORT wrapper in-process)"
@@ -483,7 +468,7 @@ impl EngineRuntime {
             Some(o) => {
                 log::info!("engine runtime: applying engine override (cpu-only mode)");
                 libconfigreader::EngineSection {
-                    backend: o.backend.or(cfg.engine.backend),
+                    backend: o.backend,
                     exec_provider: o.exec_provider.or(cfg.engine.exec_provider),
                     intra_threads: o.intra_threads.or(cfg.engine.intra_threads),
                     inter_threads: o.inter_threads.or(cfg.engine.inter_threads),
@@ -502,10 +487,7 @@ impl EngineRuntime {
             // Which runtime serves embeds (design 15 §15.4). Config, like the
             // provider: bench can pin `ort` and the gui can follow `auto`
             // without either drifting onto the other's silicon.
-            backend: engine
-                .backend
-                .map(|b| b.as_str().to_string())
-                .unwrap_or_else(|| "auto".to_string()),
+            backend: engine.backend.as_str().to_string(),
             exec_provider: engine
                 .exec_provider
                 .as_ref()

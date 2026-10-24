@@ -1,4 +1,4 @@
-//! Static configuration for the IK application.
+f//! Static configuration for the IK application.
 //!
 //! Previously stored as a YAML file (`config.yaml`); now expressed as typed
 //! Rust data. There is no embedded YAML / JSON / TOML string anywhere in this
@@ -15,7 +15,7 @@
 //!   `build_jobs`) are modeled as enums — exhaustive matches are enforced
 //!   by the compiler.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 // ============================================================================
 // Top-level
@@ -68,21 +68,32 @@ impl Config {
                 intra_threads: None,
                 inter_threads: None,
                 embed_batch: None,
+                embed_sessions: None,
+                exec_provider: None,
+                provider_logging: None,
                 backend: Backend::Auto,
+                max_cores: None,
+                no_cache: None,
             },
 
             syscap: SyscapConfig {
+                enabled: true,
                 on_battery_polite: true,
                 build_jobs: BuildJobs::Auto,
                 reserve_cores: 1,
                 reserve_core_frac: 0.10,
+                min_free_mem_frac: 0.20,
+                hold_free_mem_frac: 0.05,
+                load_backoff: 1.0,
+                load_stall: 2.0,
+                sample_min_interval_ms: 250,
             },
 
             rubric_defaults: RubricDefaults {
-                ad_points: 50,
-                fb_job_points: 10,
-                fb_profile_points: 5,
-                criterion_points: 10,
+                ad_points: 50.0,
+                fb_job_points: 10.0,
+                fb_profile_points: 5.0,
+                criterion_points: 10.0,
             },
 
             families: vec![
@@ -457,13 +468,15 @@ impl Config {
             ],
 
             gui_judge_artifact: GuiJudgeArtifact {
-                default: "gui/judges/harrier-600m-v1.json".into(),
-                by_slug: vec![
-                    (
+                default: Some(PathBuf::from("gui/judges/harrier-600m-v1.json")),
+                by_embedder: {
+                    let mut map = std::collections::BTreeMap::new();
+                    map.insert(
                         "harrier-oss-v1-270m-ONNX-q4f16".into(),
-                        "gui/judges/harrier-270m-v1.json".into(),
-                    ),
-                ],
+                        PathBuf::from("gui/judges/harrier-270m-v1.json"),
+                    );
+                    map
+                },
             },
 
             cascade: CascadeConfig {
@@ -472,7 +485,9 @@ impl Config {
                 scout_chunk_size: 512,
                 k1_embed_per_wave: 100,
                 k2_judge_per_wave: 50,
+                judge_pool_size: 50,
                 small_job_threshold: 300,
+                stage0_static_prior: None,
             },
         }
     }
@@ -501,11 +516,48 @@ impl Config {
     /// exists.
     pub fn judge_artifact_for(&self, embedder_slug: &str) -> &str {
         self.gui_judge_artifact
-            .by_slug
-            .iter()
-            .find(|(s, _)| s == embedder_slug)
-            .map(|(_, p)| p.as_str())
-            .unwrap_or(self.gui_judge_artifact.default.as_str())
+            .by_embedder
+            .get(embedder_slug)
+            .map(|p| p.to_str().unwrap_or(""))
+            .or(self.gui_judge_artifact.default.as_deref().and_then(|p| p.to_str()))
+            .unwrap_or("")
+    }
+
+    /// Merge user preference overrides on top of the config.
+    /// Only fields set in `overrides` replace the defaults; the rest stay.
+    pub fn with_user_overrides(mut self, overrides: &UserOverrides) -> Self {
+        if let Some(ref b) = overrides.engine_backend {
+            if let Ok(backend) = b.parse::<Backend>() {
+                self.engine.backend = backend;
+            }
+        }
+        if let Some(ref p) = overrides.engine_exec_provider {
+            if let Ok(ep) = p.parse::<ExecutionProvider>() {
+                self.engine.exec_provider = Some(ep);
+            }
+        }
+        if let Some(v) = overrides.engine_embed_batch {
+            self.engine.embed_batch = Some(v);
+        }
+        if let Some(v) = overrides.engine_intra_threads {
+            self.engine.intra_threads = Some(v);
+        }
+        if let Some(v) = overrides.engine_inter_threads {
+            self.engine.inter_threads = Some(v);
+        }
+        if let Some(v) = overrides.engine_max_cores {
+            self.engine.max_cores = Some(v);
+        }
+        if let Some(v) = overrides.engine_no_cache {
+            self.engine.no_cache = Some(v);
+        }
+        if let Some(v) = overrides.engine_embed_sessions {
+            self.engine.embed_sessions = Some(EmbedSessions::Fixed(v as u32));
+        }
+        if let Some(v) = overrides.engine_provider_logging {
+            self.engine.provider_logging = Some(v);
+        }
+        self
     }
 }
 
@@ -516,7 +568,7 @@ impl Config {
 /// ONNX-runtime resource ceilings. Every `Option` field is `None` here so the
 /// runtime budget derived from [`SyscapConfig`] takes effect — set to `Some(_)`
 /// only to clamp further.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct EngineConfig {
     /// Intra-op thread count. `None` = derived from the libsyscap budget.
     pub intra_threads: Option<usize>,
@@ -525,22 +577,185 @@ pub struct EngineConfig {
     /// Embedding batch size. `None` = derived (bigger batches are slower for
     /// bandwidth-bound embedders).
     pub embed_batch: Option<usize>,
+    /// How many sessions a batched embed is spread over.
+    pub embed_sessions: Option<EmbedSessions>,
+    /// Execution provider for the ONNX sessions.
+    pub exec_provider: Option<ExecutionProvider>,
+    /// Raise ORT's own logging on load.
+    pub provider_logging: Option<bool>,
     /// Backend selection policy.
     pub backend: Backend,
+    /// Hard cap on the modelcaller process tree CPU affinity.
+    pub max_cores: Option<usize>,
+    /// Benchmark switch: no cache ever consulted.
+    pub no_cache: Option<bool>,
 }
 
-/// ONNX backend selection policy.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+impl EngineConfig {
+    /// Get intra_threads with default from libsyscap budget.
+    pub fn intra_threads(&self) -> Option<usize> {
+        self.intra_threads
+    }
+    /// Get inter_threads with default.
+    pub fn inter_threads(&self) -> Option<usize> {
+        self.inter_threads
+    }
+    /// Get embed_batch with default.
+    pub fn embed_batch(&self) -> Option<usize> {
+        self.embed_batch
+    }
+    /// Get embed_sessions with default.
+    pub fn embed_sessions(&self) -> Option<EmbedSessions> {
+        self.embed_sessions
+    }
+    /// Get exec_provider with default.
+    pub fn exec_provider(&self) -> Option<ExecutionProvider> {
+        self.exec_provider
+    }
+    /// Get provider_logging with default.
+    pub fn provider_logging(&self) -> Option<bool> {
+        self.provider_logging
+    }
+    /// Get backend.
+    pub fn backend(&self) -> Backend {
+        self.backend
+    }
+    /// Get max_cores with default.
+    pub fn max_cores(&self) -> Option<usize> {
+        self.max_cores
+    }
+    /// Get no_cache with default.
+    pub fn no_cache(&self) -> Option<bool> {
+        self.no_cache
+    }
+}
+
+/// ONNX backend selection policy (for engine config).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Backend {
-    /// Let the runtime pick the best available backend.
+    #[default]
     Auto,
-    // Add `Cuda`, `DirectML`, `CoreML`, ... here when needed.
+    Ort,
+    Mlx,
+}
+
+impl Backend {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Backend::Auto => "auto",
+            Backend::Ort => "ort",
+            Backend::Mlx => "mlx",
+        }
+    }
+
+    pub fn allows_mlx(&self) -> bool {
+        matches!(self, Backend::Auto | Backend::Mlx)
+    }
+
+    pub fn requires_mlx(&self) -> bool {
+        matches!(self, Backend::Mlx)
+    }
+}
+
+impl std::str::FromStr for Backend {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "auto" => Ok(Backend::Auto),
+            "ort" => Ok(Backend::Ort),
+            "mlx" => Ok(Backend::Mlx),
+            _ => Err(format!("unknown backend: {s}")),
+        }
+    }
+}
+
+/// Which ONNX execution provider the wrapper registers for a session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ExecutionProvider {
+    #[default]
+    Auto,
+    Cpu,
+    CoreMl,
+    XnnPack,
+    Cuda,
+    TensorRt,
+    DirectMl,
+    OpenVino,
+    Rocm,
+}
+
+impl ExecutionProvider {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ExecutionProvider::Auto => "auto",
+            ExecutionProvider::Cpu => "cpu",
+            ExecutionProvider::CoreMl => "coreml",
+            ExecutionProvider::XnnPack => "xnnpack",
+            ExecutionProvider::Cuda => "cuda",
+            ExecutionProvider::TensorRt => "tensorrt",
+            ExecutionProvider::DirectMl => "directml",
+            ExecutionProvider::OpenVino => "openvino",
+            ExecutionProvider::Rocm => "rocm",
+        }
+    }
+}
+
+impl std::str::FromStr for ExecutionProvider {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "auto" => Ok(ExecutionProvider::Auto),
+            "cpu" => Ok(ExecutionProvider::Cpu),
+            "coreml" => Ok(ExecutionProvider::CoreMl),
+            "xnnpack" => Ok(ExecutionProvider::XnnPack),
+            "cuda" => Ok(ExecutionProvider::Cuda),
+            "tensorrt" => Ok(ExecutionProvider::TensorRt),
+            "directml" => Ok(ExecutionProvider::DirectMl),
+            "openvino" => Ok(ExecutionProvider::OpenVino),
+            "rocm" => Ok(ExecutionProvider::Rocm),
+            _ => Err(format!("unknown execution provider: {s}")),
+        }
+    }
+}
+
+/// How many sessions a batched embed is spread over.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EmbedSessions {
+    #[default]
+    Auto,
+    Fixed(u32),
+}
+
+impl EmbedSessions {
+    pub fn as_u32(&self) -> Option<u32> {
+        match self {
+            EmbedSessions::Auto => None,
+            EmbedSessions::Fixed(n) => Some(*n),
+        }
+    }
+}
+
+impl std::str::FromStr for EmbedSessions {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "auto" => Ok(EmbedSessions::Auto),
+            n => n.parse::<u32>().map(EmbedSessions::Fixed).map_err(|_| format!("invalid embed_sessions: {s}")),
+        }
+    }
 }
 
 /// Live system-capacity budget consulted by the GUI, bench, tests, and build
 /// tools to decide how much CPU/RAM they may consume right now.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct SyscapConfig {
+    /// Master switch. `false` = the budget reports the configured engine caps
+    /// untouched and samples no load.
+    pub enabled: bool,
     /// When true, throttle under Polite mode if running on battery.
     pub on_battery_polite: bool,
     /// Parallel build jobs (`auto` derives from `reserve_cores`).
@@ -549,25 +764,80 @@ pub struct SyscapConfig {
     pub reserve_cores: u32,
     /// Fractional core reservation, applied on top of `reserve_cores`.
     pub reserve_core_frac: f32,
+    /// Free-RAM fraction below which the budget drops to Backoff.
+    pub min_free_mem_frac: f64,
+    /// Free-RAM fraction below which heavy work pauses (Hold).
+    pub hold_free_mem_frac: f64,
+    /// 1-minute load average per logical core above which the budget drops to Polite.
+    pub load_backoff: f64,
+    /// 1-minute load average per logical core above which the budget floors everything.
+    pub load_stall: f64,
+    /// Minimum wall time between load samples in ms.
+    pub sample_min_interval_ms: u64,
+}
+
+impl SyscapConfig {
+    pub fn enabled(&self) -> bool {
+        self.enabled
+    }
+    pub fn reserve_cores(&self) -> u32 {
+        self.reserve_cores
+    }
+    pub fn reserve_core_frac(&self) -> f64 {
+        self.reserve_core_frac as f64
+    }
+    pub fn min_free_mem_frac(&self) -> f64 {
+        self.min_free_mem_frac
+    }
+    pub fn hold_free_mem_frac(&self) -> f64 {
+        self.hold_free_mem_frac
+    }
+    pub fn load_backoff(&self) -> f64 {
+        self.load_backoff
+    }
+    pub fn load_stall(&self) -> f64 {
+        self.load_stall
+    }
+    pub fn on_battery_polite(&self) -> bool {
+        self.on_battery_polite
+    }
+    pub fn sample_min_interval_ms(&self) -> u64 {
+        self.sample_min_interval_ms
+    }
+    pub fn build_jobs(&self) -> BuildJobs {
+        self.build_jobs
+    }
 }
 
 /// Build-parallelism policy.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BuildJobs {
     /// Derive from `reserve_cores` and live capacity.
+    #[default]
     Auto,
     /// Hard pin to a fixed count.
     Fixed(usize),
 }
 
 /// Default rubric weights (points) applied to new jobs and newly added
-/// criteria.
+/// criteria. Uses f64 for backward compatibility with YAML parsing.
 #[derive(Debug, Clone, Copy)]
 pub struct RubricDefaults {
-    pub ad_points: u32,
-    pub fb_job_points: u32,
-    pub fb_profile_points: u32,
-    pub criterion_points: u32,
+    pub ad_points: f64,
+    pub fb_job_points: f64,
+    pub fb_profile_points: f64,
+    pub criterion_points: f64,
+}
+
+impl Default for RubricDefaults {
+    fn default() -> Self {
+        RubricDefaults {
+            ad_points: 50.0,
+            fb_job_points: 10.0,
+            fb_profile_points: 5.0,
+            criterion_points: 10.0,
+        }
+    }
 }
 
 // ============================================================================
@@ -585,7 +855,8 @@ pub struct Family {
 }
 
 /// Tokenization / prefix convention used by a family.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Usage {
     /// Plain pass-through (no prefix).
     Plain,
@@ -631,7 +902,8 @@ pub struct Model {
 }
 
 /// Functional role of a model.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum ModelKind {
     /// Produces dense (or multi-) vector embeddings.
     Embedder,
@@ -660,7 +932,8 @@ pub struct Artifact {
 }
 
 /// Concrete inference backend required by an artifact.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum BackendKind {
     /// ONNX Runtime.
     Ort,
@@ -669,7 +942,8 @@ pub enum BackendKind {
 }
 
 /// Quantization scheme applied to an artifact.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Quantization {
     /// 4-bit weight-only quantization (`q4`).
     Q4,
@@ -710,12 +984,28 @@ pub struct GuiEmbedder {
 // ============================================================================
 
 /// Per-embedder judge-artifact path overrides.
-#[derive(Debug, Clone)]
+/// This mirrors the old GuiJudgeArtifacts structure for backward compatibility.
+#[derive(Debug, Clone, Default)]
 pub struct GuiJudgeArtifact {
     /// Fallback path used when no per-slug override matches.
-    pub default: String,
-    /// `(embedder_slug, judge_artifact_path)` overrides.
-    pub by_slug: Vec<(String, String)>,
+    pub default: Option<PathBuf>,
+    /// Embedder slug → artifact path.
+    pub by_embedder: std::collections::BTreeMap<String, PathBuf>,
+}
+
+impl GuiJudgeArtifact {
+    /// Artifact for embedder `slug`: the per-embedder override, else the
+    /// default (`None` when the entry is empty or has no match).
+    pub fn for_embedder(&self, slug: &str) -> Option<&Path> {
+        self.by_embedder
+            .get(slug)
+            .map(|p| p.as_path())
+            .or(self.default.as_deref())
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.default.is_none() && self.by_embedder.is_empty()
+    }
 }
 
 // ============================================================================
@@ -735,9 +1025,153 @@ pub struct CascadeConfig {
     pub k1_embed_per_wave: u32,
     /// Top-K candidates kept after the judge stage (per wave).
     pub k2_judge_per_wave: u32,
+    /// The frozen judge pool size.
+    pub judge_pool_size: u32,
     /// Below this document count the cascade collapses to a single pass.
     pub small_job_threshold: u32,
+    /// Static (Model2Vec-style) stage-0 semantic prior slug.
+    pub stage0_static_prior: Option<String>,
 }
+
+impl Default for CascadeConfig {
+    fn default() -> Self {
+        CascadeConfig {
+            scout_model: "static-similarity-mrl-multilingual-v1".into(),
+            scout_enabled: true,
+            scout_chunk_size: 512,
+            k1_embed_per_wave: 100,
+            k2_judge_per_wave: 50,
+            judge_pool_size: 50,
+            small_job_threshold: 300,
+            stage0_static_prior: None,
+        }
+    }
+}
+
+impl CascadeConfig {
+    pub fn k1(&self) -> usize {
+        self.k1_embed_per_wave as usize
+    }
+    pub fn pool_size(&self) -> usize {
+        self.judge_pool_size as usize
+    }
+    pub fn small_job_threshold(&self) -> usize {
+        self.small_job_threshold as usize
+    }
+    pub fn scout_chunk_size(&self) -> usize {
+        self.scout_chunk_size as usize
+    }
+    pub fn scout_enabled(&self) -> bool {
+        self.scout_enabled
+    }
+    pub fn scout(&self) -> Option<&str> {
+        if self.scout_enabled() {
+            Some(&self.scout_model)
+        } else {
+            None
+        }
+    }
+}
+
+// ============================================================================
+// User Overrides (from AppPreferences)
+// ============================================================================
+
+/// User preference overrides for engine settings (from app preferences).
+#[derive(Debug, Default, Clone)]
+pub struct UserOverrides {
+    pub engine_backend: Option<String>,
+    pub engine_exec_provider: Option<String>,
+    pub engine_embed_batch: Option<usize>,
+    pub engine_intra_threads: Option<usize>,
+    pub engine_inter_threads: Option<usize>,
+    pub engine_embed_sessions: Option<usize>,
+    pub engine_provider_logging: Option<bool>,
+    pub engine_max_cores: Option<usize>,
+    pub engine_no_cache: Option<bool>,
+}
+
+impl UserOverrides {
+    /// Returns true if all fields are `None` (i.e., no overrides set).
+    pub fn is_default(&self) -> bool {
+        self.engine_backend.is_none()
+            && self.engine_exec_provider.is_none()
+            && self.engine_embed_batch.is_none()
+            && self.engine_intra_threads.is_none()
+            && self.engine_inter_threads.is_none()
+            && self.engine_embed_sessions.is_none()
+            && self.engine_provider_logging.is_none()
+            && self.engine_max_cores.is_none()
+            && self.engine_no_cache.is_none()
+    }
+}
+
+// ============================================================================
+// CLI Overrides (for command-line config overrides)
+// ============================================================================
+
+#[derive(Debug, Default)]
+pub struct CliOverrides {
+    pub model_dir: Option<PathBuf>,
+    pub verbose: Option<bool>,
+    pub logfile: Option<PathBuf>,
+    pub revision: Option<String>,
+}
+
+impl CliOverrides {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+// ============================================================================
+// Config Error
+// ============================================================================
+
+#[derive(Debug)]
+pub struct ConfigError {
+    pub msg: String,
+}
+
+impl ConfigError {
+    fn new(msg: impl Into<String>) -> Self {
+        ConfigError { msg: msg.into() }
+    }
+
+    fn conflict(field: &str, cli: &str, cfg: &str) -> Self {
+        ConfigError::new(format!(
+            "--{} '{}' conflicts with config value '{}'",
+            field, cli, cfg
+        ))
+    }
+}
+
+impl std::fmt::Display for ConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[config] {}", self.msg)
+    }
+}
+
+impl std::error::Error for ConfigError {}
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+pub const DEFAULT_GUI_IDLE_UNLOAD_SECS: u64 = 300;
+pub const DEFAULT_CASCADE_K1: usize = 100;
+pub const DEFAULT_CASCADE_POOL: usize = 50;
+pub const DEFAULT_CASCADE_SMALL_JOB: usize = 300;
+pub const DEFAULT_SCOUT_CHUNK_SIZE: usize = 512;
+
+pub const DEFAULT_SYSCAP_RESERVE_CORES: u32 = 1;
+pub const DEFAULT_SYSCAP_RESERVE_CORE_FRAC: f64 = 0.10;
+pub const DEFAULT_SYSCAP_MIN_FREE_MEM_FRAC: f64 = 0.20;
+pub const DEFAULT_SYSCAP_HOLD_FREE_MEM_FRAC: f64 = 0.05;
+pub const DEFAULT_SYSCAP_LOAD_BACKOFF: f64 = 1.0;
+pub const DEFAULT_SYSCAP_LOAD_STALL: f64 = 2.0;
+pub const DEFAULT_SYSCAP_ON_BATTERY_POLITE: bool = true;
+pub const DEFAULT_SYSCAP_SAMPLE_MIN_INTERVAL_MS: u64 = 250;
 
 // ============================================================================
 // Tests
@@ -787,5 +1221,48 @@ mod tests {
         let cfg = Config::load();
         let m = cfg.find_model("mlateon").expect("mlateon exists");
         assert!(m.multi_vector);
+    }
+
+    #[test]
+    fn engine_config_has_all_fields() {
+        let cfg = Config::load();
+        // Just verify the fields exist and have correct types
+        let _ = cfg.engine.intra_threads;
+        let _ = cfg.engine.inter_threads;
+        let _ = cfg.engine.embed_batch;
+        let _ = cfg.engine.embed_sessions;
+        let _ = cfg.engine.exec_provider;
+        let _ = cfg.engine.provider_logging;
+        let _ = cfg.engine.backend;
+        let _ = cfg.engine.max_cores;
+        let _ = cfg.engine.no_cache;
+    }
+
+    #[test]
+    fn syscap_config_has_all_fields() {
+        let cfg = Config::load();
+        let _ = cfg.syscap.enabled;
+        let _ = cfg.syscap.on_battery_polite;
+        let _ = cfg.syscap.build_jobs;
+        let _ = cfg.syscap.reserve_cores;
+        let _ = cfg.syscap.reserve_core_frac;
+        let _ = cfg.syscap.min_free_mem_frac;
+        let _ = cfg.syscap.hold_free_mem_frac;
+        let _ = cfg.syscap.load_backoff;
+        let _ = cfg.syscap.load_stall;
+        let _ = cfg.syscap.sample_min_interval_ms;
+    }
+
+    #[test]
+    fn cascade_config_has_all_fields() {
+        let cfg = Config::load();
+        let _ = cfg.cascade.scout_model;
+        let _ = cfg.cascade.scout_enabled;
+        let _ = cfg.cascade.scout_chunk_size;
+        let _ = cfg.cascade.k1_embed_per_wave;
+        let _ = cfg.cascade.k2_judge_per_wave;
+        let _ = cfg.cascade.judge_pool_size;
+        let _ = cfg.cascade.small_job_threshold;
+        let _ = cfg.cascade.stage0_static_prior;
     }
 }

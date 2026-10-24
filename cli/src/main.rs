@@ -21,20 +21,9 @@ fn main() {
     // Resolve app dir (same logic as GUI: env var > default)
     let app_dir = resolve_app_dir();
 
-    // Load config from triq.yaml (same as GUI)
-    let config_path = std::env::var("TRIQ_CONFIG")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            std::env::current_dir()
-                .unwrap_or_else(|_| PathBuf::from("."))
-                .join("triq.yaml")
-        });
+    // Load embedded config (no more YAML file)
     let config = load_config();
     CONFIG.set(config).ok();
-
-    // Publish the config path so the serve loop and its worker threads resolve
-    // paths (model_dir, cascade config) from the same config the CLI loaded.
-    libtriqui_core::app_config::set_config_path_override(Some(config_path));
 
     let app_version = env!("CARGO_PKG_VERSION").to_string();
 
@@ -66,19 +55,8 @@ fn resolve_app_dir() -> PathBuf {
 }
 
 fn load_config() -> Config {
-    // Config resolution mirrors the GUI: env var > repo root > embedded default
-    let config_path = std::env::var("TRIQ_CONFIG")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            // Default to repo root / triq.yaml (same as libconfigreader default)
-            std::env::current_dir()
-                .unwrap_or_else(|_| PathBuf::from("."))
-                .join("triq.yaml")
-        });
-    let config = libconfigreader::load(&config_path, &libconfigreader::CliOverrides::new()).unwrap_or_else(|e| {
-        log::warn!("Failed to load config from {}: {e}; using embedded defaults", config_path.display());
-        Config::default_from_embedded(config_path)
-    });
+    // Load embedded config directly — no YAML file, no env var override
+    let config = libconfigreader::load();
     // Store in OnceLock for test access
     CONFIG.set(config.clone()).ok();
     config
@@ -97,7 +75,7 @@ mod tests {
     fn config_loading_works() {
         // load_config() initializes the OnceLock
         let _ = load_config();
-        // config() returns &'static Config (always valid, falls back to embedded defaults)
+        // config() returns &'static Config (always valid, embedded defaults)
         let _ = config();
     }
 }

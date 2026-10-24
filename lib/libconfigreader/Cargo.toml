@@ -2,9 +2,8 @@
 name = "libconfigreader"
 version = "0.1.0"
 edition = "2021"
-description = "Shared YAML config parser and validator for the ik toolchain."
+description = "Shared configuration types for the ik toolchain."
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
-serde_yaml = "0.9"
 libmodelstorage = { path = "../libmodelstorage" }

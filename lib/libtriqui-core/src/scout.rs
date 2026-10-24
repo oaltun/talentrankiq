@@ -45,11 +45,10 @@ pub const SCOUT_LABEL: &str = "Scout (fast embed)";
 /// full embedder — which would be a pointless second pass in the same space).
 pub fn scout_model_for(full_model: &str) -> Option<String> {
     let cfg = crate::app_config::cascade_config();
-    if cfg.scout_enabled() == Some(false) {
+    if !cfg.scout_enabled() {
         return None;
     }
-    let slug = cfg.scout_model.as_deref()?;
-    let slug = slug.trim();
+    let slug = cfg.scout_model.trim();
     if slug.is_empty() || slug == full_model {
         return None;
     }

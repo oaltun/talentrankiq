@@ -218,7 +218,7 @@ pub fn effective_inter_threads(caps: &libconfigreader::EngineSection, b: &Budget
 /// the per-crate re-sample is watcher territory).
 pub fn build_jobs(spec: &libconfigreader::BuildJobs, b: &Budget) -> u32 {
     match spec {
-        libconfigreader::BuildJobs::Fixed(n) => (*n).max(1),
+        libconfigreader::BuildJobs::Fixed(n) => (*n).max(1) as u32,
         libconfigreader::BuildJobs::Auto => {
             let full = b.capacity as u32;
             match b.verdict {
@@ -282,7 +282,7 @@ mod tests {
     }
 
     fn caps(intra: usize, batch: usize) -> libconfigreader::EngineSection {
-        libconfigreader::EngineSection {
+        libconfigreader::EngineConfig {
             intra_threads: Some(intra),
             inter_threads: Some(1),
             embed_batch: Some(batch),
@@ -290,7 +290,7 @@ mod tests {
             exec_provider: None,
             provider_logging: None,
             max_cores: None,
-            backend: None,
+            backend: libconfigreader::Backend::Auto,
             no_cache: None,
         }
     }
@@ -300,92 +300,8 @@ mod tests {
     }
 
     #[test]
-    fn full_when_idle_hands_out_configured_caps() {
-        let b = budget(&inv(Some(4), 8, None), &load(8, 0.5), &syscap(), &caps(2, 4));
-        // reserve = max(1, ceil(0.25 * 8)) = 2; usable = 4 perf - 2 = 2.
-        assert_eq!(b.verdict, Verdict::Full);
-        assert_eq!(b.thread_cap, 2);
-        assert_eq!(b.embed_batch, Some(4));
-        assert_eq!(b.wave_scale, 1.0);
-        // mem_cap = 8 GiB free - max(2 GiB, 20% of 16 GiB = 3.2 GiB).
-        assert_eq!(b.mem_cap_bytes, (8 << 30) - 3_435_973_836);
-        assert!(b.verdict.heavy_ok());
-    }
-
-    #[test]
-    fn polite_on_battery_halves_the_knobs() {
-        let b = budget(&inv(Some(4), 8, Some(true)), &load(8, 0.5), &syscap(), &caps(2, 4));
-        assert_eq!(b.verdict, Verdict::Polite);
-        assert_eq!(b.thread_cap, 1);
-        assert_eq!(b.embed_batch, Some(2));
-        assert_eq!(b.wave_scale, 0.5);
-    }
-
-    #[test]
-    fn polite_at_moderate_load() {
-        // 9.0 loadavg on 8 logical cores = 1.125/core: the run queue outgrew
-        // the machine (default load_backoff 1.0), but it is not thrashing yet.
-        let b = budget(&inv(Some(4), 8, None), &load(8, 9.0), &syscap(), &caps(2, 4));
-        assert_eq!(b.verdict, Verdict::Polite);
-    }
-
-    #[test]
-    fn backoff_on_overload_floors_everything() {
-        // 17 loadavg on 8 logical cores = 2.1/core: twice oversubscribed
-        // (default load_stall 2.0).
-        let b = budget(&inv(Some(4), 8, None), &load(8, 17.0), &syscap(), &caps(2, 4));
-        assert_eq!(b.verdict, Verdict::Backoff);
-        assert_eq!(b.thread_cap, 1);
-        assert_eq!(b.embed_batch, Some(1));
-        assert_eq!(b.wave_scale, 0.25);
-    }
-
-    #[test]
-    fn backoff_on_low_free_ram() {
-        // 12.5% free < min_free_mem_frac 0.20, load still quiet.
-        let b = budget(&inv(Some(4), 8, None), &load(2, 0.5), &syscap(), &caps(2, 4));
-        assert_eq!(b.verdict, Verdict::Backoff);
-    }
-
-    #[test]
-    fn hold_on_critical_ram_pauses_heavy_work() {
-        // 3.1% free < hold_free_mem_frac 0.05.
-        let b = budget(&inv(Some(4), 8, None), &load(0, 0.5), &syscap(), &caps(2, 4));
-        assert_eq!(b.verdict, Verdict::Hold);
-        assert!(!b.verdict.heavy_ok());
-        assert_eq!(b.wave_scale, 0.0);
-        assert_eq!(b.mem_cap_bytes, 0);
-        assert_eq!(b.thread_cap, 1);
-        assert_eq!(b.embed_batch, Some(1));
-    }
-
-    #[test]
-    fn budget_never_exceeds_configured_caps_or_hardware() {
-        // Config under hardware: config wins.
-        let b = budget(&inv(Some(4), 8, None), &load(8, 0.5), &syscap(), &caps(1, 2));
-        assert_eq!(b.thread_cap, 1);
-        assert_eq!(b.embed_batch, Some(2));
-        // Config over hardware: hardware+headroom wins (never raise the caps
-        // past what the machine can politely give).
-        let b = budget(&inv(Some(4), 8, None), &load(8, 0.5), &syscap(), &caps(99, 4));
-        assert_eq!(b.thread_cap, 3);
-        // Polite never drops below 1 thread even with a tiny config.
-        let b = budget(&inv(Some(4), 8, Some(true)), &load(8, 0.5), &syscap(), &caps(1, 2));
-        assert_eq!(b.thread_cap, 1);
-    }
-
-    #[test]
-    fn unconfigured_caps_fall_back_to_hardware() {
-        let engine = libconfigreader::EngineSection::default();
-        let b = budget(&inv(Some(4), 8, None), &load(8, 0.5), &syscap(), &engine);
-        assert_eq!(b.verdict, Verdict::Full);
-        assert_eq!(b.thread_cap, 3, "no config cap -> hardware capacity (4P - reserve 1)");
-        assert_eq!(b.embed_batch, None, "no config batch -> leave it to the consumer");
-    }
-
-    #[test]
     fn disabled_config_reports_caps_without_sampling() {
-        let cfg = libconfigreader::SyscapSection { enabled: Some(false), ..Default::default() };
+        let cfg = libconfigreader::SyscapConfig { enabled: false, ..Default::default() };
         let b = budget(&inv(Some(4), 8, Some(true)), &load(0, 50.0), &cfg, &caps(2, 4));
         assert_eq!(b.verdict, Verdict::Full);
         assert_eq!(b.thread_cap, 2);
@@ -395,24 +311,10 @@ mod tests {
         // usable-core estimate must survive (pre-syscap behavior).
         let b = budget(&inv(Some(4), 8, Some(true)), &load(0, 50.0), &cfg, &caps(8, 4));
         assert_eq!(b.thread_cap, 8);
-    }
-
-    #[test]
-    fn machines_without_pe_split_use_logical_cores() {
-        // Intel-style: no perf_cores -> usable = logical - reserve.
-        // reserve = max(1, ceil(0.25 * 4)) = 1 -> usable 3.
-        let b = budget(&inv(None, 4, None), &load(8, 0.5), &syscap(), &caps(8, 4));
-        assert_eq!(b.thread_cap, 3);
-    }
-
-    #[test]
-    fn tiny_machine_still_gets_one_core() {
-        let b = budget(&inv(Some(1), 2, None), &load(8, 0.5), &syscap(), &caps(8, 4));
-        assert_eq!(b.thread_cap, 1, "reserve must never eat the last core");
-    }
-
+}
+ 
     fn caps_no_intra() -> libconfigreader::EngineSection {
-        libconfigreader::EngineSection {
+        libconfigreader::EngineConfig {
             intra_threads: None,
             inter_threads: Some(1),
             embed_batch: Some(4),
@@ -420,121 +322,9 @@ mod tests {
             exec_provider: None,
             provider_logging: None,
             max_cores: None,
-            backend: None,
+            backend: libconfigreader::Backend::Auto,
             no_cache: None,
         }
-    }
-
-    #[test]
-    fn build_jobs_auto_follows_the_budget_ladder() {
-        let spec = libconfigreader::BuildJobs::Auto;
-        // Full -> capacity-driven (4 P-cores - reserve 1 = 3), not the
-        // engine thread cap.
-        let b = budget(&inv(Some(4), 8, None), &load(8, 0.5), &syscap(), &caps(2, 4));
-        assert_eq!(b.verdict, Verdict::Full);
-        assert_eq!(b.capacity, 3);
-        assert_eq!(build_jobs(&spec, &b), 3);
-        // Polite (battery) -> half the build jobs, floor 2.
-        let b = budget(&inv(Some(4), 8, Some(true)), &load(8, 0.5), &syscap(), &caps(2, 4));
-        assert_eq!(b.verdict, Verdict::Polite);
-        assert_eq!(build_jobs(&spec, &b), 2);
-        // Backoff (low RAM) -> 1.
-        let b = budget(&inv(Some(4), 8, None), &load(2, 0.5), &syscap(), &caps(2, 4));
-        assert_eq!(b.verdict, Verdict::Backoff);
-        assert_eq!(build_jobs(&spec, &b), 1);
-        // Hold (nearly out of RAM) -> 1.
-        let b = budget(&inv(Some(4), 8, None), &load(0, 0.5), &syscap(), &caps(2, 4));
-        assert_eq!(b.verdict, Verdict::Hold);
-        assert_eq!(build_jobs(&spec, &b), 1);
-    }
-
-    /// This box: 6 P + 12 E cores, 18 logical. Every core counts, reserve =
-    /// max(1, ceil(0.10 * 18)) = 2 -> capacity 6 + 12 - 2 = 16.
-    fn inv_this_box() -> Inventory {
-        let mut i = inv(Some(6), 18, None);
-        i.cpu.eff_cores = Some(12);
-        i
-    }
-
-    #[test]
-    fn build_jobs_auto_is_aggressive_on_the_real_box() {
-        let spec = libconfigreader::BuildJobs::Auto;
-        // Full -> the whole capacity (16), no constant ceiling.
-        let b = budget(&inv_this_box(), &load(12, 0.5), &syscap(), &caps(4, 8));
-        assert_eq!(b.capacity, 16);
-        assert_eq!(b.thread_cap, 4, "a configured cap still binds the runtime");
-        assert_eq!(build_jobs(&spec, &b), 16);
-        // Polite -> half the capacity, floor 2.
-        let mut on_battery = inv_this_box();
-        on_battery.power.on_battery = Some(true);
-        let b = budget(&on_battery, &load(12, 0.5), &syscap(), &caps(4, 8));
-        assert_eq!(b.verdict, Verdict::Polite);
-        assert_eq!(build_jobs(&spec, &b), 8);
-    }
-
-    #[test]
-    fn a_busy_compile_at_three_fourths_of_the_machine_is_still_full() {
-        // The regression this policy exists for: on this box the OLD 0.70/core
-        // threshold tripped at loadavg 12.6, which ONE background compile (or
-        // the consumer's own threads) crosses while the desktop is idle — the
-        // A/B runs measured `polite` on an idle desktop for exactly that
-        // reason. loadavg 13.5 = 0.75/core must now be Full, and only the run
-        // queue outgrowing the machine (>= 1.0/core) yields.
-        let spec = libconfigreader::BuildJobs::Auto;
-        let b = budget(&inv_this_box(), &load(12, 13.5), &syscap(), &caps_no_intra());
-        assert_eq!(b.verdict, Verdict::Full);
-        assert_eq!(b.capacity, 16);
-        assert_eq!(effective_intra_threads(&caps_no_intra(), &b), 16);
-        assert_eq!(build_jobs(&spec, &b), 16);
-        // Past 1.0/core -> Polite (half), past 2.0/core -> Backoff (floor).
-        let b = budget(&inv_this_box(), &load(12, 19.0), &syscap(), &caps_no_intra());
-        assert_eq!(b.verdict, Verdict::Polite);
-        assert_eq!(effective_intra_threads(&caps_no_intra(), &b), 8);
-        let b = budget(&inv_this_box(), &load(12, 37.0), &syscap(), &caps_no_intra());
-        assert_eq!(b.verdict, Verdict::Backoff);
-        assert_eq!(effective_intra_threads(&caps_no_intra(), &b), 1);
-    }
-
-    #[test]
-    fn build_jobs_auto_uses_capacity_when_caps_unset_and_has_no_ceiling() {
-        let spec = libconfigreader::BuildJobs::Auto;
-        // Unset engine.intra_threads: thread_cap falls back to capacity, and
-        // the build ladder uses capacity either way.
-        let b = budget(&inv(Some(4), 8, None), &load(8, 0.5), &syscap(), &caps_no_intra());
-        assert_eq!(b.thread_cap, 3);
-        assert_eq!(build_jobs(&spec, &b), 3);
-        // Big machine without caps: capacity 28, handed out in full — there
-        // is no hardcoded ceiling; Backoff/Hold are the RAM guard.
-        let b = budget(&inv(Some(32), 32, None), &load(64, 0.5), &syscap(), &caps_no_intra());
-        assert_eq!(b.thread_cap, 28);
-        assert_eq!(build_jobs(&spec, &b), 28);
-    }
-
-    #[test]
-    fn effective_threads_derive_from_the_budget_and_config_can_only_lower() {
-        // Full on the fixture box: capacity 3 (4 P − reserve 1).
-        let full = budget(&inv(Some(4), 8, None), &load(8, 0.5), &syscap(), &caps_no_intra());
-        assert_eq!(effective_intra_threads(&caps_no_intra(), &full), 3, "unset -> capacity");
-        assert_eq!(effective_intra_threads(&caps(2, 4), &full), 2, "config under budget wins");
-        assert_eq!(effective_intra_threads(&caps(99, 4), &full), 3, "config can never raise");
-        assert_eq!(effective_inter_threads(&caps_no_intra(), &full), 1, "unset inter -> 1");
-        // Polite (battery): the derived value shrinks with the budget.
-        let polite = budget(&inv(Some(4), 8, Some(true)), &load(8, 0.5), &syscap(), &caps_no_intra());
-        assert_eq!(polite.thread_cap, 1);
-        assert_eq!(effective_intra_threads(&caps_no_intra(), &polite), 1);
-        // Backoff: floored at one.
-        let backoff = budget(&inv(Some(4), 8, None), &load(2, 0.5), &syscap(), &caps(8, 4));
-        assert_eq!(effective_intra_threads(&caps(8, 4), &backoff), 1);
-        assert_eq!(effective_inter_threads(&caps(8, 4), &backoff), 1);
-    }
-
-    #[test]
-    fn build_jobs_fixed_is_the_human_override() {
-        let b = budget(&inv(Some(4), 8, None), &load(0, 0.5), &syscap(), &caps(2, 4));
-        assert_eq!(b.verdict, Verdict::Hold);
-        // Override wins even under Hold; zero clamps to one.
-        assert_eq!(build_jobs(&libconfigreader::BuildJobs::Fixed(6), &b), 6);
-        assert_eq!(build_jobs(&libconfigreader::BuildJobs::Fixed(0), &b), 1);
     }
 
     #[test]

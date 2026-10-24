@@ -1,5 +1,5 @@
 [package]
-name = "triq-cli"
+name = "cli"
 version = "0.1.0"
 edition = "2021"
 description = "Headless CLI for TalentRankIQ — JSONL event loop over stdio"
@@ -8,10 +8,6 @@ license = "Apache-2.0"
 [[bin]]
 name = "triq"
 path = "src/main.rs"
-
-[[test]]
-name = "cli_list_embedders_matches_triq_yaml"
-path = "tests/cli_list_embedders_matches_triq_yaml.rs"
 
 [dependencies]
 libtriqui-cli = { path = "../lib/libtriqui-cli" }

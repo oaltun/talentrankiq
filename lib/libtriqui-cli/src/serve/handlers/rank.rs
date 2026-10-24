@@ -14,7 +14,7 @@ use serde_json::Value;
 use libtriqui_client::protocol::ProtocolError;
 use libtriqui_client::types::{RankProgress, RankState, SortReport, SystemBudget, SystemLoad};
 use libtriqui_core::cascade::{freeze_pool, project, run_scout_stage, run_wave, CascadeBudget};
-use libtriqui_core::config::CascadeSection;
+use libtriqui_core::config::CascadeConfig;
 use libtriqui_core::db::{rank_state_for_job, set_rank_state};
 use libtriqui_core::runtime::EngineRuntime;
 use libtriqui_core::syscap;
@@ -114,7 +114,7 @@ struct CascadeRunner {
     runtime: Arc<EngineRuntime>,
     db_path: std::path::PathBuf,
     events: crate::serve::EventSink,
-    cascade: CascadeSection,
+    cascade: CascadeConfig,
     /// `syscap:` + `engine:` sections, resolved on the spawning (serve
     /// worker) thread where the config-path override is set — the runner
     /// thread itself never loads config.

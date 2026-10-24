@@ -1,85 +1,16 @@
-//! Shared discovery of the config file (`triq.yaml`) and the engine's paths.
+//! Shared application configuration.
 //!
-//! At startup the app builds its `Config` from the bundled `triq.yaml` file.
-//! User preferences (engine backend, thread caps, etc.) from `AppPreferences`
-//! are layered on top via `Config::with_user_overrides()`. Optional
-//! `triq.yaml` files are still loaded for development overrides; if absent
-//! the embedded default is used.
-//!
-//! Both the engine runtime and the model-management commands need the same
-//! paths (config, model dir), so the lookup logic lives here. Everything
-//! falls back gracefully: an explicit env var wins, then the config file
-//! (triq.yaml for dev), then the embedded default.
-//!
-//! `modelcaller`, `modeldownloader`, and `onnxwrapperrs` are all in-process
-//! now — the gui runs the whole engine inside its own binary and needs no
-//! binary paths at all (thin gui pattern, `gui/design/app1/thin-gui.md`).
+//! The configuration is now embedded as pure Rust data in libconfigreader.
+//! There is no YAML file loading anymore — Config::load() returns the static config.
 
 use std::path::{Path, PathBuf};
 
-use libconfigreader::Config;
+use libconfigreader::{Config, EngineConfig, UserOverrides};
 
-thread_local! {
-    /// Per-thread config override (`triq.yaml` path). Set on the serve thread by
-    /// `InProcessServe::start_with_config` (tests, tools) so one process can
-    /// host several serves, each with its own config, without process-global
-    /// state like `TRIQI_MODELCALLER_CONFIG` — concurrent serves in test
-    /// binaries would otherwise read each other's isolated configs.
-    static CONFIG_PATH_OVERRIDE: std::cell::RefCell<Option<PathBuf>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-/// Override config file discovery **for the calling thread only**; pass
-/// `None` to clear. All config lookups made from this thread — serve
-/// handlers and the engine runtime it starts — resolve through the override.
-pub fn set_config_path_override(path: Option<PathBuf>) {
-    CONFIG_PATH_OVERRIDE.with(|o| *o.borrow_mut() = path);
-}
-
-/// The calling thread's current override (see
-/// [`set_config_path_override`]). Serve spawns worker threads per request;
-/// thread-locals don't inherit, so the serve loop captures this and the
-/// workers re-apply it.
-pub fn config_path_override() -> Option<PathBuf> {
-    CONFIG_PATH_OVERRIDE.with(|o| o.borrow().clone())
-}
-
-/// Path to the config file from the per-thread override or
-/// `TRIQI_MODELCALLER_CONFIG` env var. Returns `None` if neither is set
-/// or the env var points to a missing file. Callers should fall back to
-/// the embedded default (`Config::default_from_embedded`).
-pub fn triq_config_path() -> Option<PathBuf> {
-    if let Some(p) = CONFIG_PATH_OVERRIDE.with(|o| o.borrow().clone()) {
-        return Some(p);
-    }
-    if let Ok(p) = std::env::var("TRIQI_MODELCALLER_CONFIG") {
-        if !p.is_empty() {
-            let path = PathBuf::from(p);
-            if path.is_file() {
-                return Some(path);
-            }
-        }
-    }
-    None
-}
-
-/// Load the config from the config path override or `TRIQI_MODELCALLER_CONFIG`
-/// env var, falling back to the embedded default YAML (`triq.yaml` in the binary).
+/// Load the embedded configuration.
 /// User preference overrides (from `AppPreferences`) are applied if set.
 pub fn load_triq() -> Config {
-    let cfg = match triq_config_path() {
-        Some(path) => {
-            log::debug!("load_triq: loading from {}", path.display());
-            match libconfigreader::load(&path, &libconfigreader::CliOverrides::new()) {
-                Ok(c) => c,
-                Err(e) => {
-                    log::warn!("load_triq: failed to load {}: {e}; using embedded default", path.display());
-                    embedded_default()
-                }
-            }
-        }
-        None => embedded_default(),
-    };
+    let cfg = Config::load();
     // Apply user overrides if set
     if let Some(overrides) = user_overrides() {
         if !overrides.is_default() {
@@ -89,25 +20,20 @@ pub fn load_triq() -> Config {
     cfg
 }
 
-/// Build the config from the embedded default YAML.
-fn embedded_default() -> Config {
-    Config::default_from_embedded(PathBuf::from("."))
-}
-
 thread_local! {
     /// Per-thread user overrides (from AppPreferences), applied on top of the
-    /// config file or embedded default. Set once at serve startup.
-    static USER_OVERRIDES: std::cell::RefCell<Option<libconfigreader::UserOverrides>> =
+    /// embedded config. Set once at serve startup.
+    static USER_OVERRIDES: std::cell::RefCell<Option<UserOverrides>> =
         std::cell::RefCell::new(None);
 }
 
 /// Set user preference overrides for the calling thread. Pass `None` to clear.
-pub fn set_user_overrides(o: Option<libconfigreader::UserOverrides>) {
+pub fn set_user_overrides(o: Option<UserOverrides>) {
     USER_OVERRIDES.with(|cell| *cell.borrow_mut() = o);
 }
 
 /// The calling thread's user overrides (see [`set_user_overrides`]).
-pub fn user_overrides() -> Option<libconfigreader::UserOverrides> {
+pub fn user_overrides() -> Option<UserOverrides> {
     USER_OVERRIDES.with(|cell| cell.borrow().clone())
 }
 
@@ -154,28 +80,23 @@ pub fn verbose() -> bool {
         || load_triq().verbose
 }
 
-/// Idle-unload timeout for the embedding engine, from `gui_idle_unload_secs` in
-/// `triq.yaml` (default 300 s = 5 minutes, `0` disables idle unloading).
+/// Idle-unload timeout for the embedding engine (default 300 s = 5 minutes, `0` disables idle unloading).
 pub fn gui_idle_unload_secs() -> u64 {
     load_triq().gui_idle_unload_secs
 }
 
-/// Texts per embeddings request. `engine.embed_batch` in `triq.yaml` is an
-/// optional ceiling; unset, the batch derives from the libsyscap budget:
-/// the budget's batch when it has an opinion, else the thread cap
-/// (capacity when idle — 10 on this box — halved under Polite, 1 under
-/// Backoff/Hold). Sampled once per process (the value is read into a
-/// `LazyLock` by the embedding path; libsyscap design §7.3).
+/// Texts per embeddings request. `engine.embed_batch` is an optional ceiling;
+/// unset, the batch derives from the libsyscap budget.
 pub fn engine_embed_batch() -> usize {
     let cfg = load_triq();
     let b = crate::syscap::budget_now(
-        &cfg.syscap.clone(),
-        &cfg.engine.clone(),
+        &cfg.syscap,
+        &cfg.engine,
     );
     crate::syscap::effective_embed_batch(&b)
 }
 
-/// `true` when `engine.no_cache` is set in `triq.yaml`: never serve a
+/// `true` when `engine.no_cache` is set: never serve a
 /// vector-embedding or judge verdict from cache — recompute everything for
 /// honest cold timings. Writes still happen, so a benchmark run leaves the
 /// warm caches intact.
@@ -183,20 +104,17 @@ pub fn engine_no_cache() -> bool {
     load_triq().engine.no_cache.unwrap_or(false)
 }
 
-/// Judge stage artifacts for the gui rubric, from `gui_judge_artifact` in
-/// `triq.yaml` (empty = judge stage disabled).
-pub fn gui_judge_artifacts() -> libconfigreader::GuiJudgeArtifacts {
-    load_triq().gui_judge_artifact.unwrap_or_default()
+/// Judge stage artifacts for the gui rubric.
+pub fn gui_judge_artifacts() -> libconfigreader::GuiJudgeArtifact {
+    load_triq().gui_judge_artifact
 }
 
-/// Default rubric weights for new jobs and new criteria, from `rubric_defaults`
-/// in `triq.yaml` (ad 50, fb-job 10, fb-profile 5, criterion 10 when unset).
+/// Default rubric weights for new jobs and new criteria.
 pub fn rubric_defaults() -> libconfigreader::RubricDefaults {
     load_triq().rubric_defaults
 }
 
-/// Root folder for new jobs' default CV directories, from `gui_cv_dir_root` in
-/// `triq.yaml` (`~` and relative paths are resolved by `libconfigreader`).
+/// Root folder for new jobs' default CV directories.
 /// Fallback only: a saved gui preference (Settings → General → CV directory,
 /// `AppPreferences::cv_dir_root`) wins over this; when both are unset the
 /// caller uses the platform Documents dir + `jobs`.
@@ -204,8 +122,8 @@ pub fn cv_dir_root() -> Option<PathBuf> {
     load_triq().gui_cv_dir_root
 }
 
-/// Cascade config for progressive ranking, from `cascade:` in `triq.yaml`.
-pub fn cascade_config() -> libconfigreader::CascadeSection {
+/// Cascade config for progressive ranking.
+pub fn cascade_config() -> libconfigreader::CascadeConfig {
     load_triq().cascade
 }
 
@@ -214,7 +132,7 @@ pub fn as_str(p: &Path) -> &str {
     p.to_str().unwrap_or("")
 }
 
-/// Chunk size for a given model slug from `gui_embedders` in `triq.yaml`, and
+/// Chunk size for a given model slug from `gui_embedders`, and
 /// from `cascade.scout_chunk_size` for the cascade's scout (which is not a
 /// `gui_embedders` entry — it is a stage, not a user-selectable embedder).
 /// Returns 0 (no chunking) if the model is in neither list.
@@ -245,22 +163,22 @@ pub fn tokenizer_path(model_dir: &Path, slug: &str) -> Option<std::path::PathBuf
 }
 
 static ENGINE_OVERRIDE: std::sync::OnceLock<
-    std::sync::RwLock<Option<libconfigreader::EngineSection>>,
+    std::sync::RwLock<Option<EngineConfig>>,
 > = std::sync::OnceLock::new();
 
 /// Replace the engine knobs every `EngineRuntime` starts with, regardless of
-/// what `triq.yaml` says — the `--cpu-only` gui flag sets this before the
+/// what the embedded config says — the `--cpu-only` gui flag sets this before the
 /// serve (and therefore the engine) comes up: ONNX on the CPU EP with
 /// one-thread sessions and small batches, i.e. a deliberately slow floor for
 /// testing progressive-ranking behaviour on weak machines. Fields the
 /// override leaves `None` fall through to the config.
-pub fn set_engine_override(o: Option<libconfigreader::EngineSection>) {
+pub fn set_engine_override(o: Option<EngineConfig>) {
     let lock = ENGINE_OVERRIDE.get_or_init(|| std::sync::RwLock::new(None));
     *lock.write().expect("engine override lock poisoned") = o;
 }
 
 /// The process-wide engine override (see [`set_engine_override`]).
-pub fn engine_override() -> Option<libconfigreader::EngineSection> {
+pub fn engine_override() -> Option<EngineConfig> {
     ENGINE_OVERRIDE
         .get_or_init(|| std::sync::RwLock::new(None))
         .read()
@@ -272,9 +190,9 @@ pub fn engine_override() -> Option<libconfigreader::EngineSection> {
 /// pinned to the CPU execution provider, single-threaded sessions, small
 /// embed batches. Used by the gui's `--cpu-only` flag to rehearse
 /// low-end-machine behaviour on fast hardware.
-pub fn cpu_only_engine() -> libconfigreader::EngineSection {
-    libconfigreader::EngineSection {
-        backend: Some(libconfigreader::Backend::Ort),
+pub fn cpu_only_engine() -> EngineConfig {
+    EngineConfig {
+        backend: libconfigreader::Backend::Ort,
         exec_provider: Some(libconfigreader::ExecutionProvider::Cpu),
         intra_threads: Some(1),
         inter_threads: Some(1),
@@ -296,7 +214,7 @@ pub fn registry_ctx() -> std::sync::Arc<RegistryCtx> {
         std::sync::OnceLock::new();
     CTX.get_or_init(|| {
         let cfg = load_triq();
-        let backend = cfg.engine.backend.unwrap_or_default();
+        let backend = cfg.engine.backend;
         let revision = cfg.revision.clone();
         std::sync::Arc::new(RegistryCtx {
             registry: libmodelcaller::Registry::from_config(&cfg),

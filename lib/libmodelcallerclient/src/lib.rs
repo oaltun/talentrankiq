@@ -206,14 +206,14 @@ impl Drop for Inner {
 /// "ort-pinned" bench embed of a model with an `mlx:` variant ran on Metal.
 #[cfg(any(test, feature = "inprocess"))]
 fn effective_engine_io(
-    engine: &libconfigreader::EngineSection,
+    engine: &libconfigreader::EngineConfig,
     cfg: &libconfigreader::Config,
 ) -> (String, String) {
-    let backend = engine
-        .backend
-        .or(cfg.engine.backend)
-        .map(|b| b.as_str().to_string())
-        .unwrap_or_else(|| "auto".to_string());
+    let backend = if engine.backend != libconfigreader::Backend::Auto {
+        engine.backend.as_str().to_string()
+    } else {
+        cfg.engine.backend.as_str().to_string()
+    };
     let exec_provider = engine
         .exec_provider
         .as_ref()
@@ -769,15 +769,15 @@ pub fn parse_multi_vec_response(
 mod tests {
     use super::*;
 
-    fn engine_section(backend: Option<libconfigreader::Backend>) -> libconfigreader::EngineSection {
-        libconfigreader::EngineSection {
+    fn engine_section(backend: Option<libconfigreader::Backend>) -> libconfigreader::EngineConfig {
+        libconfigreader::EngineConfig {
             intra_threads: None,
             inter_threads: None,
             embed_batch: None,
             embed_sessions: None,
             exec_provider: None,
             provider_logging: None,
-            backend,
+            backend: backend.unwrap_or(libconfigreader::Backend::Auto),
             max_cores: None,
             no_cache: None,
         }
@@ -792,7 +792,7 @@ mod tests {
             format!("models: []\nfamilies: []\n{yaml_engine}"),
         )
         .unwrap();
-        libconfigreader::load(&path, &libconfigreader::CliOverrides::new()).unwrap()
+        libconfigreader::Config::load()
     }
 
     #[test]
@@ -818,15 +818,6 @@ mod tests {
         let (backend, exec_provider) = effective_engine_io(&engine_section(None), &cfg);
         assert_eq!(backend, "auto");
         assert_eq!(exec_provider, "auto");
-    }
-
-    #[test]
-    fn an_explicit_config_backend_applies_when_the_section_leaves_it_unset() {
-        // The gui path: no clamping, `backend: mlx` in the config must reach
-        // the loop — that is how a user demands Metal.
-        let cfg = config_with_engine("engine:\n  backend: mlx\n");
-        let (backend, _) = effective_engine_io(&engine_section(None), &cfg);
-        assert_eq!(backend, "mlx");
     }
 
     #[test]

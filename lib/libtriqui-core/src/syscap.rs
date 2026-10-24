@@ -12,7 +12,7 @@
 //! [`HOLDING`] exactly when [`holding_code`] says so, and the gui i18n-maps
 //! it to a visible notice. Polite/Backoff stay silent by design.
 
-use libconfigreader::{EngineSection, SyscapSection};
+use libconfigreader::{EngineConfig, SyscapConfig};
 use libsyscap::{budget, Budget, LoadSampler, LoadSnapshot};
 
 /// Reason code carried by `RankState.reason` / `RankProgress.reason` while
@@ -33,7 +33,7 @@ pub fn holding_code(b: &Budget) -> Option<String> {
 
 /// Sample the host once and return both the budget and the raw load sample
 /// it was computed from (for DTOs that surface the load).
-pub fn sample_budget(cfg: &SyscapSection, caps: &EngineSection) -> (Budget, LoadSnapshot) {
+pub fn sample_budget(cfg: &SyscapConfig, caps: &EngineConfig) -> (Budget, LoadSnapshot) {
     let mut sampler = LoadSampler::new();
     let load: LoadSnapshot = sampler.sample(std::time::Duration::from_millis(0));
     let b = budget(libsyscap::Inventory::global(), &load, cfg, caps);
@@ -44,7 +44,7 @@ pub fn sample_budget(cfg: &SyscapSection, caps: &EngineSection) -> (Budget, Load
 /// inside libsyscap already degrades to conservative defaults, and a config
 /// load failure upstream yields the `Default` sections (enabled syscap,
 /// unset engine caps).
-pub fn budget_now(cfg: &SyscapSection, caps: &EngineSection) -> Budget {
+pub fn budget_now(cfg: &SyscapConfig, caps: &EngineConfig) -> Budget {
     sample_budget(cfg, caps).0
 }
 
@@ -103,7 +103,7 @@ mod tests {
         // sane budget without panicking — whatever this box is doing right
         // now, the wave scale is one of the four known values and threads
         // never drop to zero.
-        let b = budget_now(&SyscapSection::default(), &EngineSection::default());
+        let b = budget_now(&SyscapConfig::default(), &EngineConfig::default());
         assert!(matches!(
             b.verdict,
             Verdict::Full | Verdict::Polite | Verdict::Backoff | Verdict::Hold
