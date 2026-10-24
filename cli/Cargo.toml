@@ -21,3 +21,6 @@ dirs = "6"
 [dev-dependencies]
 serde_yaml = "0.9"
 serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+libtriqui-client = { path = "../lib/libtriqui-client" }
+tempfile = "3.8"

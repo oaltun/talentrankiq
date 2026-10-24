@@ -851,11 +851,14 @@ dependencies = [
  "env_logger",
  "libconfigreader",
  "libtriqui-cli",
+ "libtriqui-client",
  "libtriqui-core",
  "libtriqui-license",
  "log",
+ "serde",
  "serde_json",
  "serde_yaml",
+ "tempfile",
 ]
 
 [[package]]
