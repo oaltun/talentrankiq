@@ -34,3 +34,10 @@ notify = "8"
 # Platform Documents/home dirs for the default per-job CV directory root
 # (`~/Documents/jobs` on Linux/macOS, the Known Folder equivalent on Windows).
 dirs = "6"
+
+# Judge license commands (activate/deactivate/status/check-artifact) served
+# over the JSONL protocol for the thin GUI.
+libtriqui-license = { path = "../libtriqui-license" }
+
+# Tokio runtime for async license operations (activate, verify)
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

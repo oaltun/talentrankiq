@@ -12,7 +12,7 @@ use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
-use libtriqui_client::TriqiClient;
+use crate::triqi_client::TriqiClient;
 use tauri::Manager;
 
 use crate::utils::platform;
@@ -76,7 +76,7 @@ impl SubprocessBridge {
         //   cli_write (a_write) -> srv_read (b_read) : client requests -> serve reads
         //   srv_write (b_write) -> cli_read (a_read) : serve responses -> client reads
         let (cli_write, cli_read, srv_write, srv_read) =
-            libtriqui_client::transport::duplex();
+            crate::triqi_client::transport::duplex();
 
         // Thread 1: Forward requests from client -> child stdin.
         // Client writes to cli_write, which connects to srv_read.

@@ -12,8 +12,8 @@ use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager};
 
 use include_dir::include_dir;
-use libtriqui_client::client::{ClientError, TriqiClient};
-use libtriqui_client::types::{DomainError, RecoveryError};
+use crate::triqi_client::client::{ClientError, TriqiClient};
+use crate::triqi_client::types::{DomainError, RecoveryError};
 
 use crate::cli_subprocess::SubprocessBridge;
 

@@ -3,7 +3,7 @@
 //! extract → embed → rank pipeline in the background; progress travels as
 //! `job-import-progress` / `job-embedding-progress` events.
 
-use libtriqui_client::params::*;
+use crate::triqi_client::params::*;
 use tauri::AppHandle;
 
 use crate::cli::{self, rpc_blocking};

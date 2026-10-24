@@ -162,4 +162,10 @@ params! {
     struct SaveEmergencyDataParams { filename: String, data: serde_json::Value }
 
     struct LoadEmergencyDataParams { filename: String }
+
+    /// Activate a judge license with a license key (downloads + saves locally).
+    struct LicenseActivateParams { license_key: String }
+
+    /// Check whether a license authorizes a given artifact id.
+    struct LicenseCheckArtifactParams { artifact_id: String }
 }

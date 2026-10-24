@@ -2,7 +2,7 @@
 //! `jobs.rs`. The request stays open until the ranking finishes; progress
 //! travels as `job-embedding-progress` events.
 
-use libtriqui_client::params::*;
+use crate::triqi_client::params::*;
 use tauri::AppHandle;
 
 use crate::cli::{self, rpc_blocking_typed};

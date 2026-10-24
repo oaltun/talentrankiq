@@ -1,9 +1,16 @@
-use libtriqui_license::{load_judge_license, LicenseStatus};
+use crate::triqi_client::types::LicenseStatus;
+use tauri::AppHandle;
+
+use crate::cli::{rpc_blocking_typed, str_err};
 
 #[tauri::command]
-    #[specta::specta]
-    pub async fn judge_license_status() -> Result<LicenseStatus, String> {
-    Ok(load_judge_license()
-        .map(|l| l.status())
-        .unwrap_or(LicenseStatus::NotFound))
+#[specta::specta]
+pub async fn judge_license_status(app: AppHandle) -> Result<LicenseStatus, String> {
+    rpc_blocking_typed::<LicenseStatus>(
+        app,
+        "judge_license_status",
+        crate::triqi_client::EmptyParams {},
+    )
+    .await
+    .map_err(str_err)
 }

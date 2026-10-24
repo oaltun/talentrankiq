@@ -14,6 +14,7 @@ pub mod import;
 pub mod job_ad;
 pub mod job_bundle;
 pub mod jobs;
+pub mod license;
 pub mod models;
 pub mod prefs;
 pub mod rank;
@@ -274,6 +275,28 @@ fn dispatch(state: &Arc<ServeState>, cmd: &str, params: &Value) -> Result<Value,
             recovery::load_emergency_data(state, &p.filename)
         }
         "cleanup_old_recovery_files" => recovery::cleanup_old_recovery_files(state),
+
+        // License (judge license commands)
+        "license_activate" => {
+            let p: LicenseActivateParams = from_params(params)?;
+            license::license_activate(state, p).map_err(string_err)
+        }
+        "license_deactivate" => {
+            let _p: () = from_params(params)?;
+            license::license_deactivate(state, _p).map_err(string_err)
+        }
+        "license_status" => {
+            let _p: () = from_params(params)?;
+            license::license_status(state, _p).map_err(string_err)
+        }
+        "license_check_artifact" => {
+            let p: LicenseCheckArtifactParams = from_params(params)?;
+            license::license_check_artifact(state, p).map_err(string_err)
+        }
+        "judge_license_status" => {
+            let _p: () = from_params(params)?;
+            license::judge_license_status(state, _p).map_err(string_err)
+        }
 
         other => Err(ProtocolError::internal(format!(
             "unknown command '{other}'"

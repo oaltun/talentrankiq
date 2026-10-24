@@ -3,7 +3,7 @@
 //! `RecoveryError` is rehydrated from the protocol error envelope so frontend
 //! matching is unchanged.
 
-use libtriqui_client::params::*;
+use crate::triqi_client::params::*;
 use serde_json::Value;
 use tauri::AppHandle;
 
@@ -53,8 +53,8 @@ pub async fn cleanup_old_recovery_files(app: AppHandle) -> Result<u32, RecoveryE
 async fn rpc_blocking_typed_u32(
     app: AppHandle,
     cmd: &'static str,
-) -> Result<u32, libtriqui_client::client::ClientError> {
+) -> Result<u32, crate::triqi_client::client::ClientError> {
     let value = rpc_blocking(app, cmd, EmptyParams {}).await?;
     serde_json::from_value(value)
-        .map_err(|e| libtriqui_client::client::ClientError::Json(e.to_string()))
+        .map_err(|e| crate::triqi_client::client::ClientError::Json(e.to_string()))
 }

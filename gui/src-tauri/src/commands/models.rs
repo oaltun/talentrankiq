@@ -3,7 +3,7 @@
 //! inside the serve process; progress arrives as `model-download-progress` /
 //! `try-model-progress` events. `Result<_, String>` signatures are preserved.
 
-use libtriqui_client::params::*;
+use crate::triqi_client::params::*;
 use tauri::AppHandle;
 
 use crate::cli::{rpc_blocking, rpc_blocking_typed, str_err};

@@ -1,6 +1,6 @@
 //! Thin shell over `triqui-cli serve` rpcs (criteria) — see `jobs.rs`.
 
-use libtriqui_client::params::*;
+use crate::triqi_client::params::*;
 use tauri::AppHandle;
 
 use crate::cli::{self, rpc_blocking, rpc_blocking_typed};

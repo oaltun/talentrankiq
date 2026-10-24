@@ -1131,7 +1131,10 @@ nudge?: string | null;
 rank?: RankState }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
 /**
- * Human-readable status for the UI.
+ * License status for the judge license (wire-compatible with the CLI's
+ * `libtriqui_license::LicenseStatus`). The GUI projects this for the UI;
+ * the CLI serializes its own `LicenseStatus` into JSON and the GUI
+ * deserializes into this type.
  */
 export type LicenseStatus = { kind: "Licensed"; customer: string; expires_at: string; artifacts: string[] } | { kind: "Invalid"; reason: string } | { kind: "NotFound" } | { kind: "Revoked"; reason: string }
 /**

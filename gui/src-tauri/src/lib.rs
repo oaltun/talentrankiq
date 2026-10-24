@@ -9,6 +9,7 @@ mod bindings;
 mod cli;
 mod cli_subprocess;
 mod commands;
+mod triqi_client;
 mod utils;
 
 use tauri::{Manager, RunEvent, WindowEvent};
@@ -16,10 +17,10 @@ use std::panic;
 
 // The DTO/error vocabulary the command shells speak (and specta exports).
 // Re-exported under the historical `crate::types` path.
-pub use libtriqui_client::types;
+pub use triqi_client::types;
 
 // Re-export only what's needed externally
-pub use libtriqui_client::types::DEFAULT_QUICK_PANE_SHORTCUT;
+pub use triqi_client::types::DEFAULT_QUICK_PANE_SHORTCUT;
 
 /// Application entry point. Sets up all plugins and initializes the app.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

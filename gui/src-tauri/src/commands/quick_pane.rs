@@ -5,7 +5,7 @@
 
 use tauri::{AppHandle, Manager, WebviewUrl};
 
-use libtriqui_client::types::DEFAULT_QUICK_PANE_SHORTCUT;
+use crate::triqi_client::types::DEFAULT_QUICK_PANE_SHORTCUT;
 
 // ============================================================================
 // Constants

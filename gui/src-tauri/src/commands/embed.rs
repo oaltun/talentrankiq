@@ -2,7 +2,7 @@
 //! `jobs.rs`. The engine runs inside the serve process; `start_runtime` just
 //! asks it to connect-or-spawn modelcaller.
 
-use libtriqui_client::params::*;
+use crate::triqi_client::params::*;
 use tauri::AppHandle;
 
 use crate::cli::{self, rpc_blocking, rpc_blocking_typed};

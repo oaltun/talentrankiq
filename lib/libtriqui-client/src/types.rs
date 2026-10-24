@@ -1079,6 +1079,19 @@ pub struct VettedEmbeddersResponse {
     pub recommended_slug: String,
 }
 
+/// License status for the judge license (wire-compatible with the CLI's
+/// `libtriqui_license::LicenseStatus`). The GUI projects this for the UI;
+/// the CLI serializes its own `LicenseStatus` into JSON and the GUI
+/// deserializes into this type.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(tag = "kind")]
+pub enum LicenseStatus {
+    Licensed { customer: String, expires_at: String, artifacts: Vec<String> },
+    Invalid { reason: String },
+    NotFound,
+    Revoked { reason: String },
+}
+
 // ============================================================================
 // Progress event payloads (were gui `commands/import.rs` / `commands/embed.rs`)
 // ============================================================================

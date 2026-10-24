@@ -4,7 +4,7 @@
 //! "Change…" button, and `reload_job_ad` re-reads it after the user edits it in
 //! an external editor. There is no ad editor in the gui.
 
-use libtriqui_client::params::*;
+use crate::triqi_client::params::*;
 use tauri::AppHandle;
 
 use crate::cli::{self, rpc_blocking_typed};

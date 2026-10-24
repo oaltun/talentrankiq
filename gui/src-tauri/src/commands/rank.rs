@@ -5,8 +5,8 @@
 //! `rank-progress` events, and can call `cancel_rank` to stop it.
 //! `get_rank_state` is the synchronous getter for the current RankState snapshot.
 
-use libtriqui_client::params::*;
-use libtriqui_client::types::{JobUiState, RankState, SystemBudget};
+use crate::triqi_client::params::*;
+use crate::triqi_client::types::{JobUiState, RankState, SystemBudget};
 use tauri::AppHandle;
 
 use crate::cli::{self, rpc_blocking, rpc_blocking_typed};

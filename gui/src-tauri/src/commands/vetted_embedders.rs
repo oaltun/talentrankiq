@@ -12,7 +12,7 @@ pub fn list_vetted_embedders(app: AppHandle) -> Result<VettedEmbeddersResponse, 
     let value = rpc(
         &app,
         "list_vetted_embedders",
-        &libtriqui_client::EmptyParams {},
+        &crate::triqi_client::EmptyParams {},
     )
     .map_err(str_err)?;
     serde_json::from_value(value).map_err(|e| format!("bad response: {e}"))

@@ -4,8 +4,8 @@
 //! path+layout are part of the gui↔serve app-dir contract, and the bridge is
 //! not up yet during setup.
 
-use libtriqui_client::params::*;
-use libtriqui_client::types::{
+use crate::triqi_client::params::*;
+use crate::triqi_client::types::{
     validate_color_theme, validate_string_input, validate_theme, AppPreferences,
 };
 
