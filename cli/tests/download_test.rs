@@ -88,6 +88,90 @@ fn test_cli_download_onnx_model() {
 }
 
 #[test]
+fn test_cli_download_mlx_model() {
+    let _ = env_logger::try_init();
+
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let binary = manifest_dir.join("../target/debug/triq");
+    let binary = std::fs::canonicalize(&binary).unwrap_or_else(|_| binary);
+
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let model_dir = temp_dir.path().join("models");
+
+    // Test 270M MLX download
+    let mut cmd = Command::new(&binary);
+    cmd.args([
+        "download",
+        "--slug", "harrier-oss-v1-270m-MLX-4bit",
+        "--source", "hf:majentik/harrier-oss-v1-270m-MLX-4bit",
+        "--artifact", "mlx",
+        "--model-dir", model_dir.to_str().unwrap(),
+    ]);
+    cmd.stdin(Stdio::null());
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+
+    let mut child = cmd.spawn().expect("spawn MLX download command");
+
+    let stderr = child.stderr.take().unwrap();
+    thread::spawn(move || {
+        let reader = std::io::BufReader::new(stderr);
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                eprintln!("[mlx download stderr] {}", line);
+            }
+        }
+    });
+
+    let status = child.wait().expect("wait for MLX download");
+    assert!(status.success(), "MLX download command failed");
+
+    // Verify files exist (MLX downloads to main/ directory)
+    let slug_dir = model_dir.join("harrier-oss-v1-270m-MLX-4bit");
+    assert!(slug_dir.join("main/model.safetensors").exists(), "MLX model file missing");
+    assert!(slug_dir.join("main/tokenizer.json").exists(), "tokenizer.json missing");
+    assert!(slug_dir.join("main/config.json").exists(), "config.json missing");
+    assert!(slug_dir.join("main/tokenizer_config.json").exists(), "tokenizer_config.json missing");
+
+    // Test 600M MLX download
+    let temp_dir2 = TempDir::new().expect("create temp dir 2");
+    let model_dir2 = temp_dir2.path().join("models");
+
+    let mut cmd = Command::new(&binary);
+    cmd.args([
+        "download",
+        "--slug", "harrier-oss-v1-0.6b-MLX-4bit",
+        "--source", "hf:majentik/harrier-oss-v1-0.6b-MLX-4bit",
+        "--artifact", "mlx",
+        "--model-dir", model_dir2.to_str().unwrap(),
+    ]);
+    cmd.stdin(Stdio::null());
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+
+    let mut child = cmd.spawn().expect("spawn 600M MLX download command");
+
+    let stderr = child.stderr.take().unwrap();
+    thread::spawn(move || {
+        let reader = std::io::BufReader::new(stderr);
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                eprintln!("[600m mlx download stderr] {}", line);
+            }
+        }
+    });
+
+    let status = child.wait().expect("wait for 600M MLX download");
+    assert!(status.success(), "600M MLX download command failed");
+
+    // Verify files exist
+    let slug_dir = model_dir2.join("harrier-oss-v1-0.6b-MLX-4bit");
+    assert!(slug_dir.join("main/model.safetensors").exists(), "600M MLX model file missing");
+    assert!(slug_dir.join("main/tokenizer.json").exists(), "600M tokenizer.json missing");
+    assert!(slug_dir.join("main/config.json").exists(), "600M config.json missing");
+}
+
+#[test]
 fn test_cli_list_embedders() {
     let _ = env_logger::try_init();
 

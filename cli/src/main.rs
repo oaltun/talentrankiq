@@ -8,7 +8,7 @@ use std::sync::OnceLock;
 
 use clap::{Parser, Subcommand};
 use libconfigreader::Config;
-use libmodeldownloader::{download_url, UrlDownload};
+use libmodeldownloader::{download_url, UrlDownload, cli::Cli as MdCli, cli::Artifact, Downloader, ProgressSink};
 use libtriqui_cli::serve;
 
 static CONFIG: OnceLock<Config> = OnceLock::new();
@@ -33,9 +33,12 @@ enum Commands {
         /// Model slug (e.g., harrier-oss-v1-270m-ONNX-q4f16)
         #[arg(long)]
         slug: String,
-        /// HuggingFace blob URL to the ONNX file
+        /// HuggingFace blob URL to the ONNX file (ONNX mode)
         #[arg(long)]
-        url: String,
+        url: Option<String>,
+        /// HuggingFace repo source (MLX mode), e.g., hf:majentik/harrier-oss-v1-270m-MLX-4bit
+        #[arg(long)]
+        source: Option<String>,
         /// Additional repo-relative files to fetch (repeatable)
         #[arg(long = "extra-file")]
         extra_files: Vec<String>,
@@ -48,6 +51,9 @@ enum Commands {
         /// SHA256 checksum of the primary artifact
         #[arg(long)]
         sha256: Option<String>,
+        /// Artifact type: onnx (default) or mlx
+        #[arg(long, value_enum, default_value_t = Artifact::Onnx)]
+        artifact: Artifact,
     },
     /// List available embedders from config
     ListEmbedders,
@@ -88,34 +94,80 @@ fn main() {
         Commands::Download {
             slug,
             url,
+            source,
             extra_files,
             model_dir,
             force,
             sha256,
+            artifact,
         } => {
             let model_dir = model_dir.unwrap_or_else(|| {
                 libtriqui_core::app_config::model_dir()
             });
 
             log::info!("Downloading model: {}", slug);
-            log::info!("URL: {}", url);
             log::info!("Model dir: {}", model_dir.display());
-            log::info!("Extra files: {:?}", extra_files);
+            log::info!("Artifact: {:?}", artifact);
             log::info!("Force: {}", force);
 
-            let mut req = UrlDownload::new(url, slug, model_dir, sha256);
-            req.extra_files = extra_files;
-            req.force = force;
+            match artifact {
+                Artifact::Onnx => {
+                    let url = url.expect("--url is required for ONNX artifact");
+                    log::info!("URL: {}", url);
+                    log::info!("Extra files: {:?}", extra_files);
 
-            match download_url(req, |ev| {
-                log::info!("Progress: {:?}", ev);
-            }) {
-                Ok(path) => {
-                    log::info!("Download complete: {}", path.display());
+                    let mut req = UrlDownload::new(url, slug, model_dir, sha256);
+                    req.extra_files = extra_files;
+                    req.force = force;
+
+                    match download_url(req, |ev| {
+                        log::info!("Progress: {:?}", ev);
+                    }) {
+                        Ok(path) => {
+                            log::info!("Download complete: {}", path.display());
+                        }
+                        Err(e) => {
+                            eprintln!("Download failed: {:?}", e);
+                            std::process::exit(1);
+                        }
+                    }
                 }
-                Err(e) => {
-                    eprintln!("Download failed: {:?}", e);
-                    std::process::exit(1);
+                Artifact::Mlx => {
+                    let source = source.expect("--source is required for MLX artifact (e.g., hf:org/repo)");
+                    log::info!("Source: {}", source);
+                    log::info!("Extra files: {:?}", extra_files);
+
+                    let md_cli = MdCli {
+                        config: None,
+                        model: Some(slug),
+                        source: Some(source),
+                        url: None,
+                        slug: None,
+                        revision: "main".to_string(),
+                        model_dir: Some(model_dir),
+                        force,
+                        dry_run: false,
+                        files: vec![],
+                        extra_files,
+                        artifact: Artifact::Mlx,
+                        sha256,
+                        verbose: false,
+                        logfile: None,
+                    };
+
+                    let progress: ProgressSink = std::sync::Arc::new(std::sync::Mutex::new(|ev| {
+                        log::info!("Progress: {:?}", ev);
+                    }));
+
+                    match Downloader::run_with_progress(md_cli, Some(progress)) {
+                        Ok(path) => {
+                            log::info!("Download complete: {}", path.display());
+                        }
+                        Err(e) => {
+                            eprintln!("Download failed: {:?}", e);
+                            std::process::exit(1);
+                        }
+                    }
                 }
             }
         }

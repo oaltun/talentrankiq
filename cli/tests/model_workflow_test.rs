@@ -18,10 +18,11 @@ const EMBEDDER_SLUGS: &[&str] = &[
     "harrier-oss-v1-0.6b-MLX-4bit",
 ];
 
-fn should_test_embedder(slug: &str) -> bool {
-    if slug.contains("MLX") {
-        return false;
-    }
+fn is_mlx_embedder(slug: &str) -> bool {
+    slug.contains("MLX")
+}
+
+fn should_test_embedder(_slug: &str) -> bool {
     true
 }
 
@@ -243,44 +244,49 @@ fn test_cli_model_workflow() {
         assert!(embedder.downloaded, "downloaded after download: {}", slug);
         assert!(embedder.size_bytes > 0, "size_bytes > 0 for {}", slug);
 
-        let result: TryModelResult = client
-            .call("try_model", &libtriqui_client::params::TryModelParams { slug: slug.to_string() })
-            .expect("try_model");
+        let is_mlx = is_mlx_embedder(slug);
+        if !is_mlx {
+            let result: TryModelResult = client
+                .call("try_model", &libtriqui_client::params::TryModelParams { slug: slug.to_string() })
+                .expect("try_model");
 
-        assert_eq!(result.per_cv_ms.len(), 11, "11 CVs processed for {}", slug);
-        assert!(result.median_ms > 0.0, "median_ms > 0 for {}", slug);
-        assert_eq!(result.pairs.len(), 55, "55 pairs for {}", slug);
-        assert_eq!(result.labels.len(), 11, "11 labels for {}", slug);
+            assert_eq!(result.per_cv_ms.len(), 11, "11 CVs processed for {}", slug);
+            assert!(result.median_ms > 0.0, "median_ms > 0 for {}", slug);
+            assert_eq!(result.pairs.len(), 55, "55 pairs for {}", slug);
+            assert_eq!(result.labels.len(), 11, "11 labels for {}", slug);
 
-        let twin_pair = result.pairs.iter().find(|p| {
-            (p.label_i == "CV 10 — Mechanical Engineer" && p.label_j == "CV 11 — Mechanical Engineer [twin]")
-                || (p.label_i == "CV 11 — Mechanical Engineer [twin]" && p.label_j == "CV 10 — Mechanical Engineer")
-        });
-        let twin_similarity = twin_pair.expect("twin pair exists").similarity;
-        assert!(twin_similarity > 0.95, "twin similarity > 0.95 for {}, got {}", slug, twin_similarity);
+            let twin_pair = result.pairs.iter().find(|p| {
+                (p.label_i == "CV 10 — Mechanical Engineer" && p.label_j == "CV 11 — Mechanical Engineer [twin]")
+                    || (p.label_i == "CV 11 — Mechanical Engineer [twin]" && p.label_j == "CV 10 — Mechanical Engineer")
+            });
+            let twin_similarity = twin_pair.expect("twin pair exists").similarity;
+            assert!(twin_similarity > 0.95, "twin similarity > 0.95 for {}, got {}", slug, twin_similarity);
 
-        client
-            .call_raw("set_embedding_model", &libtriqui_client::params::SetEmbeddingModelParams { slug: slug.to_string() })
-            .expect("set_embedding_model");
+            client
+                .call_raw("set_embedding_model", &libtriqui_client::params::SetEmbeddingModelParams { slug: slug.to_string() })
+                .expect("set_embedding_model");
 
-        let embedders = list_embedders(&client).expect("list_embedders after set default");
-        let embedder = find_embedder(&embedders, slug).expect("embedder found");
-        assert!(embedder.is_default, "is_default after set: {}", slug);
+            let embedders = list_embedders(&client).expect("list_embedders after set default");
+            let embedder = find_embedder(&embedders, slug).expect("embedder found");
+            assert!(embedder.is_default, "is_default after set: {}", slug);
 
-        for other in &embedders {
-            if other.slug.as_str() != slug {
-                assert!(!other.is_default, "other not default: {}", other.slug);
+            for other in &embedders {
+                if other.slug.as_str() != slug {
+                    assert!(!other.is_default, "other not default: {}", other.slug);
+                }
             }
+
+            client
+                .call_raw("remove_embedder", &libtriqui_client::params::RemoveEmbedderParams { slug: slug.to_string() })
+                .expect("remove_embedder");
+
+            let embedders = list_embedders(&client).expect("list_embedders after remove");
+            let embedder = find_embedder(&embedders, slug).expect("embedder found");
+            assert!(!embedder.downloaded, "not downloaded after remove: {}", slug);
+            assert_eq!(embedder.size_bytes, 0, "size_bytes = 0 after remove: {}", slug);
+        } else {
+            println!("MLX embedder {}: download verified, skipping try_model (requires MLX engine)", slug);
         }
-
-        client
-            .call_raw("remove_embedder", &libtriqui_client::params::RemoveEmbedderParams { slug: slug.to_string() })
-            .expect("remove_embedder");
-
-        let embedders = list_embedders(&client).expect("list_embedders after remove");
-        let embedder = find_embedder(&embedders, slug).expect("embedder found");
-        assert!(!embedder.downloaded, "not downloaded after remove: {}", slug);
-        assert_eq!(embedder.size_bytes, 0, "size_bytes = 0 after remove: {}", slug);
     }
 
     client.client.shutdown();
