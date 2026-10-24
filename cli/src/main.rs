@@ -6,38 +6,126 @@
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
+use clap::{Parser, Subcommand};
 use libconfigreader::Config;
+use libmodeldownloader::{download_url, UrlDownload};
 use libtriqui_cli::serve;
 
 static CONFIG: OnceLock<Config> = OnceLock::new();
 
+#[derive(Parser, Debug)]
+#[command(name = "triq", version, about = "TalentRankIQ CLI")]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Run the JSONL serve loop over stdio
+    Serve {
+        /// App directory (overrides TRIQ_APP_DIR)
+        #[arg(long)]
+        app_dir: Option<PathBuf>,
+    },
+    /// Download a model using libmodeldownloader
+    Download {
+        /// Model slug (e.g., harrier-oss-v1-270m-ONNX-q4f16)
+        #[arg(long)]
+        slug: String,
+        /// HuggingFace blob URL to the ONNX file
+        #[arg(long)]
+        url: String,
+        /// Additional repo-relative files to fetch (repeatable)
+        #[arg(long = "extra-file")]
+        extra_files: Vec<String>,
+        /// Model cache directory
+        #[arg(long)]
+        model_dir: Option<PathBuf>,
+        /// Force re-download even if cached
+        #[arg(long)]
+        force: bool,
+        /// SHA256 checksum of the primary artifact
+        #[arg(long)]
+        sha256: Option<String>,
+    },
+    /// List available embedders from config
+    ListEmbedders,
+}
+
 fn main() {
+    let cli = Cli::parse();
+
     // Stderr = human-readable logs, stdout = JSONL protocol
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .format_timestamp_secs()
         .target(env_logger::Target::Stderr)
         .init();
 
-    // Resolve app dir (same logic as GUI: env var > default)
-    let app_dir = resolve_app_dir();
+    match cli.command {
+        Commands::Serve { app_dir } => {
+            let app_dir = app_dir.unwrap_or_else(resolve_app_dir);
 
-    // Load embedded config (no more YAML file)
-    let config = load_config();
-    CONFIG.set(config).ok();
+            // Load embedded config (no more YAML file)
+            let config = load_config();
+            CONFIG.set(config).ok();
 
-    let app_version = env!("CARGO_PKG_VERSION").to_string();
+            let app_version = env!("CARGO_PKG_VERSION").to_string();
 
-    log::info!("triq CLI starting (version {})", app_version);
-    log::info!("app_dir: {}", app_dir.display());
+            log::info!("triq CLI starting (version {})", app_version);
+            log::info!("app_dir: {}", app_dir.display());
 
-    if let Err(e) = serve::run_over(
-        Some(app_dir),
-        app_version,
-        std::io::stdin().lock(),
-        std::io::stdout(),
-    ) {
-        eprintln!("cli error: {e}");
-        std::process::exit(1);
+            if let Err(e) = serve::run_over(
+                Some(app_dir),
+                app_version,
+                std::io::stdin().lock(),
+                std::io::stdout(),
+            ) {
+                eprintln!("cli error: {e}");
+                std::process::exit(1);
+            }
+        }
+        Commands::Download {
+            slug,
+            url,
+            extra_files,
+            model_dir,
+            force,
+            sha256,
+        } => {
+            let model_dir = model_dir.unwrap_or_else(|| {
+                libtriqui_core::app_config::model_dir()
+            });
+
+            log::info!("Downloading model: {}", slug);
+            log::info!("URL: {}", url);
+            log::info!("Model dir: {}", model_dir.display());
+            log::info!("Extra files: {:?}", extra_files);
+            log::info!("Force: {}", force);
+
+            let mut req = UrlDownload::new(url, slug, model_dir, sha256);
+            req.extra_files = extra_files;
+            req.force = force;
+
+            match download_url(req, |ev| {
+                log::info!("Progress: {:?}", ev);
+            }) {
+                Ok(path) => {
+                    log::info!("Download complete: {}", path.display());
+                }
+                Err(e) => {
+                    eprintln!("Download failed: {:?}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        Commands::ListEmbedders => {
+            let config = load_config();
+            CONFIG.set(config.clone()).ok();
+            for ge in &config.gui_embedders {
+                println!("{} ({}) - {} MB", ge.slug, ge.name, ge.memory_mb);
+            }
+        }
     }
 }
 

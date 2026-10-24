@@ -14,9 +14,11 @@ libtriqui-cli = { path = "../lib/libtriqui-cli" }
 libtriqui-core = { path = "../lib/libtriqui-core" }
 libconfigreader = { path = "../lib/libconfigreader" }
 libtriqui-license = { path = "../lib/libtriqui-license" }
+libmodeldownloader = { path = "../lib/libmodeldownloader" }
 log = "0.4"
 env_logger = "0.11"
 dirs = "6"
+clap = { version = "4", features = ["derive"] }
 
 [dev-dependencies]
 serde_yaml = "0.9"
