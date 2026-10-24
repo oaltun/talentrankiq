@@ -60,13 +60,17 @@ pub fn duplex() -> (DuplexWriter, DuplexReader, DuplexWriter, DuplexReader) {
         closed: Mutex::new(false),
     });
     (
-        DuplexWriter { shared: Arc::clone(&a2b) },
+        DuplexWriter {
+            shared: Arc::clone(&a2b),
+        },
         DuplexReader {
             shared: Arc::clone(&b2a),
             scratch: Vec::new(),
             scratch_pos: 0,
         },
-        DuplexWriter { shared: Arc::clone(&b2a) },
+        DuplexWriter {
+            shared: Arc::clone(&b2a),
+        },
         DuplexReader {
             shared: Arc::clone(&a2b),
             scratch: Vec::new(),

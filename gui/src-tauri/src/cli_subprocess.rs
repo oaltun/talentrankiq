@@ -61,12 +61,9 @@ impl SubprocessBridge {
             cmd.env("TRIQI_CPU_ONLY", "1");
         }
 
-        let mut child = cmd.spawn().map_err(|e| {
-            format!(
-                "failed to spawn triq CLI at {}: {e}",
-                triq_bin.display()
-            )
-        })?;
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("failed to spawn triq CLI at {}: {e}", triq_bin.display()))?;
 
         let stdin = child.stdin.take().ok_or("child stdin not captured")?;
         let stdout = child.stdout.take().ok_or("child stdout not captured")?;
@@ -75,8 +72,7 @@ impl SubprocessBridge {
         // Duplex layout:
         //   cli_write (a_write) -> srv_read (b_read) : client requests -> serve reads
         //   srv_write (b_write) -> cli_read (a_read) : serve responses -> client reads
-        let (cli_write, cli_read, srv_write, srv_read) =
-            crate::triqi_client::transport::duplex();
+        let (cli_write, cli_read, srv_write, srv_read) = crate::triqi_client::transport::duplex();
 
         // Thread 1: Forward requests from client -> child stdin.
         // Client writes to cli_write, which connects to srv_read.

@@ -14,7 +14,7 @@
   "menu.toggleLeftSidebar": "Afficher/Masquer la barre latérale gauche",
   "menu.toggleRightSidebar": "Afficher/Masquer la barre latérale droite",
 
-"preferences.title": "Préférences",
+  "preferences.title": "Préférences",
   "modelDownload.title": "Téléchargement du modèle d'IA",
   "modelDownload.description": "Le modèle d'IA n'est pas encore téléchargé. TalentRankIQ le récupère depuis Hugging Face — cela n'arrive qu'une fois, et tout reste sur cette machine.",
   "modelDownload.downloading": "Téléchargement…",

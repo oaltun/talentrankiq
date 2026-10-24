@@ -32,10 +32,7 @@ pub async fn apply_feedback(
 /// Zero the learned feedback vectors + clear liked flags, then re-rank.
 #[tauri::command]
 #[specta::specta]
-pub async fn reset_feedback(
-    app: AppHandle,
-    job_id: String,
-) -> Result<Vec<TriqiItem>, DomainError> {
+pub async fn reset_feedback(app: AppHandle, job_id: String) -> Result<Vec<TriqiItem>, DomainError> {
     rpc_blocking_typed::<Vec<TriqiItem>>(app, "reset_feedback", ResetFeedbackParams { job_id })
         .await
         .map_err(cli::domain_err)

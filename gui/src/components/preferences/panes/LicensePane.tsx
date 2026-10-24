@@ -14,7 +14,12 @@ import { Separator } from '@/components/ui/separator'
 import { invoke } from '@tauri-apps/api/core'
 
 type LicenseStatus =
-  | { kind: 'licensed'; customer: string; expires_at: string; artifacts: string[] }
+  | {
+      kind: 'licensed'
+      customer: string
+      expires_at: string
+      artifacts: string[]
+    }
   | { kind: 'invalid'; reason: string }
   | { kind: 'not_found' }
   | { kind: 'revoked'; reason: string }
@@ -25,7 +30,10 @@ export function LicensePane() {
   const [loading, setLoading] = useState(false)
   const [licenseKey, setLicenseKey] = useState('')
   const [activating, setActivating] = useState(false)
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [message, setMessage] = useState<{
+    type: 'success' | 'error'
+    text: string
+  } | null>(null)
 
   const refreshStatus = async () => {
     setLoading(true)
@@ -50,14 +58,25 @@ export function LicensePane() {
     setActivating(true)
     setMessage(null)
     try {
-      const result = await invoke<LicenseStatus>('license_activate', { licenseKey: licenseKey.trim() })
+      const result = await invoke<LicenseStatus>('license_activate', {
+        licenseKey: licenseKey.trim(),
+      })
       if (result.kind === 'licensed') {
-        setMessage({ type: 'success', text: t('preferences.license.activated') })
+        setMessage({
+          type: 'success',
+          text: t('preferences.license.activated'),
+        })
         setLicenseKey('')
       } else if (result.kind === 'invalid') {
-        setMessage({ type: 'error', text: t('preferences.license.invalid', { reason: result.reason }) })
+        setMessage({
+          type: 'error',
+          text: t('preferences.license.invalid', { reason: result.reason }),
+        })
       } else if (result.kind === 'revoked') {
-        setMessage({ type: 'error', text: t('preferences.license.revoked', { reason: result.reason }) })
+        setMessage({
+          type: 'error',
+          text: t('preferences.license.revoked', { reason: result.reason }),
+        })
       }
       setStatus(result)
     } catch (e) {
@@ -72,7 +91,10 @@ export function LicensePane() {
     setMessage(null)
     try {
       await invoke('license_deactivate')
-      setMessage({ type: 'success', text: t('preferences.license.deactivated') })
+      setMessage({
+        type: 'success',
+        text: t('preferences.license.deactivated'),
+      })
       setStatus({ kind: 'not_found' })
     } catch (e) {
       setMessage({ type: 'error', text: String(e) })
@@ -84,7 +106,9 @@ export function LicensePane() {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-medium">{t('preferences.license.title')}</h3>
+        <h3 className="text-lg font-medium">
+          {t('preferences.license.title')}
+        </h3>
         <p className="text-sm text-muted-foreground mt-1">
           {t('preferences.license.description')}
         </p>
@@ -96,7 +120,9 @@ export function LicensePane() {
             <Key className="h-5 w-5" />
             {t('preferences.license.status')}
           </CardTitle>
-          <CardDescription>{t('preferences.license.statusDescription')}</CardDescription>
+          <CardDescription>
+            {t('preferences.license.statusDescription')}
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {loading ? (
@@ -111,13 +137,19 @@ export function LicensePane() {
                   <CheckCircle className="h-5 w-5 text-green-500 flex-shrink-0" />
                   <div>
                     <p className="font-medium text-green-700 dark:text-green-400">
-                      {t('preferences.license.licensedTo', { customer: status.customer })}
+                      {t('preferences.license.licensedTo', {
+                        customer: status.customer,
+                      })}
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      {t('preferences.license.expires', { date: new Date(status.expires_at).toLocaleDateString() })}
+                      {t('preferences.license.expires', {
+                        date: new Date(status.expires_at).toLocaleDateString(),
+                      })}
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      {t('preferences.license.artifacts', { artifacts: status.artifacts.join(', ') })}
+                      {t('preferences.license.artifacts', {
+                        artifacts: status.artifacts.join(', '),
+                      })}
                     </p>
                   </div>
                 </div>
@@ -163,13 +195,17 @@ export function LicensePane() {
               )}
             </>
           ) : (
-            <div className="text-muted-foreground">{t('preferences.license.unknown')}</div>
+            <div className="text-muted-foreground">
+              {t('preferences.license.unknown')}
+            </div>
           )}
 
           <Separator />
 
           <div className="space-y-3">
-            <h4 className="font-medium">{t('preferences.license.activateLicense')}</h4>
+            <h4 className="font-medium">
+              {t('preferences.license.activateLicense')}
+            </h4>
             <p className="text-sm text-muted-foreground">
               {t('preferences.license.enterKey')}
             </p>
@@ -182,7 +218,10 @@ export function LicensePane() {
                 disabled={activating}
                 className="flex-1 font-mono"
               />
-              <Button onClick={handleActivate} disabled={activating || !licenseKey.trim()}>
+              <Button
+                onClick={handleActivate}
+                disabled={activating || !licenseKey.trim()}
+              >
                 {activating ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin mr-2" />
@@ -195,7 +234,11 @@ export function LicensePane() {
             </div>
 
             {status && status.kind === 'licensed' && (
-              <Button variant="destructive" onClick={handleDeactivate} disabled={activating}>
+              <Button
+                variant="destructive"
+                onClick={handleDeactivate}
+                disabled={activating}
+              >
                 {activating ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin mr-2" />
@@ -225,7 +268,9 @@ export function LicensePane() {
       <Card>
         <CardHeader>
           <CardTitle>{t('preferences.license.howItWorks')}</CardTitle>
-          <CardDescription>{t('preferences.license.howItWorksDescription')}</CardDescription>
+          <CardDescription>
+            {t('preferences.license.howItWorksDescription')}
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2 text-sm text-muted-foreground">
           <ul className="list-disc list-inside space-y-1">

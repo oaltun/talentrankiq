@@ -7,7 +7,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::triqi_client::types::{AppPreferences, BundleExportOptions, ChunkMatchTarget, ModelKind};
+use crate::triqi_client::types::{
+    AppPreferences, BundleExportOptions, ChunkMatchTarget, ModelKind,
+};
 
 macro_rules! params {
     (

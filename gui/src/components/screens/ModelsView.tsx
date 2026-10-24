@@ -256,18 +256,16 @@ function EmbeddingPane() {
       <p className="text-xs text-muted-foreground">
         On-device embedding models from the app&apos;s model registry. Download,
         remove, and pick the model used for ranking CVs. The engine starts when
-        you click "Use this model" on a downloaded model.
+        you click &quot;Use this model&quot; on a downloaded model.
       </p>
 
       {!anyDownloaded && (
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <HardDrive className="size-12 text-muted-foreground/50 mb-4" />
-          <p className="text-lg font-medium mb-2">
-            No models downloaded
-          </p>
+          <p className="text-lg font-medium mb-2">No models downloaded</p>
           <p className="text-sm text-muted-foreground max-w-md">
-            Download a model to enable AI ranking. The engine will start
-            when you click "Use this model" on a downloaded model.
+            Download a model to enable AI ranking. The engine will start when
+            you click &quot;Use this model&quot; on a downloaded model.
           </p>
         </div>
       )}

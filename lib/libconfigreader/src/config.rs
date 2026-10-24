@@ -1,4 +1,4 @@
-f//! Static configuration for the IK application.
+//! Static configuration for the IK application.
 //!
 //! Previously stored as a YAML file (`config.yaml`); now expressed as typed
 //! Rust data. There is no embedded YAML / JSON / TOML string anywhere in this

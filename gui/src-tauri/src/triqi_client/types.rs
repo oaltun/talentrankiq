@@ -1086,10 +1086,18 @@ pub struct VettedEmbeddersResponse {
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(tag = "kind")]
 pub enum LicenseStatus {
-    Licensed { customer: String, expires_at: String, artifacts: Vec<String> },
-    Invalid { reason: String },
+    Licensed {
+        customer: String,
+        expires_at: String,
+        artifacts: Vec<String>,
+    },
+    Invalid {
+        reason: String,
+    },
     NotFound,
-    Revoked { reason: String },
+    Revoked {
+        reason: String,
+    },
 }
 
 // ============================================================================

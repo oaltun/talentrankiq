@@ -15,7 +15,9 @@ fn main() {
         let triq_src = workspace_root.join("target/release/triq");
 
         // Tauri puts the .app in target/release/bundle/macos/
-        let out_dir = env::var("CARGO_TARGET_DIR").map(PathBuf::from).unwrap_or_else(|_| workspace_root.join("target"));
+        let out_dir = env::var("CARGO_TARGET_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| workspace_root.join("target"));
         let app_bundle = out_dir.join("release/bundle/macos/Triqui.app/Contents/MacOS");
         let triq_dst = app_bundle.join("triq");
 
@@ -35,12 +37,18 @@ fn main() {
                 fs::set_permissions(&triq_dst, perms).unwrap();
             }
         } else {
-            println!("cargo:warning=triq binary not found at {:?}, skipping bundle", triq_src);
+            println!(
+                "cargo:warning=triq binary not found at {:?}, skipping bundle",
+                triq_src
+            );
         }
     }
 
     // Tell cargo to rerun if triq binary changes
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let workspace_root = manifest_dir.parent().unwrap().parent().unwrap();
-    println!("cargo:rerun-if-changed={}", workspace_root.join("target/release/triq").display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        workspace_root.join("target/release/triq").display()
+    );
 }

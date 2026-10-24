@@ -14,7 +14,7 @@
   "menu.toggleLeftSidebar": "تبديل الشريط الجانبي الأيسر",
   "menu.toggleRightSidebar": "تبديل الشريط الجانبي الأيمن",
 
-"preferences.title": "التفضيلات",
+  "preferences.title": "التفضيلات",
   "modelDownload.title": "جارٍ تنزيل نموذج الذكاء الاصطناعي",
   "modelDownload.description": "نموذج الذكاء الاصطناعي غير منزَّل بعد. يقوم TalentRankIQ بجلبه من Hugging Face — يحدث هذا مرة واحدة فقط، وكل شيء يبقى على هذا الجهاز.",
   "modelDownload.downloading": "جارٍ التنزيل…",

@@ -14,7 +14,7 @@
   "menu.toggleLeftSidebar": "Toggle Left Sidebar",
   "menu.toggleRightSidebar": "Toggle Right Sidebar",
 
-"preferences.title": "Preferences",
+  "preferences.title": "Preferences",
   "modelDownload.title": "Downloading the AI model",
   "modelDownload.description": "AI model isn't downloaded yet. TalentRankIQ is fetching it from Hugging Face — this happens once, and everything stays on this machine.",
   "modelDownload.downloading": "Downloading…",
