@@ -1,0 +1,34 @@
+Maria Rodriguez
+Full Stack Developer
+maria.rodriguez@email.com | (555) 234-5678 | linkedin.com/in/mrodriguez
+
+PROFESSIONAL SUMMARY
+Motivated full stack developer with 2 years of experience building web applications. Proficient in modern JavaScript frameworks and backend development. Passionate about clean code and user experience.
+
+TECHNICAL SKILLS
+Languages: TypeScript, Python, SQL, HTML/CSS
+Frontend: React, Next.js, Tailwind CSS, Vue.js
+Backend: Node.js, Express, FastAPI, GraphQL
+Databases: PostgreSQL, MongoDB, Redis
+Tools: Docker, Git, CI/CD, AWS, Jest, Cypress
+
+EXPERIENCE
+Full Stack Developer | InnovateLabs | 2022 - Present
+- Developed and maintained 3 client-facing web applications serving 10k+ users
+- Implemented real-time features using WebSockets and Server-Sent Events
+- Reduced API response times by 40% through query optimization and caching
+- Mentored 2 junior developers on code review practices and testing strategies
+
+Junior Developer | StartupXYZ | 2021 - 2022
+- Built responsive UI components using React and TypeScript
+- Integrated third-party APIs for payment processing and authentication
+- Participated in agile ceremonies and contributed to sprint planning
+
+EDUCATION
+B.S. Software Engineering | Tech Institute | 2021
+- Capstone: E-commerce platform with microservices architecture
+- Relevant coursework: Distributed Systems, Database Design, Web Security
+
+PROJECTS
+TaskFlow - Personal project management tool with drag-and-drop boards, built with Next.js and Prisma
+AuthKit - Open source authentication library supporting OAuth2, OIDC, and magic links

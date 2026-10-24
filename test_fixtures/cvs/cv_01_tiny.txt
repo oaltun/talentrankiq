@@ -1,0 +1,18 @@
+Alex Chen
+Software Engineer
+alex.chen@email.com | (555) 123-4567
+
+SUMMARY
+Junior developer with 1 year of experience in Python and JavaScript. Eager to learn and contribute to team projects.
+
+EXPERIENCE
+Software Engineer Intern | TechStart Inc. | 2023 - Present
+- Built REST APIs using FastAPI and PostgreSQL
+- Wrote unit tests with pytest achieving 85% coverage
+- Collaborated on frontend features using React
+
+EDUCATION
+B.S. Computer Science | State University | 2023
+
+SKILLS
+Python, JavaScript, React, FastAPI, PostgreSQL, Git

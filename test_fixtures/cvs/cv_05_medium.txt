@@ -1,0 +1,100 @@
+David Park
+Staff Engineer - Platform
+david.park@email.com | (555) 567-8901 | github.com/dpark-platform
+
+PROFESSIONAL SUMMARY
+Staff engineer specializing in backend infrastructure, platform engineering, and scalable systems architecture. 9 years of experience building high-performance, fault-tolerant systems that serve millions of users. Expertise in Go, Rust, and distributed systems with deep knowledge of cloud-native technologies and Kubernetes ecosystems. Proven ability to lead complex technical initiatives involving cross-functional teams. Strong focus on system reliability, performance optimization, and developer experience. Committed to writing efficient, maintainable code and sharing knowledge through mentoring and technical leadership.
+
+TECHNICAL SKILLS
+Languages: Go (expert), Rust, Python, TypeScript, SQL, Bash, C++
+Platform: Kubernetes, Istio, Linkerd, Helm, Kustomize, Crossplane, ArgoCD, Flux, Terraform, Pulumi
+Cloud: AWS (EC2, S3, RDS, EKS, Lambda), GCP (GKE, Cloud Run, BigQuery), Azure (AKS, CosmosDB)
+Infrastructure as Code: Terraform, Terragrunt, Pulumi, AWS CDK, Crossplane
+CI/CD: GitHub Actions, GitLab CI, CircleCI, Argo Workflows, Jenkins, Spinnaker, Drone
+Observability: Prometheus, Grafana, Datadog, New Relic, Sentry, OpenTelemetry, Jaeger, Tempo
+Security: Vault, Cert-Manager, OPA/Gatekeeper, Kyverno, Falco, Trivy, Sigstore
+Service Mesh: Istio (production), Linkerd, Consul Connect
+GitOps: ArgoCD, Flux, Jenkins X
+Serverless: AWS Lambda, Google Cloud Functions, Azure Functions, Kubeless, Knative
+Messaging: Kafka, RabbitMQ, NATS, Redis Streams, AWS SQS/SNS, Google Pub/Sub
+
+PROFESSIONAL EXPERIENCE
+Senior Staff Platform Engineer | CloudScale Technologies | 2020 - Present
+- Lead platform engineering team of 10 engineers building internal developer platform serving 500+ developers
+- Architected and built self-service Kubernetes platform using Crossplane, ArgoCD, and GitOps principles
+- Designed and implemented secure multi-tenant Kubernetes clusters with Pod Security Standards and network policies
+- Built platform APIs and CLI tools reducing service provisioning time from days to minutes for all engineering teams
+- Containerized and modernized 50+ legacy applications migrating them onto the Kubernetes platform
+- Implemented comprehensive observability stack including distributed tracing with OpenTelemetry and Tempo
+- Built cost allocation system using Kubecost providing granular cost visibility down to individual services
+- Automated security compliance scanning with Trivy, Falco, and Kyverno policies enforced cluster-wide
+- Reduced cloud infrastructure costs by 35% through rightsizing recommendations and spot instance adoption
+- Established site reliability engineering practices achieving 99.99% platform uptime across all services
+- Mentored 15+ platform engineers on Kubernetes internals, GitOps, and infrastructure best practices
+- Presented platform architecture at 3 internal engineering conferences and 2 external meetups
+
+Platform Engineer | ScaleOps | 2018 - 2020
+- Built and operated production Kubernetes clusters across AWS, GCP, and Azure serving 10k+ daily users
+- Implemented service mesh using Istio with mTLS, traffic management, and distributed tracing
+- Developed custom Kubernetes operators for database provisioning and lifecycle management in Go
+- Created comprehensive monitoring dashboard using Prometheus and Grafana with custom alerting rules
+- Built secure secret management solution using HashiCorp Vault integrated with Kubernetes authentication
+- Implemented network policies and Pod Security Policies securing cluster communication between services
+- Reduced mean time to detect (MTTD) incidents by 60% through improved observability and alerting
+- Led incident response and post-mortem analysis for critical platform outages
+- Contributed to upstream Kubernetes documentation for operator pattern best practices
+
+DevOps Engineer | Startup Technologies | 2017 - 2018
+- Created CI/CD pipeline using GitLab CI migrating from manual deployments to automated workflows
+- Managed infrastructure as code using Terraform with remote state management in S3 with locking in DynamoDB
+- Built log aggregation pipeline using ELK stack and centralized all application logs across services
+- Implemented monitoring and alerting using Prometheus and AlertManager with Slack and PagerDuty integrations
+- Containerized applications using Docker reducing deployment time from hours to minutes
+- Managed PostgreSQL database clusters with automated backups and point-in-time recovery
+
+Junior DevOps Engineer | WebTech Solutions | 2016 - 2017
+- Maintained and deployed Python/Django applications on AWS infrastructure
+- Wrote Ansible playbooks for configuration management ensuring consistent environments
+- Built automated backup solution for databases and critical application data
+
+EDUCATION
+M.S. Computer Science (Distributed Systems) | University of Washington | 2014 - 2016
+- Thesis: "Container Orchestration Systems: Challenges in Security and Networking"
+- Coursework: Distributed Computing, Cloud Computing, Advanced Operating Systems
+B.S. Computer Science | University of Illinois Urbana-Champaign | 2010 - 2014
+- Graduated with Honors, GPA: 3.72/4.0
+- Member: ACM, IEEE Student Branch
+
+PROFESSIONAL CERTIFICATIONS
+AWS Certified Solutions Architect - Professional (2021)
+Certified Kubernetes Administrator (CKA) (2020)
+Certified Kubernetes Application Developer (CKAD) (2020)
+Certified Kubernetes Security Specialist (CKS) (2021)
+HashiCorp Certified: Terraform Associate (2019)
+Google Professional Cloud Architect (2020)
+Azure Administrator Associate (2021)
+
+SELECTED PROJECTS
+PlatformKit - Open source platform engineering toolkit with 5k+ GitHub stars, providing reusable Terraform modules and Helm charts
+KubeCost-Optimizer - Kubernetes cost allocation and optimization tool integrated with 200+ companies' clusters
+GitOps-Pipeline - End-to-end GitOps workflow toolkit with automated drift detection and remediation
+K8s-Security-Benchmark - Open-source tool for assessing Kubernetes cluster security posture against CIS benchmarks
+Infra-as-Code-Registry - Community-driven repository of battle-tested Terraform and Pulumi modules for common infrastructure patterns
+
+CONFERENCE TALKS & PUBLISHED WORK
+"Building Self-Service Platforms with Kubernetes and GitOps" - KubeCon + CloudNativeCon NA 2023 (keynote)
+"Lessons Learned Operating Kubernetes at Scale" - CNCF Live 2023
+"Implementing Zero Trust Security in Kubernetes Clusters" - KubeCon EU 2022
+"GitOps Best Practices for Multi-Environment Deployments" - DevOps Days Austin 2022
+"The Evolution of Infrastructure as Code: From Scripts to Platforms" - SREcon 2021
+"Demystifying Kubernetes Operator Pattern" - Kubernetes Community Days 2021
+"Infrastructure as Code Security: Common Pitfalls and How to Avoid Them" - HashiConf 2020
+Co-author: "Platform Engineering Best Practices" - O'Reilly Book Series 2023
+Guest blog: "Scaling Kubernetes for 10k+ Nodes" - Towards Data Science 2022
+Technical reviewer for "Kubernetes: Up and Running" 3rd edition
+
+ADDITIONAL ACTIVITIES
+- Volunteer mentor for underrepresented students in tech via CodePath
+- Contributor to Kubernetes SIG-Cluster-API and SIG-Testing
+- Organizer of local Kubernetes meetup group with 300+ members
+- Rock climber and photographer in spare time

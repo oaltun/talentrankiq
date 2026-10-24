@@ -1,0 +1,210 @@
+Dr. Michael Rodriguez
+Lead Research Scientist & Engineering Manager
+mike.rodriguez@email.com | (555) 890-1234 | scholar.google.com/c/mikerodriguez
+
+PROFESSIONAL SUMMARY
+Lead research scientist and engineering manager with 17 years of experience at the intersection of machine learning research and production systems deployment. Combines deep technical expertise in machine learning, artificial intelligence, deep learning, and distributed systems with demonstrated leadership managing teams of 10-30 researchers and engineers simultaneously. Published 45+ peer-reviewed papers in top-tier machine learning conferences and journals with 5000+ total citations. Extensive experience in reinforcement learning, large language models, computer vision, natural language processing, probabilistic modeling, online learning, and scalable ML infrastructure for deployment in production environments at enterprise scale.
+
+TECHNICAL SKILLS
+Research Expertise: Deep Learning, Large Language Models (LLMs), Transformer Architectures, Reinforcement Learning from Human Feedback (RLHF), Computer Vision, Natural Language Processing, Bayesian Optimization, Probabilistic Inference, Causal Inference, Meta-Learning, Few-Shot Learning, Transfer Learning, Online Learning, Active Learning
+Programming Languages: Python (expert), Rust, Julia, C++, Java, Go, R, MATLAB, Scala, SQL
+ML Frameworks: PyTorch (expert), JAX/Flax, TensorFlow/Keras, HuggingFace Transformers, Ray RLlib, Detectron2, LangChain, LangSmith, scikit-learn, XGBoost, LightGBM
+MLOps Ecosystem: MLflow, Kubeflow Pipelines, Vertex AI, SageMaker, Weights & Biases, DVC, Feast Feature Store, TFX, KServe, Seldon Core, Argo Workflows, Airflow, Prefect
+Data Engineering: Apache Spark, Kafka, Airflow, Prefect, Snowflake, BigQuery, Delta Lake, DataHub, Amundsen, dbt, Feast
+Cloud Platforms: AWS (SageMaker, S3, EC2, Lambda, EKS), GCP (Vertex AI, GKE, BigQuery, Spanner), Azure (AML, AKS, CosmosDB)
+Distributed Training: PyTorch Distributed, JAX/TPU, Ray, Horovod, DeepSpeed, FSDP, ZeRO Optimization, Model Parallelism, Pipeline Parallelism
+Evaluation Methodologies: Prompt Engineering, RLHF Evaluation, Human Evaluation Frameworks, A/B Testing, Offline RL Metrics, Counterfactual Estimation, Inter-annotator Agreement
+Data Labeling: In-house annotation teams coordination, crowdsourcing platform design (Scale, Appen integration), quality control pipelines, active learning workflows
+
+RESEARCH EXPERIENCE
+Lead Research Scientist | NeuroSynth AI (Acquired by TechGiant) | 2018 - Present
+- Lead cross-functional teams of 8-12 researchers and engineers building next-generation large language model serving infrastructure and optimization techniques
+- Primary inventor on 12 patent applications related to efficient LLM inference, continual learning, and alignment with human preferences through RLHF and constitutional AI
+- Developed novel speculative decoding and early exiting techniques reducing LLM inference latency and computational costs by 45% while maintaining output quality
+- Built comprehensive reinforcement learning framework for aligning LLMs with human preferences using RLHF, DPO, and PPO at scale with 100+ trained reward models
+- Managed annual research budget of $25 million for compute resources and research initiatives including GPU clusters and cloud credits
+- Mentored 18 PhD researchers and 25 engineers; 5 mentees published at NeurIPS/ICML and 4 joined top-tier university faculty positions
+- Published 22 peer-reviewed papers at NeurIPS, ICML, ICLR, ACL, EMNLP with 3000+ total citations and h-index of 25
+- Led collaboration with Stanford and MIT on multimodal foundation models for vision-language applications
+- Established research-to-product pipeline enabling rapid translation of research innovations into production features
+
+Senior Research Scientist | TechGiant Research Division | 2014 - 2018
+- Led team of 10 engineers exploring cutting-edge computer vision applications for autonomous systems and healthcare diagnostics
+- Developed novel attention mechanisms and transformer-based architectures for video understanding and spatiotemporal modeling in videos
+- Created advanced synthetic-to-real domain adaptation and generalization techniques improving model robustness and reducing performance gap by 30%
+- Built federated learning system for privacy-preserving collaborative model training across distributed medical institutions
+- Filed 8 patents on multi-modal foundation models, federated learning, and domain adaptation methodologies now in production
+- Published 16 peer-reviewed papers at top-tier venues including NeurIPS, ICML, CVPR, ICCV, ICLR
+- Served as keynote speaker at CVPR 2017 and tutorial presenter at ICML 2017 on domain adaptation
+- Contributed to open-source ecosystem with releases of domain adaptation library with 2k+ stars
+
+Research Scientist | University Research Lab | 2010 - 2014
+- Conducted PhD-level research on scalable Bayesian optimization and probabilistic modeling for large-scale decision making
+- Developed new mean-field variational inference methods for latent variable models with applications to recommendation systems
+- Published 8 peer-reviewed papers and contributed to open-source probabilistic programming library Edward
+- Collaborated with Google DeepMind on early applications of Bayesian optimization to neural architecture search
+
+MANAGEMENT & LEADERSHIP EXPERIENCE
+Engineering Manager, LLM Infrastructure Group | NeuroSynth AI | 2020 - Present
+- Manage team of 22 engineers and researchers across infrastructure, model optimization, and production serving domains
+- Responsible for defining technical direction, setting team objectives, mentoring staff, and individual contributor career growth
+- Manage P&L of $20 million annually for compute resources, cloud spending, and research initiatives
+- Implemented engineering excellence initiatives including structured code review standards, comprehensive testing culture, and documentation requirements
+- Led hiring initiative growing team from 8 to 22 engineers and researchers in 2 years
+- Established partnerships with academic institutions including joint research agreements with Stanford, MIT, and UC Berkeley
+
+Team Lead, Computer Vision Research Group | TechGiant | 2016 - 2020
+- Led cross-functional team of 12 engineers and researchers working on computer vision and multimodal applications
+- Delivered production computer vision systems shipping to 50 million+ devices worldwide affecting millions of users daily
+- Implemented chaos engineering practices and built fault-tolerant distributed systems achieving 99.99% uptime
+- Created automated model evaluation and A/B testing pipeline for continuous model improvement
+- Established technical career ladder and conducted bi-annual performance reviews for direct reports
+
+PROFESSIONAL EXPERIENCE (Individual Contributor)
+Machine Learning Infrastructure Engineer | TechGiant Research | 2014 - 2016
+- Built distributed training infrastructure supporting 50,000+ GPU hours per month for research teams
+- Contributed actively to open-source PyTorch framework with 800+ commits including performance improvements
+- Developed model compression and quantization techniques for efficient edge deployment of deep learning models
+- Created automated hyperparameter tuning pipeline using Bayesian optimization and population-based training
+
+Research Intern | Microsoft Research | Summer 2012
+- Worked on reinforcement learning algorithms for combinatorial optimization problems with applications to network routing
+- Co-authored internal technical report on neural combinatorial optimization techniques and attention-based solvers
+
+Research Assistant | UC Berkeley | 2009 - 2011
+- Conducted research on distributed algorithms for sensor networks with applications to environmental monitoring
+- Published paper on energy-efficient routing protocols in ACM SenSys conference
+
+EDUCATION
+Ph.D. in Computer Science (Machine Learning) | Massachusetts Institute of Technology | 2010 - 2015
+- Dissertation: "Scalable Variational Inference and Bayesian Optimization for Large-Scale Distributed Systems"
+- Thesis Advisor: Professor David Sontag (renowned expert in machine learning and healthcare)
+- Thesis Committee: Professor Regina Barzilay (Natural Language Processing), Professor Tommi Jaakkola (Machine Learning), Professor Stefanie Jegelka (Optimization)
+- Published 13 peer-reviewed papers during doctoral studies with 2000+ citations
+- Recipient of MIT CSAIL Best Dissertation Award 2015
+
+M.S. in Computer Science | Stanford University | 2009 - 2010
+- Specialization: Artificial Intelligence and Machine Learning
+- Coursework: Advanced Algorithms, Statistical Learning Theory, Systems Security, Reinforcement Learning
+- Thesis: "Byzantine Fault Tolerance in Practice: A Case Study of Consensus Protocols"
+
+B.S. in Computer Science & Mathematics | Harvard University | 2005 - 2009
+- Academic Achievement: Summa Cum Laude, GPA: 3.95/4.0
+- Recognition: Valedictorian of Computer Science Department, Phi Beta Kappa Member
+- Leadership: President of Harvard Artificial Intelligence Club; organized AI reading group with 50 members weekly
+- Activities: Member of Harvard Machine Learning Group; competitive programming team (top 5% nationally)
+
+CERTIFICATIONS & CONTINUING EDUCATION
+Google Professional Machine Learning Engineer (2021) - Advanced credential for ML on GCP
+AWS Certified Machine Learning - Specialty (2020) - Cloud-based ML implementation
+Certified Information Systems Security Professional (CISSP) (2019) - Security best practices
+DeepLearning.AI TensorFlow Developer (2018) - Specialization in deep learning frameworks
+MIT Executive Education: AI and Machine Learning for Business Leaders (2022) - Strategic AI implementation
+Stanford Continuing Studies: Advanced Reinforcement Learning (2023) - Deep RL algorithms and applications
+
+BOARD & ADVISORY ROLES
+Board Member | OpenAI Fund Portfolio Companies | 2021 - Present
+- Evaluate investment opportunities in early-stage AI startups
+- Provide technical advisory to portfolio companies on ML strategy and team building
+
+Technical Advisor | Allen AI Institute Startup Studio | 2020 - Present
+- Advise on technology strategy, research roadmap, and hiring for AI-first startups
+- Connect startups with academic researchers and potential collaborators
+
+Mentor | Women in Machine Learning (WiML) | 2019 - Present
+- Mentor early-career women researchers and engineers entering ML
+- Organize technical workshops and networking events for WiML community
+
+Research Collaborator | Stanford HAI (Human-Centered AI Institute) | 2018 - Present
+- Collaborate on research projects related to responsible AI, fairness, and ethics in AI systems
+- Co-supervise graduate students working on interdisciplinary AI projects
+
+ACADEMIC APPOINTMENTS
+Visiting Professor | MIT Computer Science & Artificial Intelligence Laboratory (CSAIL) | 2018 - Present
+- Teach graduate-level course "CS 5004: Scalable Distributed Systems Design" to 80+ students annually
+- Supervise 6 PhD students researching large-scale ML systems and optimization techniques
+- Collaborate with faculty on NSF-funded research projects totaling $3M in grants
+
+Guest Lecturer | Stanford University | 2013 - 2019
+- Delivered lectures on "CS 324: Machine Learning Systems" covering ML infrastructure and MLOps
+- Supervised 5 Master's students' thesis projects, all resulting in publications or industry internships
+- Established industry-academia partnership program connecting Stanford students with research internships
+
+ADVISORY EXPERIENCE
+Startup Advisor | Stealth AI Startup | 2019 - 2020
+- Provided technical guidance on ML architecture and team scaling strategies
+- Helped secure Series A funding of $25M based on technical vision and product roadmap
+
+Research Advisor | Government Research Agency | 2017 - 2018
+- Advised on national AI strategy and investment priorities in machine learning research
+- Evaluated proposals for large-scale AI research initiatives worth $50M+
+
+CONFERENCE & WORKSHOP ORGANIZATION
+Program Co-Chair | NeurIPS Workshop on "Efficient and Trustworthy Foundation Models" | 2023
+Organizer | ICML Workshop on "MLOps: Machine Learning Operations" | 2022
+Reviewer | NeurIPS, ICML, ICLR, JMLR, TPAMI (senior program committee member since 2020)
+Area Chair | NeurIPS Datasets and Benchmarks Track | 2021
+
+SELECTED PUBLICATIONS (45 peer-reviewed papers, 15,000+ total citations, h-index = 35)
+1. "SpecDec: Fast Large Language Models with Spectral Speculative Decoding" - NeurIPS 2023 (spotlight)
+2. "Aligning Language Models with Human Preferences via Contrastive Reinforcement Learning" - ICML 2023
+3. "VisionMamba: On-Scalable Vision Foundation Models with State Space Models" - CVPR 2023 (oral)
+4. "LLaMA-Adapter-Efficient Prompting of Conditional Computation Experts" - ICLR 2023
+5. "Efficient Transformers for Edge Deployment: A Comprehensive Survey" - TPAMI 2023
+6. "Federated Learning at Scale: Lessons from 1000+ Production Deployments" - KDD 2022
+7. "Domain-Invariant Video Understanding via Multi-source Domain Adaptation" - ICCV 2021
+8. "Bayesian Optimization for Machine Learning: Principles and Practice" - JMLR 2021
+9. "Towards Scalable Video Foundation Models: Datasets and Benchmarks" - CVPR 2021 (1000+ citations)
+10. "Distributed Transactions in Modern Microservices Architectures: A Tutorial" - VLDB 2020
+11. "Serverless Computing: Economic and Architectural Impact on Cloud Computing" - SoCC 2019
+12. "Building Trustworthy AI Systems: Technical and Ethical Considerations" - AAAI 2019
+13. "Security Threats in Containerized Environments: A Comprehensive Survey" - USENIX Security 2018
+14. "The Evolution of Cloud Computing: From Grid to Edge and Beyond" - Communications of the ACM 2017
+15. "Real-Time Fraud Detection Using Ensemble Machine Learning Models at Scale" - KDD 2016 (best paper award)
+16. "Scalable Video Streaming over HTTP: Challenges, Solutions, and Future Directions" - ICNP 2008
+
+PATENTS (25+ patents granted, 20 pending)
+1. US Patent 12,012,345: "Speculative Decoding with Adaptive Token Trees for Efficient LLM Inference"
+2. US Patent 12,023,456: "Reinforcement Learning from Human Feedback with Contrastive Reward Models"
+3. US Patent 12,034,567: "Conditional Computation Routing for Mixture-of-Experts Language Models"
+4. US Patent 12,045,678: "Multi-modal Foundation Models with Dynamic Cross-Attention Fusion"
+5. US Patent 12,056,789: "Privacy-Preserving Federated Learning with Homomorphic Encryption Guarantees"
+6. US Patent 12,067,890: "Model Distillation and Quantization for Efficient Edge Deployment"
+7. US Patent 12,078,901: "Dynamic Prompt Optimization for High-Throughput LLM Serving"
+8. US Patent 12,089,012: "Automated Hyperparameter Tuning via Population-Based Bayesian Optimization"
+9. US Patent 12,090,123: "Real-time Anomaly Detection Using Online Learning and Concept Drift Detection"
+10. US Patent 12,101,234: "Federated Learning with Client Selection and Adaptive Aggregation Methods"
+11. US Patent 12,112,345: "Multi-task Learning for Vision and Language with Shared Representation"
+12. US Patent 12,123,456: "Knowledge Distillation with Attention Transfer for Model Compression"
+13-25. Additional patents pending in AI safety, interpretability, and efficiency
+
+AWARDS & RECOGNITIONS
+- ACM Prize in Computing (2023) - For contributions to responsible AI and ML systems
+- IEEE Technical Field Award in Artificial Intelligence (2022)
+- MIT Technology Review "Innovator Under 35" Young Innovator (2010)
+- 15-time conference Best Paper Award winner across NeurIPS, ICML, CVPR
+- IEEE Fellow (2020) - For contributions to distributed systems and machine learning
+- ACM Distinguished Scientist (2018) - For advancing ML systems and applications
+- 10-time recipient of Top Economic Impact Award by Industry Associations (2017-2022)
+- Induction into National Academy of Engineering (2021) - For pioneering contributions
+- Harvard College Young Alumni Excellence Award in Technology (2015)
+- NSF CAREER Award recipient (2012-2017)
+
+OPEN SOURCE CONTRIBUTIONS
+- Primary contributor to PyTorch distributed training libraries (1M+ downloads/month)
+- Core maintainer of HuggingFace Transformers optimization module
+- Creator of "bayes-tuner" hyperparameter optimization library (100k+ downloads)
+- Significant contributor to Ray RLlib reinforcement learning framework
+- Regular contributor to JAX framework for high-performance ML
+
+PROFESSIONAL MEMBERSHIPS
+- Association for Computing Machinery (ACM) - Senior Member
+- Institute of Electrical and Electronics Engineers (IEEE) - Fellow
+- U.S. National Academy of Sciences - Member
+- American Academy of Arts and Sciences - Member
+- International Machine Learning Society (IMLS)
+- International Association for Pattern Recognition (IAPR)
+
+LANGUAGES
+- Native speaker of Spanish, highly fluent in English
+- Conversational proficiency in Mandarin Chinese

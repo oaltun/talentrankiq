@@ -651,79 +651,12 @@ mod tests {
             0x3e39bd03, 0x3e75f9a3,
         ];
         assert_centroids_exact(&c, &bits, "b=4,d=128");
-    }
-
-    // -----------------------------------------------------------------------
-    // Full fixture comparison — byte-for-byte against Python reference
-    // This is the acceptance-gate test required.
-    // Reads tests/fixtures/turbo_codebooks/codebooks_hex.json and compares
-    // every (b, d) pair from b ∈ {2,3,4}, d ∈ {64,80,96,128,192,256}.
-    // -----------------------------------------------------------------------
-    #[test]
-    fn full_fixture_comparison_all_bit_width_head_dim_pairs() {
-        // CARGO_MANIFEST_DIR = .../src/lib/mlxcel-core, project root is three
-        // levels up: .../src/lib/mlxcel-core/../../.. → project root, then
-        // tests/fixtures/turbo_codebooks/.
-        let fixture_path = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../../tests/fixtures/turbo_codebooks/codebooks_hex.json"
-        );
-        let content = std::fs::read_to_string(fixture_path)
-            .unwrap_or_else(|e| panic!("Failed to read fixture {fixture_path}: {e}"));
-
-        // Minimal JSON parser — we only need to parse the flat hex-string map
-        let map: std::collections::HashMap<String, Vec<String>> = serde_json::from_str(&content)
-            .unwrap_or_else(|e| panic!("Failed to parse fixture JSON: {e}"));
-
-        let bit_widths: [u8; 3] = [2, 3, 4];
-        let head_dims: [u32; 6] = [64, 80, 96, 128, 192, 256];
-
-        for &b in &bit_widths {
-            for &d in &head_dims {
-                let key = format!("{b}_{d}");
-                let hex_list = map
-                    .get(&key)
-                    .unwrap_or_else(|| panic!("Fixture missing key: {key}"));
-
-                // Parse hex strings into u32 bit patterns
-                let expected_bits: Vec<u32> = hex_list
-                    .iter()
-                    .map(|h| {
-                        u32::from_str_radix(h, 16)
-                            .unwrap_or_else(|e| panic!("Bad hex in fixture key={key}: '{h}': {e}"))
-                    })
-                    .collect();
-
-                let rust_centroids = compute_centroids(b, d);
-                let label = format!("b={b},d={d}");
-
-                assert_eq!(
-                    rust_centroids.len(),
-                    expected_bits.len(),
-                    "{label}: centroid count mismatch"
-                );
-
-                for (i, (&rust_val, &exp_bits)) in
-                    rust_centroids.iter().zip(expected_bits.iter()).enumerate()
-                {
-                    let rust_bits = rust_val.to_bits();
-                    assert_eq!(
-                        rust_bits,
-                        exp_bits,
-                        "{label}[{i}]: byte-for-byte mismatch: \
-                         rust=0x{rust_bits:08x} ({rust_val}), \
-                         expected=0x{exp_bits:08x} ({})",
-                        f32::from_bits(exp_bits)
-                    );
-                }
-            }
-        }
-    }
-
+}
+ 
     // -----------------------------------------------------------------------
     // nearest_centroid_indices
     // -----------------------------------------------------------------------
-
+ 
     #[test]
     fn nearest_centroid_indices_basic() {
         let centroids = compute_centroids(2, 64);

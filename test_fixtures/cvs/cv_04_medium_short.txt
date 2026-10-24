@@ -1,0 +1,95 @@
+Sarah Kim
+Senior Software Engineer
+sarah.kim@email.com | (555) 456-7890 | linkedin.com/in/sarahkim-dev
+
+PROFESSIONAL SUMMARY
+Senior software engineer with 7 years of experience building high-quality web applications and collaborating on complex team projects. Expert in the React ecosystem, TypeScript, and modern frontend architecture patterns. Proven track record of delivering complex features on time, improving code quality through rigorous testing, and driving adoption of best practices across engineering teams. Strong communicator with excellent mentoring skills, passionate about creating exceptional user experiences through clean, maintainable code. Committed to continuous learning and staying current with industry trends and emerging technologies. Always looking for ways to improve developer experience and code quality.
+
+TECHNICAL SKILLS
+Languages: TypeScript, JavaScript, Python, SQL, HTML/CSS, SCSS, GraphQL
+Frontend: React, Next.js, Remix, Vue.js, Redux, Zustand, React Query, SWR, Recoil, Jotai
+State Management: Redux Toolkit, Zustand, Context API, Jotai, XState for state machines
+UI Components: Tailwind CSS, Material-UI, Chakra UI, Radix UI, Headless UI, Styled Components
+Build Tools: Vite, Webpack, Babel, ESLint, Prettier, Stylelint, PostCSS
+Testing: Jest, Vitest, React Testing Library, Cypress, Playwright, Testing Library, Storybook
+Backend: Node.js, Express, Fastify, tRPC, GraphQL Yoga, Prisma, Drizzle ORM
+Databases: PostgreSQL, SQLite, MongoDB, Redis, Supabase, PlanetScale
+Deployment: Vercel, Netlify, AWS (S3, Lambda, CloudFront), Docker, Kubernetes
+CI/CD: GitHub Actions, CircleCI, TurboRepo, PNPM, Docker Compose, Sentry, Datadog
+
+EXPERIENCE
+Senior Software Engineer | Vertex Digital | 2021 - Present
+- Architected and led migration of legacy React codebase (150k+ lines) to Next.js 14 App Router with TypeScript strict mode achieving 100% type safety
+- Designed and built comprehensive design system component library with 80+ reusable components adopted across 5 product teams totaling 100+ developers
+- Implemented feature flag system using LaunchDarkly enabling safe progressive rollouts to production with targeted user segments and kill switches
+- Reduced bundle size by 35% through strategic code splitting, tree shaking, and lazy loading with Webpack Bundle Analyzer
+- Conducted technical interviews for 50+ engineering candidates; wrote 400+ detailed code reviews per year
+- Established frontend guild meetings and RFC process driving architectural decisions and knowledge sharing
+- Led team of 4 frontend engineers; provided weekly mentoring sessions and career growth planning
+- Implemented automated accessibility testing with axe-core catching 200+ accessibility issues before production release
+- Built internal analytics dashboard tracking Core Web Vitals, performance metrics, and user engagement across all applications
+- Created documentation standards and component usage guidelines improving onboarding experience for new engineers
+
+Software Engineer | PixelPerfect Agency | 2019 - 2021
+- Developed custom CMS solutions for enterprise clients using React, Node.js, and PostgreSQL with 99.9% uptime
+- Built real-time collaboration features including live cursors, comments, and notifications using WebSockets and Socket.IO
+- Implemented comprehensive automated visual regression testing using Percy and Cypress catching 200+ visual UI breaks pre-release
+- Optimized Core Web Vitals (LCP, FID, CLS) improving LCP from 4.2s to 1.8s across 25+ client websites
+- Collaborated closely with UX designers and product managers translating wireframes and requirements into high-quality implementations
+- Created reusable component library for agency standardizing UI patterns across 15+ client projects
+- Wrote comprehensive unit and integration tests increasing test coverage from 30% to 85% across all codebases
+- Implemented CI/CD pipelines with automated testing, linting, staging deployments, and production rollouts
+
+Junior Developer | CodeCraft Studio | 2018 - 2019
+- Maintained and enhanced e-commerce platforms for 50+ SMB clients using React, Redux, and Ruby on Rails backend
+- Integrated third-party payment gateways including Stripe, PayPal, and Square with proper error handling and security
+- Developed responsive email templates for marketing campaigns achieving 25% higher click-through rates
+- Wrote documentation for internal component library and development standards improving team efficiency
+- Participated in agile ceremonies including sprint planning, daily standups, and retrospective meetings
+
+EDUCATION
+B.S. Computer Science | Metropolitan University | 2014 - 2018
+- Senior project: Accessible component library for React applications with WCAG 2.1 compliance
+- Dean's List: 2016-2018
+- Member: Association for Computing Machinery (ACM)
+- Treasurer, Women in Computer Science Club
+
+CERTIFICATIONS
+Google UX Design Professional Certificate (2022)
+AWS Certified Developer - Associate (2021)
+React Professional Certificate - Epic React by Kent C. Dodds (2021)
+Certified Scrum Developer (CSD) (2020)
+TypeScript Expert Certification (2020)
+
+PROJECTS
+ComponentForge - Open source React component generator with 2.3k GitHub stars; helps developers create consistent, accessible UI components with automatic TypeScript type generation
+TypeSafeAPI - End-to-end type-safe API layer using tRPC and Zod schemas with automatic client SDK generation
+AccessibilityAudit - Automated accessibility testing integration for CI pipelines with detailed reporting and remediation guidance
+DevToolsPro - Browser extension for debugging React applications with component tree inspection and performance profiling
+PerformanceBench - Framework for measuring and tracking frontend performance metrics over time with historical trending
+
+PUBLICATIONS & TALKS
+"Building Accessible Design Systems at Scale" - Frontend Conference 2023
+"Type-Safe Full Stack Development with tRPC" - React Summit 2022 (video available)
+"Modern State Management Patterns in React" - JSNation 2022
+"Developer Experience: The Key to Better Applications" - Meetup talk 2021
+"Testing Strategies for Complex React Applications" - Blog series on dev.to 2020
+"Optimizing Bundle Size for Large-Scale Next.js Applications" - Personal blog 2021
+"TypeScript Best Practices for Modern Frontend Development" - Workshop series 2022
+"Creating Inclusive Design Systems" - Conference talk proposal 2023
+
+OPEN SOURCE CONTRIBUTIONS
+- React: 15+ pull requests merged improving documentation and type definitions
+- TypeScript: Reported and helped resolve 3 issues related to generic type inference
+- Next.js: Contributed to Image component optimization and documentation
+- Testing Library: Added new utility functions for async testing scenarios
+
+ADDITIONAL SKILLS
+- Internationalization (i18n) and localization (l10n) for global applications
+- Progressive Web Apps (PWA) implementation and optimization
+- Web accessibility (WCAG 2.0/2.1 AA) and inclusive design principles
+- SEO optimization for client and server-rendered applications
+- Performance optimization using profiling tools and best practices
+
+LANGUAGES
+Fluent in Korean and English

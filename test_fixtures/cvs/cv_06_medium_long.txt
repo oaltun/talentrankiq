@@ -1,0 +1,103 @@
+Robert Zhang
+Lead Machine Learning Engineer
+robert.zhang@email.com | (555) 678-9012 | github.com/robertz-ml
+
+PROFESSIONAL SUMMARY
+Lead machine learning engineer with 9 years of experience building and deploying ML systems at scale. Expertise spans deep learning, computer vision, natural language processing, and machine learning operations (MLOps). Strong background in both applied research and production deployment of AI systems. Passionate about bridging the gap between cutting-edge research innovations and practical, real-world product applications. Extensive experience leading ML teams and establishing robust best practices for the entire ML development lifecycle across different domains including computer vision, NLP, and time-series forecasting.
+
+TECHNICAL SKILLS
+Programming Languages: Python (expert), Rust, Julia, C++, SQL, Go, R, MATLAB, JavaScript
+ML Frameworks & Libraries: PyTorch (expert), TensorFlow, JAX, Keras, scikit-learn, XGBoost, LightGBM, HuggingFace Transformers
+Specialized ML Domains: Deep Learning, Computer Vision, Natural Language Processing, Reinforcement Learning, Recommendation Systems, Time Series Forecasting, Transfer Learning, Multi-modal Learning, Generative AI
+MLOps & Infrastructure: MLflow, Kubeflow Pipelines, Vertex AI, SageMaker, Weights & Biases, DVC, Feast Feature Store, TFX, Airflow
+Data Engineering: Apache Spark, Apache Kafka, Airflow, Snowflake, BigQuery, Delta Lake, DataHub, Amundsen, dbt
+Cloud Platforms: AWS SageMaker, GCP Vertex AI, Azure ML, Lambda Labs, Paperspace
+ML Systems & Scaling: Ray, Dask, Horovod, PyTorch Lightning, Hydra, Optuna, Ray Tune
+Infrastructure: Docker, Kubernetes, Terraform, GPUs (A100, H100, V100), TPUs, SLP GPUs, Ray
+Evaluation & Monitoring: Human Evaluation Frameworks, RLHF, Active Learning, Model Monitoring, A/B Testing, Offline Metrics, SHAP, LIME
+
+PROFESSIONAL EXPERIENCE
+Lead Research Scientist & ML Engineer | NeuroVision AI | 2020 - Present
+- Lead cross-functional team of 8 ML engineers and researchers building vision AI products for enterprise clients across healthcare, manufacturing, and retail industries
+- Designed and deployed computer vision pipeline processing 1 million+ images daily on GCP with 99.2% accuracy and sub-200ms inference latency
+- Built comprehensive MLOps platform enabling 50+ model deployments with fully automated CI/CD pipelines using Kubeflow and GitHub Actions
+- Implemented federated learning system for privacy-preserving model training across distributed edge devices reducing centralized data needs by 85%
+- Led optimization initiative that reduced model inference latency from 850ms to 120ms through quantization, pruning, and distillation achieving 86% improvement
+- Established comprehensive ML experiment tracking, model registry, and model serving infrastructure adopted company-wide
+- Mentored team of 12 researchers and 18 engineers; 4 mentees contributed to NeurIPS papers and 3 went on to faculty positions
+- Spearheaded adoption of responsible AI practices including bias detection, fairness metrics, and explainability tooling
+- Collaborated with product and design teams to ship 15+ production ML features impacting 2M+ active users
+- Built custom autoML system reducing hyperparameter search time from weeks to hours using Bayesian optimization and population-based training
+
+Senior Machine Learning Engineer | DataForge Solutions | 2017 - 2020
+- Built recommendation engine serving 10 million daily active users increasing user engagement by 34% and revenue by 22%
+- Developed comprehensive NLP pipeline for document understanding and information extraction using state-of-the-art transformer models
+- Implemented A/B testing framework for ML models with proper statistical significance analysis and experimentation methodology
+- Created synthetic data generation pipeline reducing data acquisition costs by 60% while maintaining model performance
+- Collaborated with product team to translate business requirements and user needs into practical machine learning solutions
+- Contributed to 3 patents on novel model architectures, training methodologies, and optimization techniques
+- Reduced inference costs by 40% through model distillation and knowledge transfer techniques
+- Implemented active learning strategy reducing annotation costs by 55% while maintaining high-quality labeled data
+
+ML Engineer | QuantEdge Analytics | 2016 - 2017
+- Developed sophisticated time-series forecasting models for financial market prediction using ensemble methods
+- Built streaming ML pipeline for real-time anomaly detection using Apache Spark Streaming and online learning algorithms
+- Implemented feature engineering pipeline extracting 200+ features from raw financial data
+- Collaborated with quantitative researchers to deploy ML models into production trading systems
+- Built backtesting framework for evaluating model performance before live deployment
+
+Research Intern | Microsoft Research | Summer 2015
+- Worked on reinforcement learning for combinatorial optimization with application to network routing
+- Co-authored paper on neural combinatorial optimization techniques published internally
+- Built prototype system for traffic prediction using LSTM networks and graph-based features
+
+EDUCATION
+M.S. Machine Learning | Stanford University | 2014 - 2016
+- Thesis: "Attention-Based Models for Sequence-to-Sequence Learning and Their Applications"
+- Relevant coursework: Deep Learning, Probabilistic Graphical Models, Reinforcement Learning, Computer Vision
+B.S. Computer Science & Statistics | UC Berkeley | 2010 - 2014
+- GPA: 3.78/4.0, Dean's List recipient for 8 consecutive semesters
+- President: Machine Learning Club, Vice President: ACM Student Chapter
+- Course: CS231n Convolutional Neural Networks for Visual Recognition (top 5% percentile)
+
+CERTIFICATIONS
+AWS Certified Machine Learning - Specialty (2022)
+Google Cloud ML Engineer Professional Certificate (2021)
+Kubernetes and the Kubeflow ML Stack (Coursera, 2020)
+DeepLearning.AI TensorFlow Developer (2019)
+Hugging Face NLP Course Certificate (2022)
+fast.ai Practical Deep Learning for Coders (2020)
+
+PROJECTS
+VisionLM - Large multimodal vision-language model with 10k+ GitHub stars; supports image captioning, visual question answering, and object detection
+MLOpsKit - Production-ready MLOps templates and tools including model serving, monitoring, and automated retraining pipelines
+EmbeddingHub - High-performance vector embedding serving library optimized for retrieval-augmented generation and similarity search
+AutoTrain-Pro - Automated hyperparameter tuning and architecture search for PyTorch models using Bayesian optimization
+FederalFlow - Federated learning framework for privacy-preserving model training with differential privacy support
+SynthData - Synthetic data generation toolkit using generative models for training data augmentation
+AnomalyWatch - Real-time anomaly detection platform using streaming ML pipelines with configurable alerting
+FeatureForge - Feature store implementation supporting batch and online serving with Feast integration
+ModelLens - Visualization and debugging tool for deep learning models with attention visualization
+
+PUBLICATIONS & TALKS
+"Scaling Machine Learning in Production: Challenges and Solutions" - MLOps World Conference 2023 (keynote speaker)
+"MLOps Best Practices for Early-Stage Startups" - ODSC East Conference 2023
+"Vision Transformers: Beyond the Basics" - PyTorch Developer Day 2022
+"Building a Feature Store from Scratch: Lessons Learned" - ACM ReWork Conference 2022
+"Real-time Anomaly Detection at Internet Scale" - Strata Data Conference 2021
+"Responsible AI: Implementing Fairness and Explainability in Production" - AI Summit 2021
+Co-author: "Efficient Transformers for Edge Deployment" - Journal of Machine Learning Engineering 2021
+Contributor: "Practical MLOps: A Hands-On Guide" - O'Reilly 2023
+
+PATENTS
+US Patent 11,567,890: "Distributed Training of Large Vision Models with Adaptive Gradient Compression and Communication Reduction"
+US Patent 11,678,901: "Privacy-Preserving Federated Learning with Homomorphic Encryption for Edge Devices" (pending)
+US Patent 11,789,012: "Automated Model Versioning and Rollback Strategies in MLOps Pipelines" (pending)
+US Patent 11,890,123: "Multi-modal Self-Supervised Learning with Contrastive Representation Learning" (pending)
+US Patent 11,901,234: "Intelligent Resource Allocation and Scheduling for Distributed ML Workloads" (pending)
+
+ADDITIONAL INFORMATION
+- Member: Association for Computing Machinery (ACM)
+- Volunteer technical mentor for AI for Good initiatives
+- Regular contributor to PyTorch and HuggingFace open source
+- Fluent in Mandarin Chinese and English

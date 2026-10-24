@@ -1,0 +1,69 @@
+James Thompson
+Backend Engineer
+james.thompson@email.com | (555) 345-6789 | github.com/jthompson
+
+PROFESSIONAL SUMMARY
+Backend engineer with 5 years of experience designing, building, and scaling distributed systems for high-traffic web applications. Strong expertise in Go, Python, and Rust with deep knowledge of cloud-native architecture patterns. Passionate about creating robust, maintainable services that can handle high throughput. Experienced in working with both small startup teams and large enterprise organizations. Committed to writing clean, well-documented code and mentoring junior developers on best practices in system design and software engineering.
+
+TECHNICAL SKILLS
+Languages: Go, Python, Rust, SQL, Bash, JavaScript, TypeScript
+Frameworks: Gin, FastAPI, Axum, gRPC, GraphQL, Echo
+Infrastructure: Kubernetes, Docker, Terraform, AWS, GCP, Helm, Istio, Consul
+Databases: PostgreSQL (expert), Redis, MongoDB, Cassandra, CockroachDB
+Messaging: Apache Kafka, RabbitMQ, NATS, AWS SQS/SNS, Google Pub/Sub
+Observability: Prometheus, Grafana, Jaeger, OpenTelemetry, Datadog, Sentry, ELK Stack
+CI/CD: GitHub Actions, GitLab CI, Jenkins, CircleCI, ArgoCD
+Testing: Go testing, pytest, Rust testing, Postman, contract testing
+
+EXPERIENCE
+Backend Engineer | CloudScale Systems | 2021 - Present
+- Designed and implemented 15+ microservices handling 2.5 million requests per second at peak load
+- Architected and built event-driven system using Apache Kafka for real-time order processing pipeline serving 500k concurrent users
+- Implemented circuit breaker and retry patterns improving system resilience to network failures and service outages
+- Led migration of legacy monolithic application to Go-based microservices deployed on Kubernetes with zero downtime
+- Built custom load balancing solution using consistent hashing reducing tail latency by 35% across all regions
+- Implemented distributed tracing using OpenTelemetry across service mesh improving observability and debugging workflows
+- Mentored 8 junior and mid-level engineers through pair programming, code reviews, and technical workshops on Go best practices
+- Established performance benchmarking suite monitoring latency, throughput, and resource utilization weekly reports
+- Collaborated with security team to implement OAuth 2.0 authentication and fine-grained authorization across all services
+
+Software Engineer | DataFlow Analytics | 2019 - 2021
+- Developed and maintained ETL pipelines processing 50TB of daily event data for business intelligence reporting
+- Built real-time fraud detection system using stream processing with Apache Kafka Streams and Python ML models
+- Optimized PostgreSQL database queries reducing execution time from minutes to sub-second for analytical workloads
+- Created internal tooling for data validation including schema validation, quality monitoring, and alerting dashboards
+- Collaborated closely with data science team to deploy and serve machine learning models for feature engineering pipelines
+- Implemented Redis caching layer reducing database load by 70% and improving response times significantly
+- Contributed to open source projects: improved Kafka Go client documentation and added new metrics endpoints
+- Built API gateway service handling authentication, rate limiting, and request routing for 5 downstream services
+
+Junior Developer | Connectify Solutions | 2018 - 2019
+- Maintained and enhanced RESTful API services serving 100k daily active users for e-commerce platform
+- Integrated third-party payment gateway APIs (Stripe, PayPal, Braintree) with proper error handling and retries
+- Built admin dashboard using React and TypeScript for internal team to monitor system health and metrics
+- Wrote comprehensive automated test suites increasing code coverage from 45% to 85% across all backend services
+- Participated in on-call rotation supporting production incidents and implementing postmortem action items
+
+EDUCATION
+M.S. Computer Science | University of California, San Diego | 2016 - 2018
+- Thesis: "Optimizing Consensus Protocols for Geo-Distributed Databases"
+- Relevant coursework: Distributed Systems, Database Systems, Advanced Algorithms, Cloud Computing
+B.S. Computer Science | Texas A&M University | 2012 - 2016
+- GPA: 3.65/4.0, Dean's List recipient for 6 semesters
+- President of ACM Student Chapter, organized monthly tech talks and coding workshops
+
+CERTIFICATIONS
+AWS Certified Developer - Associate (2020)
+Google Professional Cloud Developer (2019)
+Certified Kubernetes Administrator (CKA) (2021)
+HashiCorp Certified: Terraform Associate (2019)
+
+PROJECTS
+TaskQueue - High-performance distributed task queue built in Go using Redis as backend with priority queues, retries, and dead letter queues. Used in production handling 100k+ tasks per minute.
+AuthKit - Open source authentication library for Go with built-in support for OAuth2, OIDC, JWT, RBAC, and ABAC. Includes CLI tool for generating keys and managing users. 3k+ stars on GitHub.
+LogAggregator - Real-time distributed log aggregation system inspired by Apache Kafka with persistent storage, replication, and web-based UI for searching logs across services.
+
+ADDITIONAL INFORMATION
+Languages: Fluent in English and Spanish
+Volunteer: Mentor at CodePath teaching backend development to underrepresented students
+Interests: Rock climbing, photography, open-source contributions
