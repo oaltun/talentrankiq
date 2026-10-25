@@ -99,3 +99,12 @@ pub async fn download_status(app: AppHandle, slug: String) -> Result<DownloadSta
         .await
         .map_err(str_err)
 }
+
+/// Check if download is complete for a model slug (yes/no).
+#[tauri::command]
+#[specta::specta]
+pub async fn download_complete(app: AppHandle, slug: String) -> Result<bool, String> {
+    rpc_blocking_typed::<bool>(app, "download_complete", DownloadStatusParams { slug })
+        .await
+        .map_err(str_err)
+}

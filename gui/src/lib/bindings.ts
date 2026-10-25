@@ -612,6 +612,17 @@ async downloadStatus(slug: string) : Promise<Result<DownloadStatus, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Check if download is complete for a model slug (yes/no).
+ */
+async downloadComplete(slug: string) : Promise<Result<boolean, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("download_complete", { slug }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async listVettedEmbedders() : Promise<Result<VettedEmbeddersResponse, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_vetted_embedders") };

@@ -284,7 +284,7 @@ export function useModelDownloadCompleteToast() {
   }, [])
 }
 
-/** Poll the download status for a model slug every 3 seconds. */
+/** Poll the download status for a model slug every 1 second. */
 export function useDownloadStatus(slug: string | undefined, enabled = true) {
   const [status, setStatus] = useState<DownloadStatus | null>(null)
 
@@ -293,54 +293,71 @@ export function useDownloadStatus(slug: string | undefined, enabled = true) {
 
     let mounted = true
     let intervalId: ReturnType<typeof setInterval> | null = null
-    let consecutiveEmpty = 0
+    let seenProgress = false
 
     const fetchStatus = async () => {
       try {
         const result = await commands.downloadStatus(slug)
         if (!mounted) return
         const data = unwrapResult(result)
-        setStatus(data)
 
-        // Continue polling if download is in progress OR if we haven't seen any progress yet
-        // (to handle race condition where first fetch returns empty before backend creates entry)
+        // Check if we've seen actual progress (bytes downloaded)
         const hasProgress = data.done_bytes > 0 || data.total_bytes !== null
-        const shouldContinue = data.is_downloading || !hasProgress
 
-        if (!shouldContinue) {
-          consecutiveEmpty++
-          if (consecutiveEmpty >= 2) {
-            // Stop after 2 consecutive empty results
-            if (intervalId) clearInterval(intervalId)
-          }
-        } else {
-          consecutiveEmpty = 0
+        if (hasProgress) {
+          seenProgress = true
+        }
+
+        // If download is complete AND we've seen progress, clear status and stop
+        if (!data.is_downloading && seenProgress) {
+          setStatus(null)
+          if (intervalId) clearInterval(intervalId)
+          return
+        }
+
+        // If we haven't seen progress yet, keep polling (backend may not have created entry yet)
+        // If we have seen progress and download is still active, update status
+        if (data.is_downloading || !seenProgress) {
+          setStatus(data)
         }
       } catch (e) {
         console.error('[useDownloadStatus] Failed to fetch status:', e)
         if (!mounted) return
-        setStatus({
-          done_bytes: 0,
-          total_bytes: null,
-          filename: '',
-          is_downloading: false,
-        })
-        consecutiveEmpty++
-        if (consecutiveEmpty >= 2) {
+        setStatus(null)
+        if (intervalId) clearInterval(intervalId)
+      }
+    }
+
+    const checkComplete = async () => {
+      try {
+        const result = await commands.downloadComplete(slug)
+        if (!mounted) return
+        const data = unwrapResult(result)
+        if (data) {
+          // Download is complete - clear status and stop polling
+          setStatus(null)
           if (intervalId) clearInterval(intervalId)
         }
+      } catch (e) {
+        console.error('[useDownloadStatus] Failed to check completion:', e)
       }
     }
 
     // Initial fetch
     fetchStatus()
 
-    // Poll every 3 seconds
-    intervalId = setInterval(fetchStatus, 3000)
+    // Poll status every 1 second
+    intervalId = setInterval(fetchStatus, 1000)
+
+    // Also check completion every 1 second (offset by 500ms)
+    const completeIntervalId = setInterval(checkComplete, 1000)
+    // Initial check after 500ms
+    setTimeout(checkComplete, 500)
 
     return () => {
       mounted = false
       if (intervalId) clearInterval(intervalId)
+      if (completeIntervalId) clearInterval(completeIntervalId)
     }
   }, [slug, enabled])
 

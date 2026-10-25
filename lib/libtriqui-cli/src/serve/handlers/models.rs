@@ -1110,6 +1110,21 @@ pub fn download_status(
     }
 }
 
+/// Check if a download is complete for a model slug.
+/// Returns true if download is not in progress (either completed or never started).
+pub fn download_complete(
+    state: &Arc<ServeState>,
+    slug: &str,
+) -> Result<bool, ProtocolError> {
+    let map = state.download_progress.lock().unwrap();
+    if let Some(entry) = map.get(slug) {
+        Ok(!entry.is_downloading)
+    } else {
+        // No entry means no active download
+        Ok(true)
+    }
+}
+
 /// Clean up stale temporary download directories on startup.
 /// Temp dirs are created at `<model_dir>/.tmp/<slug>-<random>/` and should
 /// be removed if they exist from a previous interrupted download.
