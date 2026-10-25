@@ -25,6 +25,7 @@
 pub mod handlers;
 pub mod watch;
 
+use std::collections::HashMap;
 use std::io::{BufRead, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -54,6 +55,15 @@ pub const PROGRESS_MIN_INTERVAL: Duration = Duration::from_millis(100);
 /// events, so frontend listeners are unchanged.
 #[derive(Clone)]
 pub struct EventSink(std::sync::mpsc::Sender<String>);
+
+/// Download progress state for a single model slug, stored in ServeState for polling.
+#[derive(Debug, Clone, Default)]
+pub struct DownloadProgressState {
+    pub done_bytes: u64,
+    pub total_bytes: Option<u64>,
+    pub filename: String,
+    pub is_downloading: bool,
+}
 
 impl EventSink {
     pub fn emit<D: Serialize>(&self, name: &str, data: &D) {
@@ -90,6 +100,8 @@ pub struct ServeState {
     pub config: libtriqui_core::config::CascadeConfig,
     /// Live cascade runners per job (see [`handlers::rank::CascadeGens`]).
     pub cascade_gens: Arc<crate::serve::handlers::rank::CascadeGens>,
+    /// Per-model download progress for polling (keyed by slug).
+    pub download_progress: Arc<Mutex<HashMap<String, DownloadProgressState>>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -204,6 +216,7 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
         watch: WatchHandle::new(jobs_tx, ad_tx),
         config: libtriqui_core::app_config::cascade_config(),
         cascade_gens: Arc::new(crate::serve::handlers::rank::CascadeGens::new()),
+        download_progress: Arc::new(Mutex::new(HashMap::new())),
     });
 
     {

@@ -261,6 +261,10 @@ fn dispatch(state: &Arc<ServeState>, cmd: &str, params: &Value) -> Result<Value,
             let p: TryModelParams = from_params(params)?;
             models::try_model(state, &p.slug)
         }
+        "download_status" => {
+            let p: DownloadStatusParams = from_params(params)?;
+            models::download_status(state, &p.slug).and_then(ok_json)
+        }
 
         // Vetted embedders (bench-leaderboard enriched cards)
         "list_vetted_embedders" => vetted_embedders::list_vetted_embedders(state),

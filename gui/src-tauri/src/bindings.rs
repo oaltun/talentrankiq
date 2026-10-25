@@ -67,6 +67,7 @@ pub fn generate_bindings() -> Builder<tauri::Wry> {
         models::set_default_model,
         models::set_embedding_model,
         models::try_model,
+        models::download_status,
         vetted_embedders::list_vetted_embedders,
         judge_license::judge_license_status,
         license::license_activate,

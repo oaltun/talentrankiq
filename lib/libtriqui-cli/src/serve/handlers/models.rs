@@ -13,6 +13,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use libtriqui_client::protocol::ProtocolError;
@@ -112,7 +113,18 @@ fn dir_size(path: &Path) -> u64 {
 }
 
 /// Emit a `model-download-progress` event so the UI can show a spinner/bar.
+/// Also update the in-memory progress state for polling.
 fn emit_progress(state: &ServeState, slug: &str, filename: &str, done: u64, total: Option<u64>) {
+    // Update polling state
+    {
+        let mut map = state.download_progress.lock().unwrap();
+        let entry = map.entry(slug.to_string()).or_default();
+        entry.done_bytes = done;
+        entry.total_bytes = total;
+        entry.filename = filename.to_string();
+        entry.is_downloading = total.is_some_and(|t| done < t) || total.is_none();
+    }
+
     state.events.emit(
         "model-download-progress",
         &ModelDownloadProgress {
@@ -323,14 +335,15 @@ fn run_embedder_download(
         return Ok(());
     }
 
-    // Create temp directory for atomic download
+// Create temp directory for atomic download (without slug in name, so modeldownloader
+    // creates <temp_dir>/<slug>/repo/ which we can atomically move to <model_dir>/<slug>/)
     let temp_base = model_dir.join(".tmp");
     fs::create_dir_all(&temp_base).map_err(|e| string_err(format!("failed to create temp base dir: {e}")))?;
     let rand_suffix: u64 = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos() as u64;
-    let temp_dir = temp_base.join(format!("{}-{}", slug, rand_suffix));
+    let temp_dir = temp_base.join(format!("download-{}", rand_suffix));
     
     // Ensure temp dir doesn't exist (extremely unlikely but safe)
     if temp_dir.exists() {
@@ -340,6 +353,7 @@ fn run_embedder_download(
 
     emit_progress(state, slug, "", 0, None);
 
+    // modeldownloader will write to <temp_dir>/<slug>/repo/
     let mut req = libmodeldownloader::UrlDownload::new(onnx_url, slug, temp_dir.clone(), sha256);
     req.extra_files = extra_files.to_vec();
     // The progress callback must be 'static, so hand it an owned clone of the
@@ -347,6 +361,7 @@ fn run_embedder_download(
     // settled totals survive the call.
     let events = state.events.clone();
     let events_complete = events.clone();
+    let download_progress = state.download_progress.clone();
     let slug_owned = slug.to_string();
     let agg = Arc::new(Mutex::new(DownloadProgressAggregate::default()));
     let agg_cb = Arc::clone(&agg);
@@ -357,6 +372,17 @@ fn run_embedder_download(
             let done = agg.done();
             let total = agg.total();
             log::info!("Emitting model-download-progress: slug={}, filename={}, done={}, total={:?}", slug_owned, filename, done, total);
+            
+            // Update polling state
+            {
+                let mut map = download_progress.lock().unwrap();
+                let entry = map.entry(slug_owned.clone()).or_default();
+                entry.done_bytes = done;
+                entry.total_bytes = total;
+                entry.filename = filename.clone();
+                entry.is_downloading = total.is_some_and(|t| done < t) || total.is_none();
+            }
+            
             events.emit(
                 "model-download-progress",
                 &ModelDownloadProgress {
@@ -377,8 +403,19 @@ fn run_embedder_download(
             let total = agg.total().unwrap_or(done).max(done);
             emit_progress(state, slug, "", total, Some(total));
 
-            // Atomically move temp dir to final location
-            // Use rename which is atomic on same filesystem
+            // Mark download as complete in polling state
+            {
+                let mut map = state.download_progress.lock().unwrap();
+                if let Some(entry) = map.get_mut(slug) {
+                    entry.done_bytes = total;
+                    entry.total_bytes = Some(total);
+                    entry.is_downloading = false;
+                }
+            }
+
+            // Atomically move <temp_dir>/<slug>/ to final location <model_dir>/<slug>/
+            // modeldownloader writes to <temp_dir>/<slug>/repo/
+            let downloaded_slug_dir = temp_dir.join(slug);
             if final_dir.exists() {
                 fs::remove_dir_all(&final_dir).map_err(|e| string_err(format!("failed to remove existing final dir: {e}")))?;
             }
@@ -386,7 +423,7 @@ fn run_embedder_download(
             if let Some(parent) = final_dir.parent() {
                 fs::create_dir_all(parent).map_err(|e| string_err(format!("failed to create final parent dir: {e}")))?;
             }
-            fs::rename(&temp_dir, &final_dir).map_err(|e| {
+            fs::rename(&downloaded_slug_dir, &final_dir).map_err(|e| {
                 // On error, clean up temp dir and return error
                 let _ = fs::remove_dir_all(&temp_dir);
                 string_err(format!("failed to atomically move download to final location: {e}"))
@@ -404,8 +441,12 @@ fn run_embedder_download(
             Ok(())
         }
         Err(e) => {
-            // Download failed - clean up temp dir
+            // Download failed - clean up temp dir and clear polling state
             let _ = fs::remove_dir_all(&temp_dir);
+            {
+                let mut map = state.download_progress.lock().unwrap();
+                map.remove(slug);
+            }
             Err(string_err(format!("modeldownloader failed for '{slug}': {e}")))
         }
     }
@@ -441,14 +482,15 @@ fn run_mlx_download(
         return Ok(());
     }
 
-    // Create temp directory for atomic download
+// Create temp directory for atomic download (without slug in name, so modeldownloader
+    // creates <temp_dir>/<slug>/<revision>/ which we can atomically move to <model_dir>/<slug>/)
     let temp_base = model_dir.join(".tmp");
     fs::create_dir_all(&temp_base).map_err(|e| string_err(format!("failed to create temp base dir: {e}")))?;
     let rand_suffix: u64 = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos() as u64;
-    let temp_dir = temp_base.join(format!("{}-{}", slug, rand_suffix));
+    let temp_dir = temp_base.join(format!("download-{}", rand_suffix));
     
     // Ensure temp dir doesn't exist (extremely unlikely but safe)
     if temp_dir.exists() {
@@ -479,6 +521,7 @@ fn run_mlx_download(
     
     let events = state.events.clone();
     let events_complete = events.clone();
+    let download_progress = state.download_progress.clone();
     let slug_owned = slug.to_string();
     let agg = Arc::new(Mutex::new(DownloadProgressAggregate::default()));
     let agg_cb = Arc::clone(&agg);
@@ -490,6 +533,17 @@ fn run_mlx_download(
             let done = agg.done();
             let total = agg.total();
             log::info!("Emitting MLX model-download-progress: slug={}, filename={}, done={}, total={:?}", slug_owned, filename, done, total);
+            
+            // Update polling state
+            {
+                let mut map = download_progress.lock().unwrap();
+                let entry = map.entry(slug_owned.clone()).or_default();
+                entry.done_bytes = done;
+                entry.total_bytes = total;
+                entry.filename = filename.clone();
+                entry.is_downloading = total.is_some_and(|t| done < t) || total.is_none();
+            }
+            
             events.emit(
                 "model-download-progress",
                 &ModelDownloadProgress {
@@ -512,8 +566,19 @@ fn run_mlx_download(
             let total = agg.total().unwrap_or(done).max(done);
             emit_progress(state, slug, "", total, Some(total));
 
-            // Atomically move temp dir to final location
-            // The temp_dir contains the revision subdirectory structure
+            // Mark download as complete in polling state
+            {
+                let mut map = state.download_progress.lock().unwrap();
+                if let Some(entry) = map.get_mut(slug) {
+                    entry.done_bytes = total;
+                    entry.total_bytes = Some(total);
+                    entry.is_downloading = false;
+                }
+            }
+
+            // Atomically move <temp_dir>/<slug>/ to final location <model_dir>/<slug>/
+            // modeldownloader writes to <temp_dir>/<slug>/<revision>/
+            let downloaded_slug_dir = temp_dir.join(slug);
             if final_dir.exists() {
                 fs::remove_dir_all(&final_dir).map_err(|e| string_err(format!("failed to remove existing final dir: {e}")))?;
             }
@@ -521,7 +586,7 @@ fn run_mlx_download(
             if let Some(parent) = final_dir.parent() {
                 fs::create_dir_all(parent).map_err(|e| string_err(format!("failed to create final parent dir: {e}")))?;
             }
-            fs::rename(&temp_dir, &final_dir).map_err(|e| {
+            fs::rename(&downloaded_slug_dir, &final_dir).map_err(|e| {
                 // On error, clean up temp dir and return error
                 let _ = fs::remove_dir_all(&temp_dir);
                 string_err(format!("failed to atomically move download to final location: {e}"))
@@ -539,8 +604,12 @@ fn run_mlx_download(
             Ok(())
         }
         Err(e) => {
-            // Download failed - clean up temp dir
+            // Download failed - clean up temp dir and clear polling state
             let _ = fs::remove_dir_all(&temp_dir);
+            {
+                let mut map = state.download_progress.lock().unwrap();
+                map.remove(slug);
+            }
             Err(string_err(format!("modeldownloader failed for MLX '{slug}': {e}")))
         }
     }
@@ -997,7 +1066,47 @@ mod progress_tests {
             ],
         );
         assert!(agg.done() > 0);
+        // A retry restarts the file: Started resets its done-bytes.
+        agg.apply(Ev::Started {
+            file: "m.onnx".into(),
+            total: Some(1000),
+        });
         assert_eq!(agg.dones.get("m.onnx"), Some(&0));
+    }
+}
+
+/// Poll the current download status for a model slug.
+/// Returns the aggregated progress across all files for that model.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct DownloadStatus {
+    pub done_bytes: u64,
+    pub total_bytes: Option<u64>,
+    pub filename: String,
+    pub is_downloading: bool,
+}
+
+/// Get the current download status for a model slug via polling.
+/// Returns `is_downloading: false` if no download is active for the slug.
+pub fn download_status(
+    state: &Arc<ServeState>,
+    slug: &str,
+) -> Result<DownloadStatus, ProtocolError> {
+    let map = state.download_progress.lock().unwrap();
+    if let Some(entry) = map.get(slug) {
+        Ok(DownloadStatus {
+            done_bytes: entry.done_bytes,
+            total_bytes: entry.total_bytes,
+            filename: entry.filename.clone(),
+            is_downloading: entry.is_downloading,
+        })
+    } else {
+        // No active download for this slug
+        Ok(DownloadStatus {
+            done_bytes: 0,
+            total_bytes: None,
+            filename: String::new(),
+            is_downloading: false,
+        })
     }
 }
 
@@ -1020,126 +1129,5 @@ pub fn cleanup_temp_dirs() {
         }
         // Remove .tmp dir itself if empty
         let _ = fs::remove_dir(&temp_base);
-    }
-}
-
-#[cfg(test)]
-mod progress_tests {
-    use super::*;
-    use libmodeldownloader::DownloadEvent as Ev;
-
-    fn apply_all(agg: &mut DownloadProgressAggregate, evs: &[Ev]) {
-        for ev in evs {
-            agg.apply(ev.clone());
-        }
-    }
-
-    #[test]
-    fn full_download_sequence_aggregates_bytes() {
-        let mut agg = DownloadProgressAggregate::default();
-        apply_all(
-            &mut agg,
-            &[
-                Ev::Started {
-                    file: "onnx/model_q4.onnx".into(),
-                    total: Some(629145600),
-                },
-                Ev::Progress {
-                    file: "onnx/model_q4.onnx".into(),
-                    done: 314572800,
-                    total: Some(629145600),
-                },
-                Ev::Finished {
-                    file: "onnx/model_q4.onnx".into(),
-                    total: Some(629145600),
-                },
-                Ev::Started {
-                    file: "onnx/tokenizer.json".into(),
-                    total: Some(17_000_000),
-                },
-                Ev::Finished {
-                    file: "onnx/tokenizer.json".into(),
-                    total: Some(17_000_000),
-                },
-            ],
-        );
-        assert_eq!(agg.done(), 629145600 + 17_000_000);
-        assert_eq!(agg.total(), Some(629145600 + 17_000_000));
-    }
-
-    #[test]
-    fn cached_files_count_as_done() {
-        let mut agg = DownloadProgressAggregate::default();
-        apply_all(
-            &mut agg,
-            &[
-                Ev::Cached {
-                    file: "onnx/tokenizer.json".into(),
-                    bytes: 12345,
-                },
-                Ev::Started {
-                    file: "model_q4.onnx".into(),
-                    total: Some(100),
-                },
-                Ev::Progress {
-                    file: "model_q4.onnx".into(),
-                    done: 100,
-                    total: Some(100),
-                },
-                Ev::Finished {
-                    file: "model_q4.onnx".into(),
-                    total: Some(100),
-                },
-            ],
-        );
-        assert!(agg.done() >= 12345);
-        assert!(agg.total().unwrap() >= 12345);
-    }
-
-    #[test]
-    fn unknown_total_download_still_tracks_done() {
-        // No content-length: events carry total = None.
-        let mut agg = DownloadProgressAggregate::default();
-        apply_all(
-            &mut agg,
-            &[
-                Ev::Started {
-                    file: "config.json".into(),
-                    total: None,
-                },
-                Ev::Finished {
-                    file: "config.json".into(),
-                    total: None,
-                },
-            ],
-        );
-        assert_eq!(agg.done(), 0); // no sizes known anywhere
-        assert_eq!(agg.total(), None);
-    }
-
-    #[test]
-    fn fresh_download_resets_previous_done() {
-        let mut agg = DownloadProgressAggregate::default();
-        apply_all(
-            &mut agg,
-            &[
-                Ev::Started {
-                    file: "m.onnx".into(),
-                    total: Some(1000),
-                },
-                Ev::Progress {
-                    file: "m.onnx".into(),
-                    done: 900,
-                    total: Some(1000),
-                },
-            ],
-        );
-        assert!(agg.done() > 0);
-        // A retry restarts the file: Started resets its done-bytes.
-        agg.apply(Ev::Started {
-            file: "m.onnx".into(),
-            total: Some(1000),
-        });
-        assert_eq!(agg.dones.get("m.onnx"), Some(&0));
     }
 }

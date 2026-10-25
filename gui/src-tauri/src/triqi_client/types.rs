@@ -1003,6 +1003,15 @@ pub struct ModelDownloadComplete {
     pub path: String,
 }
 
+/// Download status for polling (replaces event-driven progress).
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct DownloadStatus {
+    pub done_bytes: u64,
+    pub total_bytes: Option<u64>,
+    pub filename: String,
+    pub is_downloading: bool,
+}
+
 /// One ONNX embedder from `triq.yaml` `gui_embedders`, enriched with on-disk state.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct GuiEmbedder {

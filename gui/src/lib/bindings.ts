@@ -601,6 +601,17 @@ async tryModel(slug: string) : Promise<Result<TryModelResult, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Poll the current download status for a model slug.
+ */
+async downloadStatus(slug: string) : Promise<Result<DownloadStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("download_status", { slug }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async listVettedEmbedders() : Promise<Result<VettedEmbeddersResponse, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_vetted_embedders") };
@@ -970,6 +981,10 @@ export type Criterion = { id: string; job_id: string; text: string; weight: numb
  * Fallible-domain errors (typed for frontend matching via `#[serde(tag = "type")]`).
  */
 export type DomainError = { type: "NotFound"; entity: string; id: string } | { type: "ValidationError"; message: string } | { type: "DbError"; message: string } | { type: "IoError"; message: string } | { type: "ParseError"; message: string }
+/**
+ * Download status for polling (replaces event-driven progress).
+ */
+export type DownloadStatus = { done_bytes: number; total_bytes: number | null; filename: string; is_downloading: boolean }
 /**
  * Which arm serves an embedder slug on this machine, and whether its weights
  * are on disk — resolved engine-free (no model load, no wrapper). The gui

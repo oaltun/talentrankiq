@@ -19,15 +19,15 @@ import {
   useRemoveEmbedder,
   useSetDefaultEmbedder,
   useSetEmbeddingModel,
-  useModelDownloadProgress,
   useModelDownloadCompleteToast,
+  useDownloadStatus,
   type GuiEmbedder,
 } from '@/services/models'
 import { usePreferences } from '@/services/preferences'
 import { TryModelDialog } from './TryModelDialog'
 
 function fmtBytes(n: number | null | undefined): string {
-  if (!n) return 'unknown'
+  if (n === null || n === undefined) return 'unknown'
   const mb = n / (1024 * 1024)
   if (mb < 1024) return `${mb.toFixed(0)} MB`
   return `${(mb / 1024).toFixed(1)} GB`
@@ -48,7 +48,7 @@ function getArmFromSlug(slug: string): string | null {
 function EmbedderCard({
   embedder,
   isDefault,
-  progressPct,
+  status,
   downloading,
   onDownload,
   onRemove,
@@ -58,7 +58,12 @@ function EmbedderCard({
 }: {
   embedder: GuiEmbedder
   isDefault: boolean
-  progressPct: number | undefined
+  status: {
+    done_bytes: number
+    total_bytes: number | null
+    filename: string
+    is_downloading: boolean
+  } | null
   downloading: boolean
   onDownload: (slug: string) => void
   onRemove: (slug: string) => void
@@ -76,6 +81,14 @@ function EmbedderCard({
     max_context_window,
     size_bytes,
   } = embedder
+
+  const isDownloading = status?.is_downloading ?? downloading
+  const doneBytes = status?.done_bytes ?? 0
+  const totalBytes = status?.total_bytes
+  const progressText = isDownloading
+    ? `${fmtBytes(doneBytes)} downloaded${totalBytes ? ` / ${fmtBytes(totalBytes)}` : '...'}`
+    : undefined
+
   return (
     <div
       className={cn(
@@ -148,19 +161,11 @@ function EmbedderCard({
         )}
       </div>
 
-      {progressPct !== undefined ? (
-        <div className="h-1.5 w-full rounded bg-muted">
-          <div
-            className="h-full min-w-[12px] rounded bg-primary transition-[width]"
-            style={{ width: `${progressPct}%` }}
-          />
+      {isDownloading && progressText && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" />
+          <span>{progressText}</span>
         </div>
-      ) : (
-        downloading && (
-          <div className="h-1.5 w-full rounded bg-muted overflow-hidden">
-            <div className="h-full w-1/4 rounded bg-primary animate-pulse" />
-          </div>
-        )
       )}
 
       <div className="flex items-center gap-2 pt-1">
@@ -215,6 +220,53 @@ function EmbedderCard({
   )
 }
 
+function EmbedderCardWrapper({
+  embedder,
+  isDefault,
+  download,
+  remove,
+  setDefault,
+  setTrySlug,
+  setTryName,
+  handleUseModel,
+}: {
+  embedder: GuiEmbedder
+  isDefault: boolean
+  download: ReturnType<typeof useDownloadEmbedder>
+  remove: ReturnType<typeof useRemoveEmbedder>
+  setDefault: ReturnType<typeof useSetDefaultEmbedder>
+  setTrySlug: (slug: string) => void
+  setTryName: (name: string) => void
+  handleUseModel: (slug: string) => void
+}) {
+  // Poll download status only when a download is in progress for this slug
+  const isDownloading =
+    download.isPending && download.variables === embedder.slug
+  const status = useDownloadStatus(
+    isDownloading ? embedder.slug : undefined,
+    isDownloading
+  )
+  const downloading = isDownloading
+
+  return (
+    <EmbedderCard
+      key={embedder.slug}
+      embedder={embedder}
+      isDefault={isDefault}
+      status={status}
+      downloading={downloading}
+      onDownload={slug => download.mutate(slug)}
+      onRemove={slug => remove.mutate(slug)}
+      onSetDefault={slug => setDefault.mutate(slug)}
+      onTry={(slug, name) => {
+        setTrySlug(slug)
+        setTryName(name)
+      }}
+      onUseModel={handleUseModel}
+    />
+  )
+}
+
 function EmbeddingPane() {
   const { data, isLoading, error } = useEmbedders()
   const { data: prefs } = usePreferences()
@@ -222,7 +274,6 @@ function EmbeddingPane() {
   const remove = useRemoveEmbedder()
   const setDefault = useSetDefaultEmbedder()
   const setEmbeddingModel = useSetEmbeddingModel()
-  const progress = useModelDownloadProgress()
   useModelDownloadCompleteToast()
 
   const defaultSlug: string | null = prefs?.embedding_model ?? null
@@ -262,7 +313,7 @@ function EmbeddingPane() {
       <p className="text-xs text-muted-foreground">
         On-device embedding models from the app&apos;s model registry. Download,
         remove, and pick the model used for ranking CVs. The engine starts when
-        you click &quot;Use this model&quot; on a downloaded model.
+        you click "Use this model" on a downloaded model.
       </p>
 
       {!anyDownloaded && (
@@ -271,7 +322,7 @@ function EmbeddingPane() {
           <p className="text-lg font-medium mb-2">No models downloaded</p>
           <p className="text-sm text-muted-foreground max-w-md">
             Download a model to enable AI ranking. The engine will start when
-            you click &quot;Use this model&quot; on a downloaded model.
+            you click "Use this model" on a downloaded model.
           </p>
         </div>
       )}
@@ -281,38 +332,19 @@ function EmbeddingPane() {
           No embedders configured in triq.yaml.
         </p>
       ) : (
-        embedders.map(e => {
-          const entries = progress.get(e.slug)
-          const p = entries[0]
-          const total = p?.total ?? 0
-          const pct = total > 0 ? ((p?.done ?? 0) / total) * 100 : undefined
-          const downloading = download.isPending && entries.length > 0
-
-          // Debug logging
-          if (process.env.NODE_ENV === 'development') {
-            console.log(
-              `[ModelsView] ${e.slug}: entries=${entries.length}, pct=${pct}, downloading=${downloading}, p=${JSON.stringify(p)}`
-            )
-          }
-
-          return (
-            <EmbedderCard
-              key={e.slug}
-              embedder={e}
-              isDefault={e.slug === defaultSlug}
-              progressPct={pct}
-              downloading={downloading}
-              onDownload={slug => download.mutate(slug)}
-              onRemove={slug => remove.mutate(slug)}
-              onSetDefault={slug => setDefault.mutate(slug)}
-              onTry={(slug, name) => {
-                setTrySlug(slug)
-                setTryName(name)
-              }}
-              onUseModel={handleUseModel}
-            />
-          )
-        })
+        embedders.map(e => (
+          <EmbedderCardWrapper
+            key={e.slug}
+            embedder={e}
+            isDefault={e.slug === defaultSlug}
+            download={download}
+            remove={remove}
+            setDefault={setDefault}
+            setTrySlug={setTrySlug}
+            setTryName={setTryName}
+            handleUseModel={handleUseModel}
+          />
+        ))
       )}
 
       <TryModelDialog

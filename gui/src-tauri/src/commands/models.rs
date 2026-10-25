@@ -3,11 +3,10 @@
 //! inside the serve process; progress arrives as `model-download-progress` /
 //! `try-model-progress` events. `Result<_, String>` signatures are preserved.
 
-use crate::triqi_client::params::*;
-use tauri::AppHandle;
-
 use crate::cli::{rpc_blocking, rpc_blocking_typed, str_err};
-use crate::types::{EmbedderVariants, GuiEmbedder, ModelKind, TryModelResult};
+use crate::triqi_client::params::*;
+use crate::types::{DownloadStatus, EmbedderVariants, GuiEmbedder, ModelKind, TryModelResult};
+use tauri::AppHandle;
 
 #[tauri::command]
 #[specta::specta]
@@ -89,5 +88,14 @@ pub async fn set_embedding_model(app: AppHandle, slug: String) -> Result<(), Str
     rpc_blocking(app, "set_embedding_model", SetEmbeddingModelParams { slug })
         .await
         .map(|_| ())
+        .map_err(str_err)
+}
+
+/// Poll the current download status for a model slug.
+#[tauri::command]
+#[specta::specta]
+pub async fn download_status(app: AppHandle, slug: String) -> Result<DownloadStatus, String> {
+    rpc_blocking_typed::<DownloadStatus>(app, "download_status", DownloadStatusParams { slug })
+        .await
         .map_err(str_err)
 }

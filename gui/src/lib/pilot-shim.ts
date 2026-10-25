@@ -211,5 +211,5 @@ export const pilotShim = new PilotShim()
 
 // Also expose globally for console debugging
 if (typeof window !== 'undefined') {
-  ;(window as Record<string, unknown>).__PILOT_SHIM__ = pilotShim
+  ;(window as unknown as Record<string, unknown>).__PILOT_SHIM__ = pilotShim
 }

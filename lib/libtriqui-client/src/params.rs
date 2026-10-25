@@ -146,16 +146,18 @@ params! {
         chunk_size: usize,
     }
 
-    struct DownloadEmbedderParams { slug: String }
+struct DownloadEmbedderParams { slug: String }
 
-    struct RemoveEmbedderParams { slug: String }
+struct RemoveEmbedderParams { slug: String }
 
-    struct SetDefaultModelParams { kind: ModelKind, repo_id: String }
+struct SetDefaultModelParams { kind: ModelKind, repo_id: String }
 
-    struct SetEmbeddingModelParams { slug: String }
+struct SetEmbeddingModelParams { slug: String }
 
-    /// Which arm would serve `model`, and are its weights on disk — engine-free.
-    struct ModelVariantsParams { model: String }
+struct DownloadStatusParams { slug: String }
+
+/// Which arm would serve `model`, and are its weights on disk — engine-free.
+struct ModelVariantsParams { model: String }
 
     struct TryModelParams { slug: String }
 

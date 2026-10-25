@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { commands, unwrapResult } from '@/lib/tauri-bindings'
 import { errorMessage } from '@/lib/errors'
 import type {
+  DownloadStatus,
   EmbedderVariants,
   GuiEmbedder,
   ModelKind,
@@ -281,4 +282,67 @@ export function useModelDownloadCompleteToast() {
       })
     }
   }, [])
+}
+
+/** Poll the download status for a model slug every 3 seconds. */
+export function useDownloadStatus(slug: string | undefined, enabled = true) {
+  const [status, setStatus] = useState<DownloadStatus | null>(null)
+
+  useEffect(() => {
+    if (!enabled || !slug) return
+
+    let mounted = true
+    let intervalId: ReturnType<typeof setInterval> | null = null
+    let consecutiveEmpty = 0
+
+    const fetchStatus = async () => {
+      try {
+        const result = await commands.downloadStatus(slug)
+        if (!mounted) return
+        const data = unwrapResult(result)
+        setStatus(data)
+
+        // Continue polling if download is in progress OR if we haven't seen any progress yet
+        // (to handle race condition where first fetch returns empty before backend creates entry)
+        const hasProgress = data.done_bytes > 0 || data.total_bytes !== null
+        const shouldContinue = data.is_downloading || !hasProgress
+
+        if (!shouldContinue) {
+          consecutiveEmpty++
+          if (consecutiveEmpty >= 2) {
+            // Stop after 2 consecutive empty results
+            if (intervalId) clearInterval(intervalId)
+          }
+        } else {
+          consecutiveEmpty = 0
+        }
+      } catch (e) {
+        console.error('[useDownloadStatus] Failed to fetch status:', e)
+        if (!mounted) return
+        setStatus({
+          done_bytes: 0,
+          total_bytes: null,
+          filename: '',
+          is_downloading: false,
+        })
+        consecutiveEmpty++
+        if (consecutiveEmpty >= 2) {
+          if (intervalId) clearInterval(intervalId)
+        }
+      }
+    }
+
+    // Initial fetch
+    fetchStatus()
+
+    // Poll every 3 seconds
+    intervalId = setInterval(fetchStatus, 3000)
+
+    return () => {
+      mounted = false
+      if (intervalId) clearInterval(intervalId)
+    }
+  }, [slug, enabled])
+
+  return status
 }
