@@ -82,11 +82,10 @@ function EmbedderCard({
     size_bytes,
   } = embedder
 
-  const isDownloading = status?.is_downloading ?? downloading
+  const isDownloading = status?.is_downloading === true
   const doneBytes = status?.done_bytes ?? 0
-  const totalBytes = status?.total_bytes
   const progressText = isDownloading
-    ? `${fmtBytes(doneBytes)} downloaded${totalBytes ? ` / ${fmtBytes(totalBytes)}` : '...'}`
+    ? `${fmtBytes(doneBytes)} downloaded...`
     : undefined
 
   return (
@@ -207,11 +206,7 @@ function EmbedderCard({
             onClick={() => onDownload(slug)}
             disabled={downloading}
           >
-            {downloading ? (
-              <Loader2 className="size-3 animate-spin" />
-            ) : (
-              <Download className="size-3" />
-            )}
+            <Download className="size-3" />
             Download
           </Button>
         )}
