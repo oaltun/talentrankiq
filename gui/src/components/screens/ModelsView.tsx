@@ -281,6 +281,12 @@ function EmbeddingPane() {
           const total = p?.total ?? 0
           const pct = total > 0 ? ((p?.done ?? 0) / total) * 100 : undefined
           const downloading = download.isPending && entries.length > 0
+          
+          // Debug logging
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`[ModelsView] ${e.slug}: entries=${entries.length}, pct=${pct}, downloading=${downloading}, p=${JSON.stringify(p)}`)
+          }
+          
           return (
             <EmbedderCard
               key={e.slug}

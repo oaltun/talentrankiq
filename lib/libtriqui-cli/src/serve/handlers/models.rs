@@ -249,6 +249,7 @@ pub fn model_variants(
 /// If the engine is running with a different model loaded, that model is
 /// unloaded first to minimise RAM pressure during the download.
 pub fn download_embedder(state: &Arc<ServeState>, slug: &str) -> Result<(), ProtocolError> {
+    log::info!("download_embedder called for slug: {}", slug);
     if let Ok(client) = state.runtime.client() {
         if let Ok(embedder) = state.runtime.embedder() {
             let current = embedder.model_id().to_string();
@@ -271,9 +272,12 @@ pub fn download_embedder(state: &Arc<ServeState>, slug: &str) -> Result<(), Prot
         .first()
         .ok_or_else(|| string_err(format!("model '{slug}' has no artifact")))?;
     
+    log::info!("download_embedder: artifact backend = {:?}", artifact.backend);
+    
     match artifact.backend {
         libconfigreader::BackendKind::Ort => {
             // ONNX uses URL mode
+            log::info!("download_embedder: running ONNX download for {}", slug);
             run_embedder_download(
                 state, 
                 slug, 
@@ -284,6 +288,7 @@ pub fn download_embedder(state: &Arc<ServeState>, slug: &str) -> Result<(), Prot
         }
         libconfigreader::BackendKind::Mlx => {
             // MLX uses repo mode
+            log::info!("download_embedder: running MLX download for {}", slug);
             run_mlx_download(state, slug, artifact)
         }
     }
@@ -329,14 +334,17 @@ fn run_embedder_download(
     libmodeldownloader::download_url(req, move |ev| {
         let mut agg = agg_cb.lock().unwrap();
         if agg.apply(ev) {
-            log::debug!("Emitting model-download-progress: slug={}, filename={}, done={}, total={:?}", slug_owned, agg.current.clone().unwrap_or_default(), agg.done(), agg.total());
+            let filename = agg.current.clone().unwrap_or_default();
+            let done = agg.done();
+            let total = agg.total();
+            log::info!("Emitting model-download-progress: slug={}, filename={}, done={}, total={:?}", slug_owned, filename, done, total);
             events.emit(
                 "model-download-progress",
                 &ModelDownloadProgress {
                     repo_id: slug_owned.clone(),
-                    filename: agg.current.clone().unwrap_or_default(),
-                    done: agg.done(),
-                    total: agg.total(),
+                    filename,
+                    done,
+                    total,
                 },
             );
         }
@@ -420,13 +428,17 @@ fn run_mlx_download(
     let progress_sink: libmodeldownloader::ProgressSink = Arc::new(Mutex::new(move |ev| {
         let mut agg = agg_cb.lock().unwrap();
         if agg.apply(ev) {
+            let filename = agg.current.clone().unwrap_or_default();
+            let done = agg.done();
+            let total = agg.total();
+            log::info!("Emitting MLX model-download-progress: slug={}, filename={}, done={}, total={:?}", slug_owned, filename, done, total);
             events.emit(
                 "model-download-progress",
                 &ModelDownloadProgress {
                     repo_id: slug_owned.clone(),
-                    filename: agg.current.clone().unwrap_or_default(),
-                    done: agg.done(),
-                    total: agg.total(),
+                    filename,
+                    done,
+                    total,
                 },
             );
         }

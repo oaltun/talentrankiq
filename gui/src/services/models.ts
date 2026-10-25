@@ -169,26 +169,59 @@ export function useModelDownloadProgress() {
     Record<string, DownloadProgressEntry>
   >({})
 
+  console.log('[useModelDownloadProgress] Hook called, registering useEffect')
+
   useEffect(() => {
+    console.log('[useModelDownloadProgress] useEffect running')
     let unlisten: (() => void) | null = null
-    listen<ModelDownloadProgress>('model-download-progress', event => {
-      const { repo_id, filename, done, total } = event.payload
-      // Key by repo_id + filename to track multiple files per model
-      const key = `${repo_id}:${filename}`
-      setProgress(p => ({
-        ...p,
-        [key]: { repoId: repo_id, filename, done, total },
-      }))
-    })
-      .then(fn => {
-        unlisten = fn
+    console.log('[useModelDownloadProgress] Setting up event listener')
+    
+    // Use try-catch to catch any synchronous errors
+    try {
+      listen<ModelDownloadProgress>('model-download-progress', event => {
+        console.log('[useModelDownloadProgress] Received event:', event)
+        console.log('[useModelDownloadProgress] Event payload:', event.payload)
+        const { repo_id, filename, done, total } = event.payload
+        const key = repo_id
+        setProgress(p => ({
+          ...p,
+          [key]: { repoId: repo_id, filename, done, total },
+        }))
       })
-      .catch(err =>
-        console.error('Failed to listen for download progress', err)
-      )
+        .then(fn => {
+          console.log('[useModelDownloadProgress] Listener registered successfully')
+          unlisten = fn
+        })
+        .catch(err =>
+          console.error('[useModelDownloadProgress] Failed to listen for download progress:', err)
+        )
+    } catch (syncErr) {
+      console.error('[useModelDownloadProgress] Synchronous error in listen():', syncErr)
+    }
+
+    // Also test with a wildcard listener to see if ANY events come through
+    try {
+      const testListen = listen('*', (event) => {
+        console.log('[useModelDownloadProgress] WILDCARD received:', event.event, event.payload)
+      })
+      testListen.then(fn => console.log('Wildcard listener registered'))
+
+      // Test: emit a test event from frontend to verify event system works
+      import('@tauri-apps/api/event').then(({ emit }) => {
+        emit('test-event-from-frontend', { test: 'data', timestamp: Date.now() })
+          .then(() => console.log('[useModelDownloadProgress] Test event emitted from frontend'))
+          .catch(err => console.error('[useModelDownloadProgress] Failed to emit test event:', err))
+      })
+    } catch (e) {
+      console.error('[useModelDownloadProgress] Error in test listeners:', e)
+    }
 
     return () => {
+      console.log('[useModelDownloadProgress] Cleaning up listener')
       unlisten?.()
+      try {
+        testListen.then(fn => fn())
+      } catch {}
     }
   }, [])
 
@@ -196,7 +229,7 @@ export function useModelDownloadProgress() {
     setProgress(p => {
       const next: Record<string, DownloadProgressEntry> = {}
       for (const [k, v] of Object.entries(p)) {
-        if (!k.startsWith(`${slug}:`)) next[k] = v
+        if (k !== slug) next[k] = v
       }
       return next
     })

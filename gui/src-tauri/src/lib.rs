@@ -110,6 +110,12 @@ pub fn run() {
         app_builder = app_builder.plugin(tauri_nspanel::init());
     }
 
+    // tauri-pilot for interactive UI testing and automation (debug builds only)
+    #[cfg(debug_assertions)]
+    {
+        app_builder = app_builder.plugin(tauri_plugin_pilot::init());
+    }
+
     app_builder
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_persisted_scope::init())
@@ -233,10 +239,11 @@ pub fn run() {
             }
 
             // Create the quick pane window (hidden) - must be done on main thread
-            if let Err(e) = commands::quick_pane::init_quick_pane(app.handle()) {
-                log::error!("Failed to create quick pane: {e}");
-                // Non-fatal: app can still run without quick pane
-            }
+            // DISABLED: causes wry crash
+            // if let Err(e) = commands::quick_pane::init_quick_pane(app.handle()) {
+            //     log::error!("Failed to create quick pane: {e}");
+            //     // Non-fatal: app can still run without quick pane
+            // }
 
             // NOTE: Application menu is built from JavaScript for i18n support
             // See src/lib/menu.ts for the menu implementation

@@ -23,7 +23,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["macos-private-api"] }
+tauri = { version = "2.12.5", features = ["macos-private-api"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -38,6 +38,9 @@ tauri-plugin-os = "2"
 tauri-plugin-global-shortcut = "2"
 log = "0.4"
 
+# Force wry 0.57.1 (fixes eval crash in 0.57.0)
+wry = "0.57.1"
+
 # Bundled benchmark CVs at compile time (extracted to the app-data dir for
 # the serve process's `try_model`)
 include_dir = "0.7"
@@ -50,6 +53,9 @@ thiserror = "2"
 specta = { version = "=2.0.0-rc.22", features = ["derive", "serde_json"] }
 tauri-specta = { version = "=2.0.0-rc.21", features = ["typescript"] }
 specta-typescript = "=0.0.9"
+
+# tauri-pilot for interactive UI testing and automation (debug builds only)
+tauri-plugin-pilot = { path = "patches/tauri-plugin-pilot" }
 
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
