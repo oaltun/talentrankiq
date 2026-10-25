@@ -477,14 +477,6 @@ fn resolve_model(state: &mut State, model: &str) -> Result<ResolvedModel> {
         return Err(ModelError::bad_req(unknown_usage_err(&record.usage)));
     }
 
-    if !model_onnx_path_exists(state, model) {
-        if state.auto_download {
-            auto_download(state, &record)?;
-        } else {
-            return Err(ModelError::no_model(model));
-        }
-    }
-
     Ok(record)
 }
 
@@ -520,6 +512,50 @@ fn model_artifact_path(state: &State, record: &ResolvedModel, runtime: Runtime) 
                 }
             }
             Ok(dir)
+        }
+    }
+}
+
+/// Check if the artifact for `runtime` exists locally.
+fn model_artifact_exists(state: &State, record: &ResolvedModel, runtime: Runtime) -> bool {
+    match runtime {
+        Runtime::Ort => {
+            record
+                .artifacts
+                .iter()
+                .any(|a| a.backend == libconfigreader::Backend::Ort)
+                && model_onnx_path_exists(state, &record.slug)
+        }
+        Runtime::Mlx => {
+            record
+                .artifacts
+                .iter()
+                .any(|a| a.backend == libconfigreader::Backend::Mlx)
+                && libmodelstorage::local_size(
+                    &libmodelstorage::slug_dir(&state.model_dir, &record.slug)
+                        .join(&state.revision)
+                        .join("model.safetensors"),
+                )
+                .is_some()
+        }
+    }
+}
+
+/// Auto-download the artifact for `runtime`.
+fn auto_download_for_runtime(
+    state: &State,
+    record: &ResolvedModel,
+    runtime: Runtime,
+) -> Result<()> {
+    match runtime {
+        Runtime::Ort => auto_download(state, record),
+        Runtime::Mlx => {
+            let variant = record
+                .artifacts
+                .iter()
+                .find(|a| a.backend == libconfigreader::Backend::Mlx)
+                .ok_or_else(|| ModelError::load_err(format!("{} has no mlx variant", record.slug)))?;
+            auto_download_mlx(state, &record.slug, variant)
         }
     }
 }
@@ -797,6 +833,16 @@ fn cmd_load(state: &mut State, payload: &Value) -> Result<Value> {
     let model = require_model(payload)?;
     let record = resolve_model(state, model)?;
     let runtime = state.resolve_runtime(&record)?;
+    
+    // Check if the artifact exists for the resolved runtime; auto-download if not.
+    if !model_artifact_exists(state, &record, runtime) {
+        if state.auto_download {
+            auto_download_for_runtime(state, &record, runtime)?;
+        } else {
+            return Err(ModelError::no_model(model));
+        }
+    }
+    
     let artifact = model_artifact_path(state, &record, runtime)?;
     let load = state.wrapper_load_payload(&artifact, runtime, record.max_context_window as usize);
     let resp = {

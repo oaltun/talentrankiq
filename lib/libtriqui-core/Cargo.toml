@@ -47,7 +47,7 @@ libjudge = { path = "../libjudge" }
 # (the gui ships no libmodelcaller binary), and the ORT wrapper runs in-process
 # too — on a dedicated thread, so the gui is a single binary with no spawned
 # children.
-libmodelcaller = { path = "../libmodelcaller" }
+libmodelcaller = { path = "../libmodelcaller", features = ["mlx"] }
 libtriqui-license = { path = "../libtriqui-license" }
 
 [dev-dependencies]
