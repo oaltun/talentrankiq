@@ -329,6 +329,7 @@ fn run_embedder_download(
     libmodeldownloader::download_url(req, move |ev| {
         let mut agg = agg_cb.lock().unwrap();
         if agg.apply(ev) {
+            log::debug!("Emitting model-download-progress: slug={}, filename={}, done={}, total={:?}", slug_owned, agg.current.clone().unwrap_or_default(), agg.done(), agg.total());
             events.emit(
                 "model-download-progress",
                 &ModelDownloadProgress {

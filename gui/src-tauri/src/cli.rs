@@ -38,10 +38,14 @@ pub fn spawn_bridge(app: &AppHandle, app_dir: &Path, app_version: &str) -> Resul
         std::thread::Builder::new()
             .name("serve-event-forwarder".into())
             .spawn(move || {
+                log::info!("serve-event-forwarder: started");
                 for event in rx {
-                    let _ = forward.emit(&event.event, event.data);
+                    log::info!("serve-event-forwarder: forwarding event '{}'", event.event);
+                    if let Err(e) = forward.emit(&event.event, event.data) {
+                        log::error!("serve-event-forwarder: failed to emit event '{}': {}", event.event, e);
+                    }
                 }
-                log::warn!("serve event stream ended");
+                log::warn!("serve-event-forwarder: serve event stream ended");
             })
             .map_err(|e| format!("failed to spawn event forwarder: {e}"))?;
     }
