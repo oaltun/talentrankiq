@@ -14,6 +14,11 @@ import { ThemeProvider } from './components/ThemeProvider'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { useSquareCornersEffect } from './hooks/useSquareCornersEffect'
 
+// Pilot shim for UI automation (dev only)
+if (import.meta.env.DEV) {
+  import('./lib/pilot-shim').catch(() => undefined)
+}
+
 function SplashScreen() {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background">

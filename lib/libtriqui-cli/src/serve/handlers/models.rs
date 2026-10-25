@@ -11,6 +11,7 @@
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
 
@@ -302,6 +303,8 @@ pub fn download_embedder(state: &Arc<ServeState>, slug: &str) -> Result<(), Prot
 /// unloadable) and lands everything under `<slug>/repo/`, the layout
 /// `resolve_onnx` prefers. Typed progress events are aggregated and
 /// re-emitted as `model-download-progress` events so the gui bar moves.
+/// Downloads to a temp location first, then atomically moves to final location
+/// to prevent partial downloads from being recognized as complete.
 fn run_embedder_download(
     state: &ServeState,
     slug: &str,
@@ -310,6 +313,7 @@ fn run_embedder_download(
     extra_files: &[String],
 ) -> Result<(), ProtocolError> {
     let model_dir = app_config::model_dir();
+    let final_dir = libmodelstorage::slug_dir(&model_dir, slug);
 
     // Re-check right before downloading: on a fresh install the engine's
     // modelcaller auto-download may race this call and complete first, and a
@@ -319,9 +323,24 @@ fn run_embedder_download(
         return Ok(());
     }
 
+    // Create temp directory for atomic download
+    let temp_base = model_dir.join(".tmp");
+    fs::create_dir_all(&temp_base).map_err(|e| string_err(format!("failed to create temp base dir: {e}")))?;
+    let rand_suffix: u64 = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as u64;
+    let temp_dir = temp_base.join(format!("{}-{}", slug, rand_suffix));
+    
+    // Ensure temp dir doesn't exist (extremely unlikely but safe)
+    if temp_dir.exists() {
+        fs::remove_dir_all(&temp_dir).map_err(|e| string_err(format!("failed to clean existing temp dir: {e}")))?;
+    }
+    fs::create_dir_all(&temp_dir).map_err(|e| string_err(format!("failed to create temp dir: {e}")))?;
+
     emit_progress(state, slug, "", 0, None);
 
-    let mut req = libmodeldownloader::UrlDownload::new(onnx_url, slug, model_dir, sha256);
+    let mut req = libmodeldownloader::UrlDownload::new(onnx_url, slug, temp_dir.clone(), sha256);
     req.extra_files = extra_files.to_vec();
     // The progress callback must be 'static, so hand it an owned clone of the
     // event sink instead of borrowing `state`; the aggregate is shared so the
@@ -331,7 +350,7 @@ fn run_embedder_download(
     let slug_owned = slug.to_string();
     let agg = Arc::new(Mutex::new(DownloadProgressAggregate::default()));
     let agg_cb = Arc::clone(&agg);
-    libmodeldownloader::download_url(req, move |ev| {
+    let download_result = libmodeldownloader::download_url(req, move |ev| {
         let mut agg = agg_cb.lock().unwrap();
         if agg.apply(ev) {
             let filename = agg.current.clone().unwrap_or_default();
@@ -348,26 +367,48 @@ fn run_embedder_download(
                 },
             );
         }
-    })
-    .map_err(|e| string_err(format!("modeldownloader failed for '{slug}': {e}")))?;
+    });
 
-    // Settle the bar at 100% (per-file bookkeeping may be a few bytes shy).
-    let agg = agg.lock().unwrap();
-    let done: u64 = agg.done();
-    let total = agg.total().unwrap_or(done).max(done);
-    emit_progress(state, slug, "", total, Some(total));
+    match download_result {
+        Ok(_) => {
+            // Settle the bar at 100% (per-file bookkeeping may be a few bytes shy).
+            let agg = agg.lock().unwrap();
+            let done: u64 = agg.done();
+            let total = agg.total().unwrap_or(done).max(done);
+            emit_progress(state, slug, "", total, Some(total));
 
-    // Emit completion event with the saved path so the GUI can notify the user.
-    let model_dir = app_config::model_dir();
-    let save_path = libmodelstorage::slug_dir(&model_dir, slug);
-    events_complete.emit(
-        "model-download-complete",
-        &libtriqui_client::types::ModelDownloadComplete {
-            slug: slug.to_string(),
-            path: save_path.to_string_lossy().to_string(),
-        },
-    );
-    Ok(())
+            // Atomically move temp dir to final location
+            // Use rename which is atomic on same filesystem
+            if final_dir.exists() {
+                fs::remove_dir_all(&final_dir).map_err(|e| string_err(format!("failed to remove existing final dir: {e}")))?;
+            }
+            // Ensure parent exists
+            if let Some(parent) = final_dir.parent() {
+                fs::create_dir_all(parent).map_err(|e| string_err(format!("failed to create final parent dir: {e}")))?;
+            }
+            fs::rename(&temp_dir, &final_dir).map_err(|e| {
+                // On error, clean up temp dir and return error
+                let _ = fs::remove_dir_all(&temp_dir);
+                string_err(format!("failed to atomically move download to final location: {e}"))
+            })?;
+
+            // Emit completion event with the saved path so the GUI can notify the user.
+            let save_path = libmodelstorage::slug_dir(&model_dir, slug);
+            events_complete.emit(
+                "model-download-complete",
+                &libtriqui_client::types::ModelDownloadComplete {
+                    slug: slug.to_string(),
+                    path: save_path.to_string_lossy().to_string(),
+                },
+            );
+            Ok(())
+        }
+        Err(e) => {
+            // Download failed - clean up temp dir
+            let _ = fs::remove_dir_all(&temp_dir);
+            Err(string_err(format!("modeldownloader failed for '{slug}': {e}")))
+        }
+    }
 }
 
 /// Remove a downloaded ONNX embedder from the model cache.
@@ -383,6 +424,8 @@ pub fn remove_embedder(slug: &str) -> Result<(), ProtocolError> {
 
 /// Download an MLX embedder via `modeldownloader` (repo mode), emitting progress events.
 /// MLX artifacts are fetched from a HuggingFace repo listing (all .safetensors shards + metadata).
+/// Downloads to a temp location first, then atomically moves to final location
+/// to prevent partial downloads from being recognized as complete.
 fn run_mlx_download(
     state: &ServeState,
     slug: &str,
@@ -390,17 +433,32 @@ fn run_mlx_download(
 ) -> Result<(), ProtocolError> {
     let model_dir = app_config::model_dir();
     let revision = app_config::revision();
+    let final_dir = libmodelstorage::slug_dir(&model_dir, slug).join(&revision);
     
     // Check if already present
-    let target = libmodelstorage::slug_dir(&model_dir, slug).join(&revision);
-    if verify_safetensors_present(&target) {
+    if verify_safetensors_present(&final_dir) {
         emit_progress(state, slug, "", 1, Some(1));
         return Ok(());
     }
+
+    // Create temp directory for atomic download
+    let temp_base = model_dir.join(".tmp");
+    fs::create_dir_all(&temp_base).map_err(|e| string_err(format!("failed to create temp base dir: {e}")))?;
+    let rand_suffix: u64 = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as u64;
+    let temp_dir = temp_base.join(format!("{}-{}", slug, rand_suffix));
     
+    // Ensure temp dir doesn't exist (extremely unlikely but safe)
+    if temp_dir.exists() {
+        fs::remove_dir_all(&temp_dir).map_err(|e| string_err(format!("failed to clean existing temp dir: {e}")))?;
+    }
+    fs::create_dir_all(&temp_dir).map_err(|e| string_err(format!("failed to create temp dir: {e}")))?;
+
     emit_progress(state, slug, "", 0, None);
     
-    // Use modeldownloader in repo mode with Artifact::Mlx
+    // Use modeldownloader in repo mode with Artifact::Mlx, pointing to temp dir
     let cli = libmodeldownloader::cli::Cli {
         config: None,
         model: Some(slug.to_string()),
@@ -408,7 +466,7 @@ fn run_mlx_download(
         url: None,
         slug: Some(slug.to_string()),
         revision: revision.clone(),
-        model_dir: Some(model_dir.clone()),
+        model_dir: Some(temp_dir.clone()),  // Download to temp dir
         force: false,
         dry_run: false,
         files: vec![],
@@ -444,25 +502,48 @@ fn run_mlx_download(
         }
     }));
     
-    libmodeldownloader::Downloader::run_with_progress(cli, Some(progress_sink))
-        .map_err(|e| string_err(format!("modeldownloader failed for MLX '{slug}': {e}")))?;
+    let download_result = libmodeldownloader::Downloader::run_with_progress(cli, Some(progress_sink));
     
-    // Settle the bar at 100%
-    let agg = agg.lock().unwrap();
-    let done: u64 = agg.done();
-    let total = agg.total().unwrap_or(done).max(done);
-    emit_progress(state, slug, "", total, Some(total));
-    
-    // Emit completion event
-    let save_path = libmodelstorage::slug_dir(&model_dir, slug);
-    events_complete.emit(
-        "model-download-complete",
-        &libtriqui_client::types::ModelDownloadComplete {
-            slug: slug.to_string(),
-            path: save_path.to_string_lossy().to_string(),
-        },
-    );
-    Ok(())
+    match download_result {
+        Ok(_) => {
+            // Settle the bar at 100%
+            let agg = agg.lock().unwrap();
+            let done: u64 = agg.done();
+            let total = agg.total().unwrap_or(done).max(done);
+            emit_progress(state, slug, "", total, Some(total));
+
+            // Atomically move temp dir to final location
+            // The temp_dir contains the revision subdirectory structure
+            if final_dir.exists() {
+                fs::remove_dir_all(&final_dir).map_err(|e| string_err(format!("failed to remove existing final dir: {e}")))?;
+            }
+            // Ensure parent exists
+            if let Some(parent) = final_dir.parent() {
+                fs::create_dir_all(parent).map_err(|e| string_err(format!("failed to create final parent dir: {e}")))?;
+            }
+            fs::rename(&temp_dir, &final_dir).map_err(|e| {
+                // On error, clean up temp dir and return error
+                let _ = fs::remove_dir_all(&temp_dir);
+                string_err(format!("failed to atomically move download to final location: {e}"))
+            })?;
+
+            // Emit completion event
+            let save_path = libmodelstorage::slug_dir(&model_dir, slug);
+            events_complete.emit(
+                "model-download-complete",
+                &libtriqui_client::types::ModelDownloadComplete {
+                    slug: slug.to_string(),
+                    path: save_path.to_string_lossy().to_string(),
+                },
+            );
+            Ok(())
+        }
+        Err(e) => {
+            // Download failed - clean up temp dir
+            let _ = fs::remove_dir_all(&temp_dir);
+            Err(string_err(format!("modeldownloader failed for MLX '{slug}': {e}")))
+        }
+    }
 }
 
 const BENCHMARK_LABELS: &[&str] = &[
@@ -802,6 +883,144 @@ pub fn set_embedding_model(state: &Arc<ServeState>, slug: &str) -> Result<(), Pr
     // (sequential, on one thread; prewarm waits for the engine).
     libtriqui_core::embeddings::prewarm_all_rubric_inputs(&state.runtime, job_ids);
     Ok(())
+}
+
+#[cfg(test)]
+mod progress_tests {
+    use super::*;
+    use libmodeldownloader::DownloadEvent as Ev;
+
+    fn apply_all(agg: &mut DownloadProgressAggregate, evs: &[Ev]) {
+        for ev in evs {
+            agg.apply(ev.clone());
+        }
+    }
+
+    #[test]
+    fn full_download_sequence_aggregates_bytes() {
+        let mut agg = DownloadProgressAggregate::default();
+        apply_all(
+            &mut agg,
+            &[
+                Ev::Started {
+                    file: "onnx/model_q4.onnx".into(),
+                    total: Some(629145600),
+                },
+                Ev::Progress {
+                    file: "onnx/model_q4.onnx".into(),
+                    done: 314572800,
+                    total: Some(629145600),
+                },
+                Ev::Finished {
+                    file: "onnx/model_q4.onnx".into(),
+                    total: Some(629145600),
+                },
+                Ev::Started {
+                    file: "onnx/tokenizer.json".into(),
+                    total: Some(17_000_000),
+                },
+                Ev::Finished {
+                    file: "onnx/tokenizer.json".into(),
+                    total: Some(17_000_000),
+                },
+            ],
+        );
+        assert_eq!(agg.done(), 629145600 + 17_000_000);
+        assert_eq!(agg.total(), Some(629145600 + 17_000_000));
+    }
+
+    #[test]
+    fn cached_files_count_as_done() {
+        let mut agg = DownloadProgressAggregate::default();
+        apply_all(
+            &mut agg,
+            &[
+                Ev::Cached {
+                    file: "onnx/tokenizer.json".into(),
+                    bytes: 12345,
+                },
+                Ev::Started {
+                    file: "model_q4.onnx".into(),
+                    total: Some(100),
+                },
+                Ev::Progress {
+                    file: "model_q4.onnx".into(),
+                    done: 100,
+                    total: Some(100),
+                },
+                Ev::Finished {
+                    file: "model_q4.onnx".into(),
+                    total: Some(100),
+                },
+            ],
+        );
+        assert!(agg.done() >= 12345);
+        assert!(agg.total().unwrap() >= 12345);
+    }
+
+    #[test]
+    fn unknown_total_download_still_tracks_done() {
+        // No content-length: events carry total = None.
+        let mut agg = DownloadProgressAggregate::default();
+        apply_all(
+            &mut agg,
+            &[
+                Ev::Started {
+                    file: "config.json".into(),
+                    total: None,
+                },
+                Ev::Finished {
+                    file: "config.json".into(),
+                    total: None,
+                },
+            ],
+        );
+        assert_eq!(agg.done(), 0); // no sizes known anywhere
+        assert_eq!(agg.total(), None);
+    }
+
+    #[test]
+    fn fresh_download_resets_previous_done() {
+        let mut agg = DownloadProgressAggregate::default();
+        apply_all(
+            &mut agg,
+            &[
+                Ev::Started {
+                    file: "m.onnx".into(),
+                    total: Some(1000),
+                },
+                Ev::Progress {
+                    file: "m.onnx".into(),
+                    done: 900,
+                    total: Some(1000),
+                },
+            ],
+        );
+        assert!(agg.done() > 0);
+        assert_eq!(agg.dones.get("m.onnx"), Some(&0));
+    }
+}
+
+/// Clean up stale temporary download directories on startup.
+/// Temp dirs are created at `<model_dir>/.tmp/<slug>-<random>/` and should
+/// be removed if they exist from a previous interrupted download.
+pub fn cleanup_temp_dirs() {
+    let model_dir = app_config::model_dir();
+    let temp_base = model_dir.join(".tmp");
+    if !temp_base.exists() {
+        return;
+    }
+    if let Ok(entries) = fs::read_dir(&temp_base) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                log::info!("Cleaning up stale temp download dir: {}", path.display());
+                let _ = fs::remove_dir_all(&path);
+            }
+        }
+        // Remove .tmp dir itself if empty
+        let _ = fs::remove_dir(&temp_base);
+    }
 }
 
 #[cfg(test)]

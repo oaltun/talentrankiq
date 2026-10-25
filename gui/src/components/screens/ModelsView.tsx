@@ -148,13 +148,19 @@ function EmbedderCard({
         )}
       </div>
 
-      {progressPct !== undefined && (
+      {progressPct !== undefined ? (
         <div className="h-1.5 w-full rounded bg-muted">
           <div
             className="h-full min-w-[12px] rounded bg-primary transition-[width]"
             style={{ width: `${progressPct}%` }}
           />
         </div>
+      ) : (
+        downloading && (
+          <div className="h-1.5 w-full rounded bg-muted overflow-hidden">
+            <div className="h-full w-1/4 rounded bg-primary animate-pulse" />
+          </div>
+        )
       )}
 
       <div className="flex items-center gap-2 pt-1">
@@ -281,12 +287,14 @@ function EmbeddingPane() {
           const total = p?.total ?? 0
           const pct = total > 0 ? ((p?.done ?? 0) / total) * 100 : undefined
           const downloading = download.isPending && entries.length > 0
-          
+
           // Debug logging
           if (process.env.NODE_ENV === 'development') {
-            console.log(`[ModelsView] ${e.slug}: entries=${entries.length}, pct=${pct}, downloading=${downloading}, p=${JSON.stringify(p)}`)
+            console.log(
+              `[ModelsView] ${e.slug}: entries=${entries.length}, pct=${pct}, downloading=${downloading}, p=${JSON.stringify(p)}`
+            )
           }
-          
+
           return (
             <EmbedderCard
               key={e.slug}

@@ -9,20 +9,20 @@
 //
 // Run: node --test crates/tauri-plugin-pilot/js/bridge.check.test.mjs
 
-import { test } from "node:test";
-import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
 
-const here = dirname(fileURLToPath(import.meta.url));
-const BRIDGE_SRC = readFileSync(join(here, "bridge.js"), "utf8");
+const here = dirname(fileURLToPath(import.meta.url))
+const BRIDGE_SRC = readFileSync(join(here, 'bridge.js'), 'utf8')
 const REAL_CONSOLE = {
   log: console.log.bind(console),
   warn: console.warn.bind(console),
   error: console.error.bind(console),
   info: console.info.bind(console),
-};
+}
 
 // Models the browser and React's value tracker. React wraps the instance
 // `checked` setter, so a script write updates the tracker as well and React
@@ -30,41 +30,41 @@ const REAL_CONSOLE = {
 // click, input, change; React compares state with the tracker on `click` and
 // runs onChange when they differ. A disabled input ignores the click.
 function makeInput(type, checked = false) {
-  let state = checked;
+  let state = checked
   return {
-    tagName: "INPUT",
+    tagName: 'INPUT',
     type,
     tracker: checked,
     reactChanges: 0,
     disabled: false,
     events: [],
     get checked() {
-      return state;
+      return state
     },
     set checked(value) {
-      state = Boolean(value);
-      this.tracker = state;
+      state = Boolean(value)
+      this.tracker = state
     },
     focus() {},
     click() {
-      if (this.disabled) return;
-      const before = state;
-      if (!(type === "radio" && state)) state = type === "radio" ? true : !state;
-      this.dispatchEvent({ type: "click" });
+      if (this.disabled) return
+      const before = state
+      if (!(type === 'radio' && state)) state = type === 'radio' ? true : !state
+      this.dispatchEvent({ type: 'click' })
       if (state !== before) {
-        this.dispatchEvent({ type: "input" });
-        this.dispatchEvent({ type: "change" });
+        this.dispatchEvent({ type: 'input' })
+        this.dispatchEvent({ type: 'change' })
       }
     },
     dispatchEvent(event) {
-      this.events.push(event.type);
-      if (event.type === "click" && state !== this.tracker) {
-        this.tracker = state;
-        this.reactChanges += 1;
+      this.events.push(event.type)
+      if (event.type === 'click' && state !== this.tracker) {
+        this.tracker = state
+        this.reactChanges += 1
       }
-      return true;
+      return true
     },
-  };
+  }
 }
 
 function loadBridge(queryResult) {
@@ -76,110 +76,122 @@ function loadBridge(queryResult) {
       writable: true,
       configurable: true,
       enumerable: true,
-    });
+    })
   }
-  globalThis.window = { fetch() {} };
+  globalThis.window = { fetch() {} }
   globalThis.document = {
     querySelector(selector) {
       if (queryResult === undefined) {
-        throw new Error("unexpected querySelector(" + selector + ")");
+        throw new Error('unexpected querySelector(' + selector + ')')
       }
-      return queryResult;
+      return queryResult
     },
-  };
+  }
   function XMLHttpRequestStub() {}
-  XMLHttpRequestStub.prototype.open = function () {};
-  XMLHttpRequestStub.prototype.send = function () {};
-  globalThis.XMLHttpRequest = XMLHttpRequestStub;
-  (0, eval)(BRIDGE_SRC);
-  return globalThis.window.__PILOT__;
+  XMLHttpRequestStub.prototype.open = function () {}
+  XMLHttpRequestStub.prototype.send = function () {}
+  globalThis.XMLHttpRequest = XMLHttpRequestStub
+  ;(0, eval)(BRIDGE_SRC)
+  return globalThis.window.__PILOT__
 }
 
-test("check toggles a checkbox with a click React sees", () => {
-  const el = makeInput("checkbox", false);
-  const pilot = loadBridge(el);
-  assert.deepEqual(pilot.check({ selector: "input" }), { ok: true });
-  assert.equal(el.checked, true);
-  assert.equal(el.reactChanges, 1);
-  assert.deepEqual(el.events, ["click", "input", "change"]);
-  assert.deepEqual(pilot.check({ selector: "input" }), { ok: true });
-  assert.equal(el.checked, false);
-  assert.equal(el.reactChanges, 2);
-});
+test('check toggles a checkbox with a click React sees', () => {
+  const el = makeInput('checkbox', false)
+  const pilot = loadBridge(el)
+  assert.deepEqual(pilot.check({ selector: 'input' }), { ok: true })
+  assert.equal(el.checked, true)
+  assert.equal(el.reactChanges, 1)
+  assert.deepEqual(el.events, ['click', 'input', 'change'])
+  assert.deepEqual(pilot.check({ selector: 'input' }), { ok: true })
+  assert.equal(el.checked, false)
+  assert.equal(el.reactChanges, 2)
+})
 
-test("check selects a radio with a click React sees and leaves it selected", () => {
-  const el = makeInput("radio", false);
-  const pilot = loadBridge(el);
-  assert.deepEqual(pilot.check({ selector: "input" }), { ok: true });
-  assert.equal(el.checked, true);
-  assert.equal(el.reactChanges, 1);
-  assert.deepEqual(el.events, ["click", "input", "change"]);
-  assert.deepEqual(pilot.check({ selector: "input" }), { ok: true });
-  assert.equal(el.checked, true);
-  assert.equal(el.reactChanges, 1);
-  assert.deepEqual(el.events, ["click", "input", "change"]);
-});
+test('check selects a radio with a click React sees and leaves it selected', () => {
+  const el = makeInput('radio', false)
+  const pilot = loadBridge(el)
+  assert.deepEqual(pilot.check({ selector: 'input' }), { ok: true })
+  assert.equal(el.checked, true)
+  assert.equal(el.reactChanges, 1)
+  assert.deepEqual(el.events, ['click', 'input', 'change'])
+  assert.deepEqual(pilot.check({ selector: 'input' }), { ok: true })
+  assert.equal(el.checked, true)
+  assert.equal(el.reactChanges, 1)
+  assert.deepEqual(el.events, ['click', 'input', 'change'])
+})
 
-test("check on an already-selected radio fires no event", () => {
-  const el = makeInput("radio", true);
-  const pilot = loadBridge(el);
-  assert.deepEqual(pilot.check({ selector: "input" }), { ok: true });
-  assert.equal(el.checked, true);
-  assert.deepEqual(el.events, []);
-});
+test('check on an already-selected radio fires no event', () => {
+  const el = makeInput('radio', true)
+  const pilot = loadBridge(el)
+  assert.deepEqual(pilot.check({ selector: 'input' }), { ok: true })
+  assert.equal(el.checked, true)
+  assert.deepEqual(el.events, [])
+})
 
-test("check throws when the click leaves the input unchanged", () => {
+test('check throws when the click leaves the input unchanged', () => {
   // The page cancels the click (preventDefault): the state stays, nothing fires.
-  const el = makeInput("checkbox", false);
-  el.click = function () {};
-  const pilot = loadBridge(el);
-  assert.throws(() => pilot.check({ selector: "input" }), /did not change/);
-  assert.equal(el.checked, false);
-  assert.deepEqual(el.events, []);
-});
+  const el = makeInput('checkbox', false)
+  el.click = function () {}
+  const pilot = loadBridge(el)
+  assert.throws(() => pilot.check({ selector: 'input' }), /did not change/)
+  assert.equal(el.checked, false)
+  assert.deepEqual(el.events, [])
+})
 
-test("check throws on a non-input target", () => {
-  const el = { tagName: "DIV", checked: false, dispatchEvent() { return true; } };
-  const pilot = loadBridge(el);
+test('check throws on a non-input target', () => {
+  const el = {
+    tagName: 'DIV',
+    checked: false,
+    dispatchEvent() {
+      return true
+    },
+  }
+  const pilot = loadBridge(el)
   assert.throws(
-    () => pilot.check({ selector: "#qa-div" }),
-    /^Error: check requires an <input type="checkbox"> or <input type="radio">, got: div$/,
-  );
-  assert.equal(el.checked, false);
-});
+    () => pilot.check({ selector: '#qa-div' }),
+    /^Error: check requires an <input type="checkbox"> or <input type="radio">, got: div$/
+  )
+  assert.equal(el.checked, false)
+})
 
-test("check throws on a non-checkable input", () => {
-  const el = makeInput("text", false);
-  const pilot = loadBridge(el);
+test('check throws on a non-checkable input', () => {
+  const el = makeInput('text', false)
+  const pilot = loadBridge(el)
   assert.throws(
-    () => pilot.check({ selector: "input[name=q]" }),
-    /^Error: check requires an <input type="checkbox"> or <input type="radio">, got: input type=text$/,
-  );
-  assert.equal(el.checked, false);
-});
+    () => pilot.check({ selector: 'input[name=q]' }),
+    /^Error: check requires an <input type="checkbox"> or <input type="radio">, got: input type=text$/
+  )
+  assert.equal(el.checked, false)
+})
 
 // `checked` backs `assert checked` and `assert unchecked` (#286). Reading
 // `!!el.checked` on any target reported `false` for a <div> or a text input,
 // so `assert unchecked` passed on a wrong selector. It must reject the target
 // with the same guard as `check`. The error must not name `checked`: both
 // `assert checked` and `assert unchecked` reach it, so it stays neutral (#311).
-test("checked reports the state of a checkbox and a radio", () => {
-  assert.deepEqual(loadBridge(makeInput("checkbox", true)).checked({ selector: "input" }), { checked: true });
-  assert.deepEqual(loadBridge(makeInput("radio", false)).checked({ selector: "input" }), { checked: false });
-});
+test('checked reports the state of a checkbox and a radio', () => {
+  assert.deepEqual(
+    loadBridge(makeInput('checkbox', true)).checked({ selector: 'input' }),
+    { checked: true }
+  )
+  assert.deepEqual(
+    loadBridge(makeInput('radio', false)).checked({ selector: 'input' }),
+    { checked: false }
+  )
+})
 
-test("checked throws on a non-input target", () => {
-  const pilot = loadBridge({ tagName: "DIV" });
+test('checked throws on a non-input target', () => {
+  const pilot = loadBridge({ tagName: 'DIV' })
   assert.throws(
-    () => pilot.checked({ selector: "#remember" }),
-    /^Error: expected an <input type="checkbox"> or <input type="radio">, got: div$/,
-  );
-});
+    () => pilot.checked({ selector: '#remember' }),
+    /^Error: expected an <input type="checkbox"> or <input type="radio">, got: div$/
+  )
+})
 
-test("checked throws on a non-checkable input", () => {
-  const pilot = loadBridge(makeInput("text", false));
+test('checked throws on a non-checkable input', () => {
+  const pilot = loadBridge(makeInput('text', false))
   assert.throws(
-    () => pilot.checked({ selector: "input[name=q]" }),
-    /^Error: expected an <input type="checkbox"> or <input type="radio">, got: input type=text$/,
-  );
-});
+    () => pilot.checked({ selector: 'input[name=q]' }),
+    /^Error: expected an <input type="checkbox"> or <input type="radio">, got: input type=text$/
+  )
+})

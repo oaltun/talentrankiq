@@ -1,9 +1,11 @@
+use libmodelstorage;
 use libtriqui_client::client::TriqiClient;
 use libtriqui_client::protocol::Event;
 use libtriqui_client::types::{
     GuiEmbedder, ModelDownloadComplete, ModelDownloadProgress, TryModelResult,
 };
 use serde_json::Value;
+use std::fs;
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
@@ -282,4 +284,77 @@ fn test_cli_model_workflow() {
 
     client.client.shutdown();
     process.shutdown().expect("process shutdown");
+}
+
+#[test]
+fn test_cli_model_download_interrupted() {
+    let _ = env_logger::try_init();
+
+    let benchmark_src = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../gui/src-tauri/benchmark-cvs");
+
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let app_dir = temp_dir.path().to_path_buf();
+    let benchmark_dst = app_dir.join("benchmark-cvs");
+
+    copy_benchmark_cvs(&benchmark_src, &benchmark_dst).expect("copy benchmark CVs");
+    assert!(benchmark_dst.join("cv-01-geologist.txt").exists(), "CV files copied");
+
+    let mut process = TestProcess::spawn(&app_dir).expect("spawn triq serve");
+    process.wait_for_ready(Duration::from_secs(30)).expect("wait for ready");
+
+    let (read, write) = process.take_stdio();
+    let client = TestClient::new(read, write);
+
+    // Use the smallest model for fast test
+    let slug = "harrier-oss-v1-270m-ONNX-q4f16";
+
+    // Start download
+    let download_result = client
+        .call_raw("download_embedder", &libtriqui_client::params::DownloadEmbedderParams { slug: slug.to_string() });
+    download_result.expect("download_embedder request");
+
+    // Wait for first progress event (confirms download started)
+    let progress_result = client.wait_for_download_progress(slug, Duration::from_secs(30));
+    let progress = progress_result.expect("should receive first progress event");
+    eprintln!("Received first progress: done={}, total={:?}", progress.done, progress.total);
+    
+    // Verify progress is not complete yet (total should be known, done < total or total is None)
+    assert!(progress.total.is_some() || progress.done == 0, "Expected early progress");
+
+    // Kill the serve process (simulates user interrupt/cancel)
+    drop(client); // Drop client first to close its connection
+    process.child.kill().expect("kill serve process");
+    let _ = process.child.wait();
+
+    // Verify final model directory does NOT exist (atomic move prevents partial)
+    let model_dir = libtriqui_core::app_config::model_dir();
+    let final_model_dir = libmodelstorage::slug_dir(&model_dir, slug);
+    assert!(!final_model_dir.exists(), "Final model directory should not exist after interrupt: {:?}", final_model_dir);
+
+    // Verify temp directory contains partial download
+    let temp_base = model_dir.join(".tmp");
+    let temp_dirs: Vec<_> = fs::read_dir(&temp_base)
+        .map(|entries| entries.flatten().filter(|e| e.path().is_dir()).map(|e| e.path()).collect())
+        .unwrap_or_default();
+    
+    // Should have at least one temp dir with the slug prefix
+    let matching_temp_dirs: Vec<_> = temp_dirs.iter()
+        .filter(|p| p.file_name().unwrap().to_string_lossy().starts_with(&format!("{}-", slug)))
+        .collect();
+    
+    assert!(!matching_temp_dirs.is_empty(), "Temp directory should exist with partial download for slug: {}", slug);
+    eprintln!("Found temp dir: {:?}", matching_temp_dirs[0]);
+
+    // Verify temp dir has some content (partial download)
+    let temp_contents: Vec<_> = fs::read_dir(&matching_temp_dirs[0])
+        .map(|entries| entries.flatten().collect())
+        .unwrap_or_default();
+    assert!(!temp_contents.is_empty(), "Temp directory should have partial download content");
+
+    // Cleanup: remove temp dir
+    for temp_dir in temp_dirs {
+        fs::remove_dir_all(&temp_dir).ok();
+    }
+    let _ = fs::remove_dir(&temp_base);
 }

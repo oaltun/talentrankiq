@@ -17,6 +17,7 @@ pub mod judge_license;
 pub mod license;
 pub mod models;
 pub mod notifications;
+pub mod pilot;
 pub mod preferences;
 pub mod quick_pane;
 pub mod rank;

@@ -7,46 +7,46 @@
 //
 // Run: node --test crates/tauri-plugin-pilot/js/bridge.storage.test.mjs
 
-import { test } from "node:test";
-import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
 
-const here = dirname(fileURLToPath(import.meta.url));
-const BRIDGE_SRC = readFileSync(join(here, "bridge.js"), "utf8");
+const here = dirname(fileURLToPath(import.meta.url))
+const BRIDGE_SRC = readFileSync(join(here, 'bridge.js'), 'utf8')
 const REAL_CONSOLE = {
   log: console.log.bind(console),
   warn: console.warn.bind(console),
   error: console.error.bind(console),
   info: console.info.bind(console),
-};
+}
 
 // Web Storage subset the bridge touches: `null` for a missing key, like the
 // real `getItem`.
 function makeStorage(entries) {
-  const map = new Map(Object.entries(entries));
+  const map = new Map(Object.entries(entries))
   return {
     map,
     get length() {
-      return map.size;
+      return map.size
     },
     key(i) {
-      return [...map.keys()][i] ?? null;
+      return [...map.keys()][i] ?? null
     },
     getItem(key) {
-      return map.has(key) ? map.get(key) : null;
+      return map.has(key) ? map.get(key) : null
     },
     setItem(key, value) {
-      map.set(key, String(value));
+      map.set(key, String(value))
     },
     removeItem(key) {
-      map.delete(key);
+      map.delete(key)
     },
     clear() {
-      map.clear();
+      map.clear()
     },
-  };
+  }
 }
 
 function loadBridge({ local = {}, session = {} } = {}) {
@@ -58,69 +58,74 @@ function loadBridge({ local = {}, session = {} } = {}) {
       writable: true,
       configurable: true,
       enumerable: true,
-    });
+    })
   }
-  const localStorage = makeStorage(local);
-  const sessionStorage = makeStorage(session);
-  globalThis.localStorage = localStorage;
-  globalThis.sessionStorage = sessionStorage;
-  globalThis.window = { fetch() {} };
-  globalThis.document = { querySelector() { return null; }, body: {} };
+  const localStorage = makeStorage(local)
+  const sessionStorage = makeStorage(session)
+  globalThis.localStorage = localStorage
+  globalThis.sessionStorage = sessionStorage
+  globalThis.window = { fetch() {} }
+  globalThis.document = {
+    querySelector() {
+      return null
+    },
+    body: {},
+  }
   function XMLHttpRequestStub() {}
-  XMLHttpRequestStub.prototype.open = function () {};
-  XMLHttpRequestStub.prototype.send = function () {};
-  globalThis.XMLHttpRequest = XMLHttpRequestStub;
-  (0, eval)(BRIDGE_SRC);
-  return { pilot: globalThis.window.__PILOT__, localStorage, sessionStorage };
+  XMLHttpRequestStub.prototype.open = function () {}
+  XMLHttpRequestStub.prototype.send = function () {}
+  globalThis.XMLHttpRequest = XMLHttpRequestStub
+  ;(0, eval)(BRIDGE_SRC)
+  return { pilot: globalThis.window.__PILOT__, localStorage, sessionStorage }
 }
 
-test("storageDelete removes an existing localStorage key (#284)", () => {
+test('storageDelete removes an existing localStorage key (#284)', () => {
   const { pilot, localStorage } = loadBridge({
-    local: { auth_token: "abc", theme: "dark" },
-  });
-  assert.deepEqual(pilot.storageDelete({ key: "auth_token", session: false }), {
+    local: { auth_token: 'abc', theme: 'dark' },
+  })
+  assert.deepEqual(pilot.storageDelete({ key: 'auth_token', session: false }), {
     deleted: true,
-  });
-  assert.equal(localStorage.getItem("auth_token"), null);
-  assert.equal(localStorage.getItem("theme"), "dark", "other keys stay");
-});
+  })
+  assert.equal(localStorage.getItem('auth_token'), null)
+  assert.equal(localStorage.getItem('theme'), 'dark', 'other keys stay')
+})
 
-test("storageDelete on a missing key succeeds with deleted: false (#284)", () => {
-  const { pilot, localStorage } = loadBridge({ local: { theme: "dark" } });
-  assert.deepEqual(pilot.storageDelete({ key: "missing", session: false }), {
+test('storageDelete on a missing key succeeds with deleted: false (#284)', () => {
+  const { pilot, localStorage } = loadBridge({ local: { theme: 'dark' } })
+  assert.deepEqual(pilot.storageDelete({ key: 'missing', session: false }), {
     deleted: false,
-  });
-  assert.equal(localStorage.length, 1);
-});
+  })
+  assert.equal(localStorage.length, 1)
+})
 
-test("storageDelete counts a key holding an empty string as existing (#284)", () => {
-  const { pilot, localStorage } = loadBridge({ local: { empty: "" } });
-  assert.deepEqual(pilot.storageDelete({ key: "empty", session: false }), {
+test('storageDelete counts a key holding an empty string as existing (#284)', () => {
+  const { pilot, localStorage } = loadBridge({ local: { empty: '' } })
+  assert.deepEqual(pilot.storageDelete({ key: 'empty', session: false }), {
     deleted: true,
-  });
-  assert.equal(localStorage.length, 0);
-});
+  })
+  assert.equal(localStorage.length, 0)
+})
 
-test("storageDelete with session targets sessionStorage only (#284)", () => {
+test('storageDelete with session targets sessionStorage only (#284)', () => {
   const { pilot, localStorage, sessionStorage } = loadBridge({
-    local: { tab_id: "local" },
-    session: { tab_id: "session" },
-  });
-  assert.deepEqual(pilot.storageDelete({ key: "tab_id", session: true }), {
+    local: { tab_id: 'local' },
+    session: { tab_id: 'session' },
+  })
+  assert.deepEqual(pilot.storageDelete({ key: 'tab_id', session: true }), {
     deleted: true,
-  });
-  assert.equal(sessionStorage.getItem("tab_id"), null);
-  assert.equal(localStorage.getItem("tab_id"), "local");
-});
+  })
+  assert.equal(sessionStorage.getItem('tab_id'), null)
+  assert.equal(localStorage.getItem('tab_id'), 'local')
+})
 
-test("storageDelete rejects a non-string key like storageGet (#284)", () => {
-  const { pilot } = loadBridge();
+test('storageDelete rejects a non-string key like storageGet (#284)', () => {
+  const { pilot } = loadBridge()
   assert.throws(
     () => pilot.storageDelete({ session: false }),
-    /storageDelete requires a string key/,
-  );
+    /storageDelete requires a string key/
+  )
   assert.throws(
     () => pilot.storageDelete({ key: 42, session: false }),
-    /storageDelete requires a string key/,
-  );
-});
+    /storageDelete requires a string key/
+  )
+})

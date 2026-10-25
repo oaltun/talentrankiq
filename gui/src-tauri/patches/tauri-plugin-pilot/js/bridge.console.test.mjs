@@ -12,22 +12,22 @@
 //
 // Run: node --test crates/tauri-plugin-pilot/js/bridge.console.test.mjs
 
-import { test, after } from "node:test";
-import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
-import { runInNewContext } from "node:vm";
+import { test, after } from 'node:test'
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
+import { runInNewContext } from 'node:vm'
 
-const here = dirname(fileURLToPath(import.meta.url));
-const BRIDGE_SRC = readFileSync(join(here, "bridge.js"), "utf8");
+const here = dirname(fileURLToPath(import.meta.url))
+const BRIDGE_SRC = readFileSync(join(here, 'bridge.js'), 'utf8')
 
 const REAL_CONSOLE = {
   log: console.log.bind(console),
   warn: console.warn.bind(console),
   error: console.error.bind(console),
   info: console.info.bind(console),
-};
+}
 
 // The bridge wraps fetch/XHR on load, so the mock has to carry both even
 // though these tests only care about console.
@@ -44,7 +44,7 @@ function resetConsole(native = {}) {
       writable: true,
       configurable: true,
       enumerable: true,
-    });
+    })
   }
 }
 
@@ -53,647 +53,781 @@ const SAVED_GLOBALS = {
   location: globalThis.location,
   document: globalThis.document,
   XMLHttpRequest: globalThis.XMLHttpRequest,
-};
+}
 
 // These tests mutate shared process globals. Node's per-file isolation hides
 // that today, but an in-process runner would leak a stale window and a console
 // still wearing a bridge view.
 after(() => {
-  resetConsole();
+  resetConsole()
   for (const [key, value] of Object.entries(SAVED_GLOBALS)) {
-    if (value === undefined) delete globalThis[key];
-    else globalThis[key] = value;
+    if (value === undefined) delete globalThis[key]
+    else globalThis[key] = value
   }
-});
+})
 
 function installGlobals(native) {
-  resetConsole(native);
+  resetConsole(native)
   // A DOM test installs a Node stand-in; a plain test must not inherit it.
-  delete globalThis.Node;
-  globalThis.location = { href: "https://app.example/" };
-  globalThis.XMLHttpRequest = function () {};
-  globalThis.XMLHttpRequest.prototype.open = function () {};
-  globalThis.XMLHttpRequest.prototype.send = function () {};
-  globalThis.XMLHttpRequest.prototype.addEventListener = function () {};
-  globalThis.XMLHttpRequest.prototype.removeEventListener = function () {};
-  globalThis.document = { querySelector() { return null; } };
+  delete globalThis.Node
+  globalThis.location = { href: 'https://app.example/' }
+  globalThis.XMLHttpRequest = function () {}
+  globalThis.XMLHttpRequest.prototype.open = function () {}
+  globalThis.XMLHttpRequest.prototype.send = function () {}
+  globalThis.XMLHttpRequest.prototype.addEventListener = function () {}
+  globalThis.XMLHttpRequest.prototype.removeEventListener = function () {}
+  globalThis.document = {
+    querySelector() {
+      return null
+    },
+  }
   globalThis.window = {
-    fetch() { return Promise.resolve({ status: 200, headers: { get() { return "0"; } } }); },
+    fetch() {
+      return Promise.resolve({
+        status: 200,
+        headers: {
+          get() {
+            return '0'
+          },
+        },
+      })
+    },
     location: globalThis.location,
     addEventListener() {},
-  };
+  }
 }
 
 function loadBridge(native) {
-  installGlobals(native);
-  (0, eval)(BRIDGE_SRC);
-  return globalThis.window.__PILOT__;
+  installGlobals(native)
+  ;(0, eval)(BRIDGE_SRC)
+  return globalThis.window.__PILOT__
 }
 
 function messages(pilot) {
-  return pilot.consoleLogs({ level: "log" }).map((e) => e.args[0]);
+  return pilot.consoleLogs({ level: 'log' }).map(e => e.args[0])
 }
 
-test("capture survives a wrapper that does not chain", () => {
-  const pilot = loadBridge();
-  const seen = [];
+test('capture survives a wrapper that does not chain', () => {
+  const pilot = loadBridge()
+  const seen = []
   // The shape that breaks it today: no reference to the previous console.log.
-  console.log = (...args) => { seen.push(args[0]); };
+  console.log = (...args) => {
+    seen.push(args[0])
+  }
 
-  console.log("after");
+  console.log('after')
 
-  assert.deepEqual(messages(pilot), ["after"]);
-  assert.deepEqual(seen, ["after"], "the replacement must still receive the call");
-});
+  assert.deepEqual(messages(pilot), ['after'])
+  assert.deepEqual(
+    seen,
+    ['after'],
+    'the replacement must still receive the call'
+  )
+})
 
-test("capture survives a wrapper that does chain", () => {
-  const pilot = loadBridge();
-  const seen = [];
-  const previous = console.log;
-  console.log = (...args) => { seen.push(args[0]); previous.apply(console, args); };
+test('capture survives a wrapper that does chain', () => {
+  const pilot = loadBridge()
+  const seen = []
+  const previous = console.log
+  console.log = (...args) => {
+    seen.push(args[0])
+    previous.apply(console, args)
+  }
 
-  console.log("chained");
+  console.log('chained')
 
-  assert.deepEqual(messages(pilot), ["chained"], "must be recorded exactly once");
-  assert.deepEqual(seen, ["chained"]);
-});
+  assert.deepEqual(
+    messages(pilot),
+    ['chained'],
+    'must be recorded exactly once'
+  )
+  assert.deepEqual(seen, ['chained'])
+})
 
-test("a wrapper that calls back through console does not recurse forever", () => {
-  const pilot = loadBridge();
-  let calls = 0;
+test('a wrapper that calls back through console does not recurse forever', () => {
+  const pilot = loadBridge()
+  let calls = 0
   // `previous` is pilot's wrapper, so a naive re-entry would loop.
-  const previous = console.log;
+  const previous = console.log
   console.log = function (...args) {
-    calls += 1;
-    previous.apply(console, args);
-  };
+    calls += 1
+    previous.apply(console, args)
+  }
 
-  console.log("reentrant");
+  console.log('reentrant')
 
-  assert.equal(calls, 1);
-  assert.deepEqual(messages(pilot), ["reentrant"], "must not be recorded twice");
-});
+  assert.equal(calls, 1)
+  assert.deepEqual(messages(pilot), ['reentrant'], 'must not be recorded twice')
+})
 
-test("two stacked wrappers both run and capture still works", () => {
-  const pilot = loadBridge();
-  const order = [];
-  const first = console.log;
-  console.log = (...args) => { order.push("first"); first.apply(console, args); };
-  const second = console.log;
-  console.log = (...args) => { order.push("second"); second.apply(console, args); };
+test('two stacked wrappers both run and capture still works', () => {
+  const pilot = loadBridge()
+  const order = []
+  const first = console.log
+  console.log = (...args) => {
+    order.push('first')
+    first.apply(console, args)
+  }
+  const second = console.log
+  console.log = (...args) => {
+    order.push('second')
+    second.apply(console, args)
+  }
 
-  console.log("stacked");
+  console.log('stacked')
 
-  assert.deepEqual(order, ["second", "first"]);
-  assert.deepEqual(messages(pilot), ["stacked"]);
-});
+  assert.deepEqual(order, ['second', 'first'])
+  assert.deepEqual(messages(pilot), ['stacked'])
+})
 
-test("restoring a saved console.log puts the real console back", () => {
-  const printed = [];
-  const pilot = loadBridge({ log: (...args) => { printed.push(args[0]); } });
-  const saved = console.log;
-  console.log = () => {};
-  console.log = saved;
+test('restoring a saved console.log puts the real console back', () => {
+  const printed = []
+  const pilot = loadBridge({
+    log: (...args) => {
+      printed.push(args[0])
+    },
+  })
+  const saved = console.log
+  console.log = () => {}
+  console.log = saved
 
-  console.log("restored");
+  console.log('restored')
 
-  assert.deepEqual(messages(pilot), ["restored"]);
-  assert.deepEqual(printed, ["restored"], "the muting replacement must be gone");
-  assert.equal(console.log, saved, "the restored reference reads back");
-});
+  assert.deepEqual(messages(pilot), ['restored'])
+  assert.deepEqual(printed, ['restored'], 'the muting replacement must be gone')
+  assert.equal(console.log, saved, 'the restored reference reads back')
+})
 
-test("a wrapper installed and removed repeatedly leaves nothing running", () => {
-  const printed = [];
-  const pilot = loadBridge({ log: (...args) => { printed.push(args[0]); } });
-  let runs = 0;
+test('a wrapper installed and removed repeatedly leaves nothing running', () => {
+  const printed = []
+  const pilot = loadBridge({
+    log: (...args) => {
+      printed.push(args[0])
+    },
+  })
+  let runs = 0
   // An HMR dispose hook or Sentry's consoleSandbox: wrap, then put the saved
   // reference back. Ignoring the restore left every removed wrapper in the
   // path of every later call.
   for (let i = 0; i < 3; i++) {
-    const original = console.log;
-    console.log = (...args) => { runs += 1; original.apply(console, args); };
-    console.log = original;
+    const original = console.log
+    console.log = (...args) => {
+      runs += 1
+      original.apply(console, args)
+    }
+    console.log = original
   }
 
-  console.log("unwrapped");
+  console.log('unwrapped')
 
-  assert.equal(runs, 0);
-  assert.deepEqual(printed, ["unwrapped"]);
-  assert.deepEqual(messages(pilot), ["unwrapped"]);
-});
+  assert.equal(runs, 0)
+  assert.deepEqual(printed, ['unwrapped'])
+  assert.deepEqual(messages(pilot), ['unwrapped'])
+})
 
-test("re-assigning the installed function does not stack it again", () => {
-  loadBridge();
-  const mine = () => {};
+test('re-assigning the installed function does not stack it again', () => {
+  loadBridge()
+  const mine = () => {}
   // An idempotency guard never matches: the getter hands back Pilot's entry
   // point, not `mine`, so the page assigns again on every check.
-  console.log = mine;
-  const installed = console.log;
-  if (console.log !== mine) console.log = mine;
+  console.log = mine
+  const installed = console.log
+  if (console.log !== mine) console.log = mine
 
-  assert.equal(console.log, installed);
-});
+  assert.equal(console.log, installed)
+})
 
-test("a reference saved before a later replacement is still captured", () => {
-  const pilot = loadBridge();
+test('a reference saved before a later replacement is still captured', () => {
+  const pilot = loadBridge()
   // loglevel, debug and pino's browser build keep `const log = console.log`
   // from init, so that reference ends up below whatever the page installs
   // later.
-  const early = console.log;
-  console.log = () => {};
+  const early = console.log
+  console.log = () => {}
 
-  early("from a logger");
+  early('from a logger')
 
-  assert.deepEqual(messages(pilot), ["from a logger"]);
-});
+  assert.deepEqual(messages(pilot), ['from a logger'])
+})
 
-test("assigning a non-function falls back to the original console", () => {
-  const pilot = loadBridge();
-  console.log = "not a function";
+test('assigning a non-function falls back to the original console', () => {
+  const pilot = loadBridge()
+  console.log = 'not a function'
 
-  assert.doesNotThrow(() => console.log("still fine"));
-  assert.deepEqual(messages(pilot), ["still fine"]);
-});
+  assert.doesNotThrow(() => console.log('still fine'))
+  assert.deepEqual(messages(pilot), ['still fine'])
+})
 
-test("each level keeps its own downstream", () => {
-  const pilot = loadBridge();
-  const warns = [];
-  console.warn = (...args) => { warns.push(args[0]); };
+test('each level keeps its own downstream', () => {
+  const pilot = loadBridge()
+  const warns = []
+  console.warn = (...args) => {
+    warns.push(args[0])
+  }
 
-  console.log("to log");
-  console.warn("to warn");
+  console.log('to log')
+  console.warn('to warn')
 
-  assert.deepEqual(warns, ["to warn"], "replacing warn must not divert log");
-  assert.deepEqual(messages(pilot), ["to log"]);
-  assert.deepEqual(pilot.consoleLogs({ level: "warn" }).map((e) => e.args[0]), ["to warn"]);
-});
+  assert.deepEqual(warns, ['to warn'], 'replacing warn must not divert log')
+  assert.deepEqual(messages(pilot), ['to log'])
+  assert.deepEqual(
+    pilot.consoleLogs({ level: 'warn' }).map(e => e.args[0]),
+    ['to warn']
+  )
+})
 
-test("a replacement that defers to its saved console.log terminates", async () => {
-  const pilot = loadBridge();
+test('a replacement that defers to its saved console.log terminates', async () => {
+  const pilot = loadBridge()
   // The saved reference is called from a timer, long after the original call
   // returned. If it re-entered at the top of the chain, it would go around
   // again -- recording the same line over and over until something stops it.
-  const saved = console.log;
-  let invocations = 0;
+  const saved = console.log
+  let invocations = 0
   console.log = (...args) => {
-    invocations += 1;
-    if (invocations < 50) setTimeout(() => saved(...args), 0);
-  };
+    invocations += 1
+    if (invocations < 50) setTimeout(() => saved(...args), 0)
+  }
 
-  console.log("deferred");
-  await new Promise((resolve) => setTimeout(resolve, 50));
+  console.log('deferred')
+  await new Promise(resolve => setTimeout(resolve, 50))
 
-  assert.equal(invocations, 1, "the replacement must not be re-entered");
+  assert.equal(invocations, 1, 'the replacement must not be re-entered')
   // Recorded twice, on purpose. Called from a timer, the saved reference looks
   // exactly like a logger's early-bound one, and those must record: dropping
   // them would lose every line such a logger writes.
-  assert.deepEqual(messages(pilot), ["deferred", "deferred"]);
-});
+  assert.deepEqual(messages(pilot), ['deferred', 'deferred'])
+})
 
 test("assigning another level's console does not record the call twice", () => {
-  const pilot = loadBridge();
-  const warned = [];
-  console.warn = (...args) => { warned.push(args[0]); };
+  const pilot = loadBridge()
+  const warned = []
+  console.warn = (...args) => {
+    warned.push(args[0])
+  }
   // Page code redirecting one level at another. console.warn reads back as
   // Pilot's own view, so stacking it would file one call under both levels.
-  console.log = console.warn;
+  console.log = console.warn
 
-  console.log("redirected");
+  console.log('redirected')
 
-  assert.deepEqual(messages(pilot), ["redirected"], "recorded once, as log");
+  assert.deepEqual(messages(pilot), ['redirected'], 'recorded once, as log')
   assert.deepEqual(
-    pilot.consoleLogs({ level: "warn" }),
+    pilot.consoleLogs({ level: 'warn' }),
     [],
-    "and not a second time as warn"
-  );
+    'and not a second time as warn'
+  )
   assert.deepEqual(
     warned,
-    ["redirected"],
-    "the redirect still runs whatever the page installed on warn"
-  );
-});
+    ['redirected'],
+    'the redirect still runs whatever the page installed on warn'
+  )
+})
 
-test("a level that forwards to another is recorded once, under its own level", () => {
-  const pilot = loadBridge();
+test('a level that forwards to another is recorded once, under its own level', () => {
+  const pilot = loadBridge()
   // A page function, not Pilot's view, so the setter cannot resolve it. The
   // warn call happens inside the error call that was already recorded.
-  console.error = (...args) => console.warn(...args);
+  console.error = (...args) => console.warn(...args)
 
-  console.error("forwarded");
+  console.error('forwarded')
 
   assert.deepEqual(
-    pilot.consoleLogs().map((e) => [e.level, e.args[0]]),
-    [["error", "forwarded"]]
-  );
-});
+    pilot.consoleLogs().map(e => [e.level, e.args[0]]),
+    [['error', 'forwarded']]
+  )
+})
 
-test("assigning an older saved view of another level calls what that view called", () => {
-  const pilot = loadBridge();
-  const order = [];
-  const firstWarn = console.warn;
-  console.warn = (...args) => { order.push("wrapWarn"); firstWarn.apply(console, args); };
-  const staleWarn = console.warn;
-  console.warn = () => { order.push("laterWarn"); };
+test('assigning an older saved view of another level calls what that view called', () => {
+  const pilot = loadBridge()
+  const order = []
+  const firstWarn = console.warn
+  console.warn = (...args) => {
+    order.push('wrapWarn')
+    firstWarn.apply(console, args)
+  }
+  const staleWarn = console.warn
+  console.warn = () => {
+    order.push('laterWarn')
+  }
   // staleWarn was saved while wrapWarn was installed, and calling it directly
   // reaches wrapWarn. Taking warn's current function instead would swap in
   // one the page never pointed log at.
-  console.log = staleWarn;
+  console.log = staleWarn
 
-  console.log("stale");
+  console.log('stale')
 
-  assert.deepEqual(order, ["wrapWarn"]);
-  assert.deepEqual(messages(pilot), ["stale"]);
-});
+  assert.deepEqual(order, ['wrapWarn'])
+  assert.deepEqual(messages(pilot), ['stale'])
+})
 
-test("console.log keeps a stable identity", () => {
-  loadBridge();
-  assert.equal(console.log, console.log, "page code may compare the reference");
+test('console.log keeps a stable identity', () => {
+  loadBridge()
+  assert.equal(console.log, console.log, 'page code may compare the reference')
 
-  const before = console.log;
-  console.log = (...args) => before(...args);
-  assert.notEqual(console.log, before, "a new replacement is a new entry point");
-  assert.equal(console.log, console.log);
-});
+  const before = console.log
+  console.log = (...args) => before(...args)
+  assert.notEqual(console.log, before, 'a new replacement is a new entry point')
+  assert.equal(console.log, console.log)
+})
 
-test("two levels aliased to each other do not recurse", () => {
-  const pilot = loadBridge();
+test('two levels aliased to each other do not recurse', () => {
+  const pilot = loadBridge()
   // Each alias used to push a thunk that read the other chain's tail when it
   // ran, so once both pointed at each other a single call bounced between
   // them until the stack gave out -- taking down the page, not just the log.
-  console.log = console.warn;
-  console.warn = console.log;
+  console.log = console.warn
+  console.warn = console.log
 
-  assert.doesNotThrow(() => console.log("boom"));
-  assert.deepEqual(messages(pilot), ["boom"], "still recorded exactly once");
+  assert.doesNotThrow(() => console.log('boom'))
+  assert.deepEqual(messages(pilot), ['boom'], 'still recorded exactly once')
 
   // And the same the other way round.
-  const pilot2 = loadBridge();
-  console.warn = console.log;
-  console.log = console.warn;
-  assert.doesNotThrow(() => console.warn("other way"));
-  assert.equal(pilot2.consoleLogs({ level: "warn" }).length, 1);
-});
+  const pilot2 = loadBridge()
+  console.warn = console.log
+  console.log = console.warn
+  assert.doesNotThrow(() => console.warn('other way'))
+  assert.equal(pilot2.consoleLogs({ level: 'warn' }).length, 1)
+})
 
-test("a frozen console does not stop the bridge from loading", () => {
-  installGlobals();
+test('a frozen console does not stop the bridge from loading', () => {
+  installGlobals()
   // Freezing the real console cannot be undone, so stand a frozen one in its
   // place for the load. defineProperty throws on it, and so does the plain
   // assignment behind it, because bridge.js is strict. That aborted the IIFE
   // before window.__PILOT__ was installed: losing console capture is bad,
   // losing the bridge takes every other pilot command with it.
-  const realConsole = globalThis.console;
-  globalThis.console = Object.freeze({ ...REAL_CONSOLE });
-  let errors;
+  const realConsole = globalThis.console
+  globalThis.console = Object.freeze({ ...REAL_CONSOLE })
+  let errors
   try {
-    assert.doesNotThrow(() => (0, eval)(BRIDGE_SRC));
-    errors = globalThis.window.__PILOT__.consoleLogs({ level: "error" });
+    assert.doesNotThrow(() => (0, eval)(BRIDGE_SRC))
+    errors = globalThis.window.__PILOT__.consoleLogs({ level: 'error' })
   } finally {
-    globalThis.console = realConsole;
+    globalThis.console = realConsole
   }
 
   // An empty buffer would read as a quiet page, the very silence #190 is
   // about, so the loss has to show up under `logs --level error`.
   assert.deepEqual(
-    errors.map((e) => e.args[0]),
-    ["log", "warn", "error", "info"].map(
-      (level) => `tauri-pilot: console.${level} capture unavailable (console is frozen)`
+    errors.map(e => e.args[0]),
+    ['log', 'warn', 'error', 'info'].map(
+      level =>
+        `tauri-pilot: console.${level} capture unavailable (console is frozen)`
     )
-  );
-});
+  )
+})
 
-test("an unconfigurable but writable console is still captured, even after a page assignment", () => {
-  installGlobals();
+test('an unconfigurable but writable console is still captured, even after a page assignment', () => {
+  installGlobals()
   // defineProperty throws on these, so the bridge falls back to a plain
   // assignment: the only capture left on such a console. A page assignment
   // replaces that outright, so capture has to come back when the buffer is
   // read, as it does after a redefine.
-  const stub = {};
+  const stub = {}
   for (const level of Object.keys(REAL_CONSOLE)) {
     Object.defineProperty(stub, level, {
       value: REAL_CONSOLE[level],
       writable: true,
       configurable: false,
       enumerable: true,
-    });
+    })
   }
-  const realConsole = globalThis.console;
-  globalThis.console = stub;
-  const seen = [];
-  let logged;
+  const realConsole = globalThis.console
+  globalThis.console = stub
+  const seen = []
+  let logged
   try {
-    (0, eval)(BRIDGE_SRC);
-    const pilot = globalThis.window.__PILOT__;
-    console.log("plain fallback");
-    console.log = (...args) => { seen.push(args[0]); };
-    pilot.consoleLogs();
-    console.log("recovered");
-    logged = messages(pilot);
+    ;(0, eval)(BRIDGE_SRC)
+    const pilot = globalThis.window.__PILOT__
+    console.log('plain fallback')
+    console.log = (...args) => {
+      seen.push(args[0])
+    }
+    pilot.consoleLogs()
+    console.log('recovered')
+    logged = messages(pilot)
   } finally {
-    globalThis.console = realConsole;
+    globalThis.console = realConsole
   }
 
-  assert.deepEqual(logged, ["plain fallback", "recovered"]);
-  assert.deepEqual(seen, ["recovered"], "the page's replacement still runs");
-});
+  assert.deepEqual(logged, ['plain fallback', 'recovered'])
+  assert.deepEqual(seen, ['recovered'], "the page's replacement still runs")
+})
 
-test("capture recovers once the accessor has been redefined away", () => {
-  const pilot = loadBridge();
-  const seen = [];
+test('capture recovers once the accessor has been redefined away', () => {
+  const pilot = loadBridge()
+  const seen = []
   // React's dev build swaps console.* for plain data properties while it
   // builds a component stack, then puts back what it read. The accessor is
   // gone afterwards, so the next plain assignment displaces capture as in #190.
-  const saved = console.log;
-  const plain = (value) => ({ value, writable: true, configurable: true, enumerable: true });
-  Object.defineProperty(console, "log", plain(() => {}));
-  Object.defineProperty(console, "log", plain(saved));
-  console.log = (...args) => { seen.push(args[0]); };
+  const saved = console.log
+  const plain = value => ({
+    value,
+    writable: true,
+    configurable: true,
+    enumerable: true,
+  })
+  Object.defineProperty(
+    console,
+    'log',
+    plain(() => {})
+  )
+  Object.defineProperty(console, 'log', plain(saved))
+  console.log = (...args) => {
+    seen.push(args[0])
+  }
 
   // Nothing fires on a redefine, so reading the buffer is where it heals.
-  pilot.consoleLogs();
-  console.log("recovered");
+  pilot.consoleLogs()
+  console.log('recovered')
 
-  assert.deepEqual(messages(pilot), ["recovered"]);
-  assert.deepEqual(seen, ["recovered"], "the page's replacement still runs");
-});
+  assert.deepEqual(messages(pilot), ['recovered'])
+  assert.deepEqual(seen, ['recovered'], "the page's replacement still runs")
+})
 
-test("an entry names the page function that logged it, not a wrapper", () => {
-  const pilot = loadBridge();
-  function pageCallerPlain() { console.log("plain"); }
-  pageCallerPlain();
-  const previous = console.log;
-  console.log = (...args) => previous.apply(console, args);
-  function pageCallerChained() { console.log("chained"); }
-  pageCallerChained();
+test('an entry names the page function that logged it, not a wrapper', () => {
+  const pilot = loadBridge()
+  function pageCallerPlain() {
+    console.log('plain')
+  }
+  pageCallerPlain()
+  const previous = console.log
+  console.log = (...args) => previous.apply(console, args)
+  function pageCallerChained() {
+    console.log('chained')
+  }
+  pageCallerChained()
 
-  const [plain, chained] = pilot.consoleLogs({ level: "log" });
-  assert.match(plain.source, /pageCallerPlain/);
-  assert.match(chained.source, /pageCallerChained/);
-});
+  const [plain, chained] = pilot.consoleLogs({ level: 'log' })
+  assert.match(plain.source, /pageCallerPlain/)
+  assert.match(chained.source, /pageCallerChained/)
+})
 
-test("a replacement that fakes the Pilot marker is still chained", () => {
-  const pilot = loadBridge();
-  const seen = [];
+test('a replacement that fakes the Pilot marker is still chained', () => {
+  const pilot = loadBridge()
+  const seen = []
   // The marker used to be a writable property on the view, so page code could
   // wear it: claiming this level got the assignment ignored, and claiming
   // another routed the call into that level's chain.
-  const impostor = (...args) => { seen.push(args[0]); };
-  impostor.__PILOT_CONSOLE__ = "log";
-  console.log = impostor;
+  const impostor = (...args) => {
+    seen.push(args[0])
+  }
+  impostor.__PILOT_CONSOLE__ = 'log'
+  console.log = impostor
 
-  console.log("mine");
+  console.log('mine')
 
-  assert.deepEqual(seen, ["mine"], "the page's function must not be dropped");
-  assert.deepEqual(messages(pilot), ["mine"]);
-});
+  assert.deepEqual(seen, ['mine'], "the page's function must not be dropped")
+  assert.deepEqual(messages(pilot), ['mine'])
+})
 
-test("a log from a pilot eval names the eval, not the wrapper position", () => {
+test('a log from a pilot eval names the eval, not the wrapper position', () => {
   // JavaScriptCore writes eval and `new Function` frames with no location and
   // ignores `//# sourceURL`, so the first frame with one was the eval wrapper
   // and `logs` showed `tauri://localhost:1:143` (#245). Stacks captured on
   // pilot-test-app under WebKitGTK 2.52: a stage that calls the script in
   // tail position loses the `__PILOT__evalScript` frame, one that calls it
   // inside `try` keeps it.
-  const head = ["extractSource@user-script:6:74:30", "view@user-script:6:162:60"];
+  const head = [
+    'extractSource@user-script:6:74:30',
+    'view@user-script:6:162:60',
+  ]
   for (const frames of [
-    ["eval code@", "eval@[native code]", "__PILOT_EVAL__@tauri://localhost:1:143"],
-    ["@", "anonymous@", "__PILOT__evalScript@user-script:6:1491:27", "__PILOT_EVAL__@tauri://localhost:1:165"],
+    [
+      'eval code@',
+      'eval@[native code]',
+      '__PILOT_EVAL__@tauri://localhost:1:143',
+    ],
+    [
+      '@',
+      'anonymous@',
+      '__PILOT__evalScript@user-script:6:1491:27',
+      '__PILOT_EVAL__@tauri://localhost:1:165',
+    ],
   ]) {
-    const pilot = loadBridge();
-    const saved = Error.prepareStackTrace;
-    Error.prepareStackTrace = () => [...head, ...frames, "global code@tauri://localhost:1:435"].join("\n");
+    const pilot = loadBridge()
+    const saved = Error.prepareStackTrace
+    Error.prepareStackTrace = () =>
+      [...head, ...frames, 'global code@tauri://localhost:1:435'].join('\n')
     try {
-      console.log("from eval");
+      console.log('from eval')
     } finally {
-      Error.prepareStackTrace = saved;
+      Error.prepareStackTrace = saved
     }
 
-    const [entry] = pilot.consoleLogs({ level: "log" });
-    assert.equal(entry.source, "tauri-pilot-eval", frames.join(" | "));
+    const [entry] = pilot.consoleLogs({ level: 'log' })
+    assert.equal(entry.source, 'tauri-pilot-eval', frames.join(' | '))
   }
-});
+})
 
-test("a log from a pilot eval under V8 names the eval too", () => {
+test('a log from a pilot eval under V8 names the eval too', () => {
   // V8 gives eval'd code a location (`eval at __PILOT__evalScript ...`), so without a
   // check the entry pointed into the bridge instead of naming the eval.
-  const pilot = loadBridge();
+  const pilot = loadBridge()
   function __PILOT_EVAL__() {
-    return pilot.eval({ script: 'console.log("from eval"); 1' });
+    return pilot.eval({ script: 'console.log("from eval"); 1' })
   }
-  __PILOT_EVAL__();
+  __PILOT_EVAL__()
 
-  const [entry] = pilot.consoleLogs({ level: "log" });
-  assert.equal(entry.source, "tauri-pilot-eval");
-});
+  const [entry] = pilot.consoleLogs({ level: 'log' })
+  assert.equal(entry.source, 'tauri-pilot-eval')
+})
 
 // Replays `frames` below the bridge's own two frames, the way
 // `extractSource` sees a console call, and returns the entry's source.
 function sourceOfReplayedLog(frames) {
-  const pilot = loadBridge();
-  const head = ["extractSource@user-script:6:74:30", "view@user-script:6:162:60"];
-  const saved = Error.prepareStackTrace;
-  Error.prepareStackTrace = () => [...head, ...frames].join("\n");
+  const pilot = loadBridge()
+  const head = [
+    'extractSource@user-script:6:74:30',
+    'view@user-script:6:162:60',
+  ]
+  const saved = Error.prepareStackTrace
+  Error.prepareStackTrace = () => [...head, ...frames].join('\n')
   try {
-    console.log("replayed");
+    console.log('replayed')
   } finally {
-    Error.prepareStackTrace = saved;
+    Error.prepareStackTrace = saved
   }
-  const [entry] = pilot.consoleLogs({ level: "log" });
-  return entry.source;
+  const [entry] = pilot.consoleLogs({ level: 'log' })
+  return entry.source
 }
 
-test("an app frame called from a pilot eval keeps the log", () => {
+test('an app frame called from a pilot eval keeps the log', () => {
   // Every bridge command (`click`, `fill`, ...) runs inside the eval wrapper,
   // so an app handler it triggers must not be filed as eval output.
   assert.equal(
     sourceOfReplayedLog([
-      "onSave@tauri://localhost/assets/index.js:12:5",
-      "eval code@",
-      "__PILOT_EVAL__@tauri://localhost:1:143",
+      'onSave@tauri://localhost/assets/index.js:12:5',
+      'eval code@',
+      '__PILOT_EVAL__@tauri://localhost:1:143',
     ]),
-    "onSave@tauri://localhost/assets/index.js:12:5",
-  );
+    'onSave@tauri://localhost/assets/index.js:12:5'
+  )
 
-  const pilot = loadBridge();
+  const pilot = loadBridge()
   globalThis.appHandler = function appHandler() {
-    console.log("from app");
-  };
-  try {
-    (function __PILOT_EVAL__() {
-      return pilot.eval({ script: "appHandler(); 1" });
-    })();
-  } finally {
-    delete globalThis.appHandler;
+    console.log('from app')
   }
-  const [entry] = pilot.consoleLogs({ level: "log" });
-  assert.match(entry.source, /appHandler/);
-});
+  try {
+    ;(function __PILOT_EVAL__() {
+      return pilot.eval({ script: 'appHandler(); 1' })
+    })()
+  } finally {
+    delete globalThis.appHandler
+  }
+  const [entry] = pilot.consoleLogs({ level: 'log' })
+  assert.match(entry.source, /appHandler/)
+})
 
-test("an app function or file named evalScript keeps the log", () => {
+test('an app function or file named evalScript keeps the log', () => {
   // The bridge used to skip any frame matching `evalScript`, so the log
   // reported the caller instead of the line that called console.log.
-  const frame = "evalScript@tauri://localhost/assets/evalScript.js:3:9";
-  assert.equal(sourceOfReplayedLog([frame, "global code@tauri://localhost/assets/main.js:1:1"]), frame);
+  const frame = 'evalScript@tauri://localhost/assets/evalScript.js:3:9'
+  assert.equal(
+    sourceOfReplayedLog([
+      frame,
+      'global code@tauri://localhost/assets/main.js:1:1',
+    ]),
+    frame
+  )
 
-  const pilot = loadBridge();
+  const pilot = loadBridge()
   function evalScript() {
-    console.log("from app");
+    console.log('from app')
   }
-  evalScript();
-  const [entry] = pilot.consoleLogs({ level: "log" });
-  assert.match(entry.source, /evalScript/);
-});
+  evalScript()
+  const [entry] = pilot.consoleLogs({ level: 'log' })
+  assert.match(entry.source, /evalScript/)
+})
 
-test("a log after an await in a pilot eval under V8 names the eval", async () => {
+test('a log after an await in a pilot eval under V8 names the eval', async () => {
   // V8 follows the `await` back to the wrapper with an `async __PILOT_EVAL__`
   // frame. WebKit keeps no such frame, so there the entry has no source.
-  const pilot = loadBridge();
+  const pilot = loadBridge()
   await (async function __PILOT_EVAL__() {
-    return await pilot.eval({ script: 'await Promise.resolve(); console.log("after await"); 1' });
-  })();
+    return await pilot.eval({
+      script: 'await Promise.resolve(); console.log("after await"); 1',
+    })
+  })()
 
-  const [entry] = pilot.consoleLogs({ level: "log" });
-  assert.equal(entry.source, "tauri-pilot-eval");
-});
+  const [entry] = pilot.consoleLogs({ level: 'log' })
+  assert.equal(entry.source, 'tauri-pilot-eval')
+})
 
 // An `await` inside a nested async function is not top-level (#272). The
 // detector used to miss function bodies holding any `{`, so these scripts
 // went to the async-statement wrapper, which has no completion value: the
 // result was `null` and a rejection from the IIFE went unhandled.
-test("eval returns the result of an async IIFE whose body has a nested block", async () => {
-  const pilot = loadBridge();
+test('eval returns the result of an async IIFE whose body has a nested block', async () => {
+  const pilot = loadBridge()
   const cases = [
-    ['const x = 1; (async () => { if (x) { await 0; } return "done"; })()', "done"],
-    ['const x = 1; (async () => { try { await 0; } catch (e) {} return "done"; })()', "done"],
-    ["const x = 1; (async () => { const o = { a: 1 }; await 0; return o.a; })()", 1],
+    [
+      'const x = 1; (async () => { if (x) { await 0; } return "done"; })()',
+      'done',
+    ],
+    [
+      'const x = 1; (async () => { try { await 0; } catch (e) {} return "done"; })()',
+      'done',
+    ],
+    [
+      'const x = 1; (async () => { const o = { a: 1 }; await 0; return o.a; })()',
+      1,
+    ],
     // `await (expr)` compiles in both modes, so the text scan decides.
-    ['const x = 1; (async () => { if (x) { await (Promise.resolve(2)); } return "done"; })()', "done"],
+    [
+      'const x = 1; (async () => { if (x) { await (Promise.resolve(2)); } return "done"; })()',
+      'done',
+    ],
     // Methods and parameter defaults holding parentheses kept `await (`
     // visible to the old text scan.
-    ["const o = { async load() { if (1) { return (await (Promise.resolve({ v: 9 }))).v; } } }; o.load()", 9],
-    ["class C { async m() { return await (Promise.resolve(3)); } } new C().m()", 3],
-    ["async function load(u = String('/a')) { if (u) { return (await (Promise.resolve({ v: 9 }))).v; } } load()", 9],
-    ["const x = 1; (async (n = Number('1')) => { const r = await (Promise.resolve(n)); return r; })()", 1],
+    [
+      'const o = { async load() { if (1) { return (await (Promise.resolve({ v: 9 }))).v; } } }; o.load()',
+      9,
+    ],
+    [
+      'class C { async m() { return await (Promise.resolve(3)); } } new C().m()',
+      3,
+    ],
+    [
+      "async function load(u = String('/a')) { if (u) { return (await (Promise.resolve({ v: 9 }))).v; } } load()",
+      9,
+    ],
+    [
+      "const x = 1; (async (n = Number('1')) => { const r = await (Promise.resolve(n)); return r; })()",
+      1,
+    ],
     // More than six blocks deep: every level takes one pass of the masker.
     [
-      "const x = 1; (async () => { if (x) { if (x) { if (x) { if (x) { if (x) { if (x) { if (x) { await (0); } } } } } } } return 8; })()",
+      'const x = 1; (async () => { if (x) { if (x) { if (x) { if (x) { if (x) { if (x) { if (x) { await (0); } } } } } } } return 8; })()',
       8,
     ],
     // Controls that already worked.
-    ['const x = 1; (async () => { await 0; return "done"; })()', "done"],
-  ];
+    ['const x = 1; (async () => { await 0; return "done"; })()', 'done'],
+  ]
   for (const [script, expected] of cases) {
-    assert.equal(await pilot.eval({ script }), expected, script);
+    assert.equal(await pilot.eval({ script }), expected, script)
   }
-});
+})
 
-test("eval rejects when an async IIFE with a nested block throws", async () => {
-  const pilot = loadBridge();
+test('eval rejects when an async IIFE with a nested block throws', async () => {
+  const pilot = loadBridge()
   for (const script of [
     'const x = 1; (async () => { if (x) { await 0; throw new Error("boom"); } })()',
     "const o = { async f() { await (0); throw new Error('boom'); } }; o.f()",
     // Control that already worked.
     '(async () => { if (1) { await 0; throw new Error("boom"); } })()',
   ]) {
-    await assert.rejects(Promise.resolve().then(() => pilot.eval({ script })), /boom/, script);
+    await assert.rejects(
+      Promise.resolve().then(() => pilot.eval({ script })),
+      /boom/,
+      script
+    )
   }
-});
+})
 
-test("eval keeps the completion value when await only appears in a literal or a class method", async () => {
+test('eval keeps the completion value when await only appears in a literal or a class method', async () => {
   // Former false positives of the regex detector: they were wrapped and
   // returned `null`.
-  const pilot = loadBridge();
+  const pilot = loadBridge()
   const cases = [
-    ["const s = `await`; s", "await"],
-    ["const r = /await/; r.source", "await"],
-    ["class C { async m() { await 0; return 1; } } new C().m()", 1],
-    ["const s = `await (x)`; s", "await (x)"],
-    ["const r = /await (x)/; r.source", "await (x)"],
-    ['const s = "await (x)"; s // await (y)', "await (x)"],
-  ];
+    ['const s = `await`; s', 'await'],
+    ['const r = /await/; r.source', 'await'],
+    ['class C { async m() { await 0; return 1; } } new C().m()', 1],
+    ['const s = `await (x)`; s', 'await (x)'],
+    ['const r = /await (x)/; r.source', 'await (x)'],
+    ['const s = "await (x)"; s // await (y)', 'await (x)'],
+  ]
   for (const [script, expected] of cases) {
-    assert.equal(await pilot.eval({ script }), expected, script);
+    assert.equal(await pilot.eval({ script }), expected, script)
   }
-});
+})
 
-test("eval still wraps top-level await, including the await (expr) form", async () => {
-  const pilot = loadBridge();
+test('eval still wraps top-level await, including the await (expr) form', async () => {
+  const pilot = loadBridge()
   const cases = [
-    ['await Promise.resolve("hi")', "hi"],
-    ["const v = await Promise.resolve(2); return v * 3", 6],
-    ["const x = 1; if (x) { await 0; } return 7", 7],
-    ["const p = Promise.resolve(5); return await (p)", 5],
-    ["const p = Promise.resolve(4); return await [p][0]", 4],
+    ['await Promise.resolve("hi")', 'hi'],
+    ['const v = await Promise.resolve(2); return v * 3', 6],
+    ['const x = 1; if (x) { await 0; } return 7', 7],
+    ['const p = Promise.resolve(5); return await (p)', 5],
+    ['const p = Promise.resolve(4); return await [p][0]', 4],
     // Sloppy code also reads these as the identifier `await`: ASI before a
     // line break, a binary operator, a tagged template.
-    ["const data = await\n  Promise.resolve({ v: 9 });\nreturn data.v", 9],
-    ["const n = 2; const v = await +n; return v", 2],
-    ["const v = await `x`; return v", "x"],
+    ['const data = await\n  Promise.resolve({ v: 9 });\nreturn data.v', 9],
+    ['const n = 2; const v = await +n; return v', 2],
+    ['const v = await `x`; return v', 'x'],
     // `with` is sloppy-only, so the per-await probe gives up and the text
     // scan decides.
-    ["var o = { k: 1 }; with (o) { k; }\nconst data = await\n  Promise.resolve({ v: 9 });\nreturn data.v", 9],
-  ];
+    [
+      'var o = { k: 1 }; with (o) { k; }\nconst data = await\n  Promise.resolve({ v: 9 });\nreturn data.v',
+      9,
+    ],
+  ]
   for (const [script, expected] of cases) {
-    assert.equal(await pilot.eval({ script }), expected, script);
+    assert.equal(await pilot.eval({ script }), expected, script)
   }
-});
+})
 
-test("eval awaits a bare await (expr) script instead of calling a function named await", async () => {
+test('eval awaits a bare await (expr) script instead of calling a function named await', async () => {
   // These compile as a plain expression too, where `await (1 + 1)` is a call
   // to a variable `await`, so they failed with a ReferenceError (#302).
-  const pilot = loadBridge();
+  const pilot = loadBridge()
   const cases = [
-    ["await (1 + 1)", 2],
-    ["await(1)", 1],
-    ["await (Promise.resolve(3))", 3],
+    ['await (1 + 1)', 2],
+    ['await(1)', 1],
+    ['await (Promise.resolve(3))', 3],
     // Control: `await` declared as a variable is still called.
-    ["var await = (n) => n * 10; await (1)", 10],
-  ];
+    ['var await = (n) => n * 10; await (1)', 10],
+  ]
   try {
     for (const [script, expected] of cases) {
-      assert.equal(await pilot.eval({ script }), expected, script);
+      assert.equal(await pilot.eval({ script }), expected, script)
     }
   } finally {
     // The control's indirect eval declares a global `await`.
-    delete globalThis.await;
+    delete globalThis.await
   }
-});
+})
 
-test("eval runs a bare await (expr) script once", async () => {
+test('eval runs a bare await (expr) script once', async () => {
   // The side effect happens before `await (1)`: retrying the async stages
   // after stage 1's ReferenceError would run it twice (#302).
-  const pilot = loadBridge();
-  globalThis.__runs = 0;
+  const pilot = loadBridge()
+  globalThis.__runs = 0
   try {
-    assert.equal(await pilot.eval({ script: "__runs++, await (1)" }), 1);
-    assert.equal(globalThis.__runs, 1);
+    assert.equal(await pilot.eval({ script: '__runs++, await (1)' }), 1)
+    assert.equal(globalThis.__runs, 1)
   } finally {
-    delete globalThis.__runs;
+    delete globalThis.__runs
   }
-});
+})
 
 test("eval does not let a script close the await probe's wrapper", () => {
   // Pasted into an arrow body, this script closes it and compiles, so it was
   // taken for top-level await and returned nothing instead of failing.
-  const pilot = loadBridge();
-  assert.throws(() => pilot.eval({ script: "}); 1; (() => {" }), SyntaxError);
-});
+  const pilot = loadBridge()
+  assert.throws(() => pilot.eval({ script: '}); 1; (() => {' }), SyntaxError)
+})
 
-test("eval keeps the auto-wrap hint for a broken script with top-level await", () => {
-  const pilot = loadBridge();
-  assert.throws(() => pilot.eval({ script: "const v = await 1; }" }), /could not be auto-wrapped/);
-});
+test('eval keeps the auto-wrap hint for a broken script with top-level await', () => {
+  const pilot = loadBridge()
+  assert.throws(
+    () => pilot.eval({ script: 'const v = await 1; }' }),
+    /could not be auto-wrapped/
+  )
+})
 
 test("eval gives a plain syntax error when a broken script's await is deeply nested", () => {
   // The await sits in a function more than six blocks deep: once peeled, it is
   // not top-level, so the script must not get the auto-wrap hint.
-  const pilot = loadBridge();
+  const pilot = loadBridge()
   const script =
-    "(async () => { if (1) { if (1) { if (1) { if (1) { if (1) { if (1) { if (1) { await 0; } } } } } } } })(); }";
+    '(async () => { if (1) { if (1) { if (1) { if (1) { if (1) { if (1) { if (1) { await 0; } } } } } } } })(); }'
   assert.throws(
     () => pilot.eval({ script }),
-    (e) => e instanceof SyntaxError && !/could not be auto-wrapped/.test(e.message),
-  );
-});
+    e =>
+      e instanceof SyntaxError && !/could not be auto-wrapped/.test(e.message)
+  )
+})
 
 // Console arguments are snapshotted when they are logged (#274).
 //
@@ -706,369 +840,449 @@ test("eval gives a plain syntax error when a broken script's await is deeply nes
 // Node.prototype, which is what tells a node from an object with the same
 // fields. Installed per test because loadBridge resets the globals.
 class FakeNode {
-  get nodeType() { return this._type; }
+  get nodeType() {
+    return this._type
+  }
 }
 class FakeElement extends FakeNode {
-  constructor(localName, id = "", className = "") {
-    super();
-    this._type = 1;
-    this.nodeName = localName.toUpperCase();
-    this.localName = localName;
-    this.id = id;
-    this.className = className;
+  constructor(localName, id = '', className = '') {
+    super()
+    this._type = 1
+    this.nodeName = localName.toUpperCase()
+    this.localName = localName
+    this.id = id
+    this.className = className
   }
 }
 class FakeText extends FakeNode {
   constructor() {
-    super();
-    this._type = 3;
-    this.nodeName = "#text";
+    super()
+    this._type = 3
+    this.nodeName = '#text'
   }
 }
 
 function loadBridgeWithDom() {
-  const pilot = loadBridge();
-  globalThis.Node = FakeNode;
-  return pilot;
+  const pilot = loadBridge()
+  globalThis.Node = FakeNode
+  return pilot
 }
 
-after(() => { delete globalThis.Node; });
+after(() => {
+  delete globalThis.Node
+})
 
-test("an object is logged with its state at call time", () => {
-  const pilot = loadBridge();
-  const o = { a: 1 };
-  console.log("state", o);
-  o.a = 2;
+test('an object is logged with its state at call time', () => {
+  const pilot = loadBridge()
+  const o = { a: 1 }
+  console.log('state', o)
+  o.a = 2
 
-  const [entry] = pilot.consoleLogs({ level: "log" });
-  assert.deepEqual(entry.args, ["state", { a: 1 }]);
-});
+  const [entry] = pilot.consoleLogs({ level: 'log' })
+  assert.deepEqual(entry.args, ['state', { a: 1 }])
+})
 
-test("errors, collections, nodes and undefined say what they are", () => {
-  const pilot = loadBridgeWithDom();
+test('errors, collections, nodes and undefined say what they are', () => {
+  const pilot = loadBridgeWithDom()
   console.log(
-    "err",
-    new TypeError("bad input"),
-    new Map([["k", 1]]),
+    'err',
+    new TypeError('bad input'),
+    new Map([['k', 1]]),
     new Set([1]),
-    new FakeElement("body"),
+    new FakeElement('body'),
     undefined,
-    [new Error("in array")],
-  );
+    [new Error('in array')]
+  )
 
-  const [entry] = pilot.consoleLogs({ level: "log" });
+  const [entry] = pilot.consoleLogs({ level: 'log' })
   const expected = [
-    "err",
-    "TypeError: bad input",
-    { __type: "Map", size: 1, entries: [["k", 1]] },
-    { __type: "Set", size: 1, values: [1] },
-    "<body>",
-    "undefined",
-    ["Error: in array"],
-  ];
-  assert.deepEqual(entry.args, expected);
+    'err',
+    'TypeError: bad input',
+    { __type: 'Map', size: 1, entries: [['k', 1]] },
+    { __type: 'Set', size: 1, values: [1] },
+    '<body>',
+    'undefined',
+    ['Error: in array'],
+  ]
+  assert.deepEqual(entry.args, expected)
   // What the CLI receives is the JSON form of the entry, so nothing may be
   // lost or changed on the way through.
-  assert.deepEqual(JSON.parse(JSON.stringify(entry.args)), expected);
-});
+  assert.deepEqual(JSON.parse(JSON.stringify(entry.args)), expected)
+})
 
-test("an element names its tag, id and classes", () => {
-  const pilot = loadBridgeWithDom();
-  console.log(new FakeElement("button", "save", "primary  wide"), { target: new FakeElement("div") });
+test('an element names its tag, id and classes', () => {
+  const pilot = loadBridgeWithDom()
+  console.log(new FakeElement('button', 'save', 'primary  wide'), {
+    target: new FakeElement('div'),
+  })
 
-  const [entry] = pilot.consoleLogs({ level: "log" });
-  assert.deepEqual(entry.args, ["<button#save.primary.wide>", { target: "<div>" }]);
-});
-
-test("an object with node-like fields that is not a node is logged as data", () => {
-  const pilot = loadBridgeWithDom();
-  class AstNode {
-    constructor() { this.nodeType = 3; this.nodeName = "Ident"; this.value = 42; }
-  }
-  console.log({ nodeType: 1, nodeName: "row" }, new AstNode());
-
-  const [entry] = pilot.consoleLogs({ level: "log" });
+  const [entry] = pilot.consoleLogs({ level: 'log' })
   assert.deepEqual(entry.args, [
-    { nodeType: 1, nodeName: "row" },
-    { nodeType: 3, nodeName: "Ident", value: 42 },
-  ]);
-});
+    '<button#save.primary.wide>',
+    { target: '<div>' },
+  ])
+})
 
-test("nested values follow the same rules as top-level ones", () => {
-  const pilot = loadBridge();
-  const inner = { n: 1 };
+test('an object with node-like fields that is not a node is logged as data', () => {
+  const pilot = loadBridgeWithDom()
+  class AstNode {
+    constructor() {
+      this.nodeType = 3
+      this.nodeName = 'Ident'
+      this.value = 42
+    }
+  }
+  console.log({ nodeType: 1, nodeName: 'row' }, new AstNode())
+
+  const [entry] = pilot.consoleLogs({ level: 'log' })
+  assert.deepEqual(entry.args, [
+    { nodeType: 1, nodeName: 'row' },
+    { nodeType: 3, nodeName: 'Ident', value: 42 },
+  ])
+})
+
+test('nested values follow the same rules as top-level ones', () => {
+  const pilot = loadBridge()
+  const inner = { n: 1 }
   console.log({
-    err: new RangeError("too far"),
-    map: new Map([["inner", inner]]),
+    err: new RangeError('too far'),
+    map: new Map([['inner', inner]]),
     missing: undefined,
     when: new Date(0),
-  });
-  inner.n = 2;
+  })
+  inner.n = 2
 
-  const [entry] = pilot.consoleLogs({ level: "log" });
+  const [entry] = pilot.consoleLogs({ level: 'log' })
   assert.deepEqual(entry.args[0], {
-    err: "RangeError: too far",
-    map: { __type: "Map", size: 1, entries: [["inner", { n: 1 }]] },
-    missing: "undefined",
-    when: "1970-01-01T00:00:00.000Z",
-  });
-});
+    err: 'RangeError: too far',
+    map: { __type: 'Map', size: 1, entries: [['inner', { n: 1 }]] },
+    missing: 'undefined',
+    when: '1970-01-01T00:00:00.000Z',
+  })
+})
 
-test("a cyclic object is logged instead of falling back to [object Object]", () => {
-  const pilot = loadBridge();
-  const o = { name: "loop" };
-  o.self = o;
-  console.log(o);
+test('a cyclic object is logged instead of falling back to [object Object]', () => {
+  const pilot = loadBridge()
+  const o = { name: 'loop' }
+  o.self = o
+  console.log(o)
 
-  const [entry] = pilot.consoleLogs({ level: "log" });
-  assert.deepEqual(entry.args[0], { name: "loop", self: "[Circular]" });
-});
+  const [entry] = pilot.consoleLogs({ level: 'log' })
+  assert.deepEqual(entry.args[0], { name: 'loop', self: '[Circular]' })
+})
 
-test("deep nesting and large containers are capped", () => {
-  const pilot = loadBridge();
-  let deep = { leaf: true };
-  for (let i = 0; i < 20; i++) deep = { child: deep };
-  const big = Array.from({ length: 1000 }, (_, i) => i);
-  console.log(deep, big);
+test('deep nesting and large containers are capped', () => {
+  const pilot = loadBridge()
+  let deep = { leaf: true }
+  for (let i = 0; i < 20; i++) deep = { child: deep }
+  const big = Array.from({ length: 1000 }, (_, i) => i)
+  console.log(deep, big)
 
-  const [entry] = pilot.consoleLogs({ level: "log" });
-  const text = JSON.stringify(entry.args[0]);
-  assert.doesNotMatch(text, /leaf/, "nesting past the depth cap is cut");
-  assert.match(text, /\[Object\]/);
-  assert.equal(entry.args[1].length, 101, "100 items plus one marker");
-  assert.equal(entry.args[1][99], 99);
-  assert.equal(entry.args[1][100], "... 900 more items");
-});
+  const [entry] = pilot.consoleLogs({ level: 'log' })
+  const text = JSON.stringify(entry.args[0])
+  assert.doesNotMatch(text, /leaf/, 'nesting past the depth cap is cut')
+  assert.match(text, /\[Object\]/)
+  assert.equal(entry.args[1].length, 101, '100 items plus one marker')
+  assert.equal(entry.args[1][99], 99)
+  assert.equal(entry.args[1][100], '... 900 more items')
+})
 
-test("a wide graph is capped in total, not only per level", () => {
+test('a wide graph is capped in total, not only per level', () => {
   // 100 rows of 100 objects: every container is under the per-level cap, but
   // the whole graph holds 10,101 objects.
-  const pilot = loadBridge();
-  const row = () => Object.fromEntries(Array.from({ length: 100 }, (_, i) => ["k" + i, { v: i }]));
-  const wide = Object.fromEntries(Array.from({ length: 100 }, (_, i) => ["r" + i, row()]));
-  console.log(wide);
+  const pilot = loadBridge()
+  const row = () =>
+    Object.fromEntries(
+      Array.from({ length: 100 }, (_, i) => ['k' + i, { v: i }])
+    )
+  const wide = Object.fromEntries(
+    Array.from({ length: 100 }, (_, i) => ['r' + i, row()])
+  )
+  console.log(wide)
 
-  const [entry] = pilot.consoleLogs({ level: "log" });
-  const text = JSON.stringify(entry.args[0]);
-  assert.ok(text.length < 100_000, `snapshot is ${text.length} chars`);
-  assert.match(text, /\[Object\]/, "objects past the total cap are cut");
-});
+  const [entry] = pilot.consoleLogs({ level: 'log' })
+  const text = JSON.stringify(entry.args[0])
+  assert.ok(text.length < 100_000, `snapshot is ${text.length} chars`)
+  assert.match(text, /\[Object\]/, 'objects past the total cap are cut')
+})
 
-test("an object that throws while being read does not break the log", () => {
-  const pilot = loadBridge();
-  const hostile = {};
-  Object.defineProperty(hostile, "boom", { enumerable: true, get() { throw new Error("no"); } });
-  console.log("before", hostile);
+test('an object that throws while being read does not break the log', () => {
+  const pilot = loadBridge()
+  const hostile = {}
+  Object.defineProperty(hostile, 'boom', {
+    enumerable: true,
+    get() {
+      throw new Error('no')
+    },
+  })
+  console.log('before', hostile)
 
-  const [entry] = pilot.consoleLogs({ level: "log" });
-  assert.deepEqual(entry.args, ["before", { boom: "[unreadable]" }]);
-});
+  const [entry] = pilot.consoleLogs({ level: 'log' })
+  assert.deepEqual(entry.args, ['before', { boom: '[unreadable]' }])
+})
 
 test("a throwing nodeType or toJSON still leaves the object's keys", () => {
-  const pilot = loadBridgeWithDom();
-  const trap = { a: 1 };
-  Object.defineProperty(trap, "nodeType", { get() { throw new Error("no"); } });
-  const badJson = { b: 2, toJSON() { throw new Error("no"); } };
-  console.log(trap, badJson);
+  const pilot = loadBridgeWithDom()
+  const trap = { a: 1 }
+  Object.defineProperty(trap, 'nodeType', {
+    get() {
+      throw new Error('no')
+    },
+  })
+  const badJson = {
+    b: 2,
+    toJSON() {
+      throw new Error('no')
+    },
+  }
+  console.log(trap, badJson)
 
-  const [entry] = pilot.consoleLogs({ level: "log" });
-  assert.deepEqual(entry.args[0], { a: 1 });
-  assert.equal(entry.args[1].b, 2);
-});
+  const [entry] = pilot.consoleLogs({ level: 'log' })
+  assert.deepEqual(entry.args[0], { a: 1 })
+  assert.equal(entry.args[1].b, 2)
+})
 
-test("a large Map keeps its first entries and says how many it dropped", () => {
-  const pilot = loadBridge();
-  console.log(new Map(Array.from({ length: 1000 }, (_, i) => [i, i])));
+test('a large Map keeps its first entries and says how many it dropped', () => {
+  const pilot = loadBridge()
+  console.log(new Map(Array.from({ length: 1000 }, (_, i) => [i, i])))
 
-  const [entry] = pilot.consoleLogs({ level: "log" });
-  assert.equal(entry.args[0].size, 1000);
-  assert.equal(entry.args[0].entries.length, 100);
-  assert.deepEqual(entry.args[0].entries[99], [99, 99]);
-  assert.equal(entry.args[0].truncated, 900);
-});
+  const [entry] = pilot.consoleLogs({ level: 'log' })
+  assert.equal(entry.args[0].size, 1000)
+  assert.equal(entry.args[0].entries.length, 100)
+  assert.deepEqual(entry.args[0].entries[99], [99, 99])
+  assert.equal(entry.args[0].truncated, 900)
+})
 
-test("long strings inside a logged object are cut", () => {
-  const pilot = loadBridge();
-  const long = "x".repeat(50_000);
-  console.log(long, { body: long });
+test('long strings inside a logged object are cut', () => {
+  const pilot = loadBridge()
+  const long = 'x'.repeat(50_000)
+  console.log(long, { body: long })
 
-  const [entry] = pilot.consoleLogs({ level: "log" });
-  assert.equal(entry.args[0], long, "a top-level string argument is kept whole");
-  assert.equal(entry.args[1].body, "x".repeat(10_000) + "... (40000 more chars)");
-});
+  const [entry] = pilot.consoleLogs({ level: 'log' })
+  assert.equal(entry.args[0], long, 'a top-level string argument is kept whole')
+  assert.equal(
+    entry.args[1].body,
+    'x'.repeat(10_000) + '... (40000 more chars)'
+  )
+})
 
-test("an array hole is logged as null, not as undefined", () => {
-  const pilot = loadBridge();
+test('an array hole is logged as null, not as undefined', () => {
+  const pilot = loadBridge()
   // eslint-disable-next-line no-sparse-arrays
-  console.log([1, , undefined]);
+  console.log([1, , undefined])
 
-  const [entry] = pilot.consoleLogs({ level: "log" });
-  assert.deepEqual(entry.args[0], [1, null, "undefined"]);
-});
+  const [entry] = pilot.consoleLogs({ level: 'log' })
+  assert.deepEqual(entry.args[0], [1, null, 'undefined'])
+})
 
-test("NaN and Infinity keep their names instead of becoming null", () => {
-  const pilot = loadBridge();
-  console.log(NaN, { inf: -Infinity }, 1.5);
+test('NaN and Infinity keep their names instead of becoming null', () => {
+  const pilot = loadBridge()
+  console.log(NaN, { inf: -Infinity }, 1.5)
 
-  const [entry] = pilot.consoleLogs({ level: "log" });
-  assert.deepEqual(JSON.parse(JSON.stringify(entry.args)), ["NaN", { inf: "-Infinity" }, 1.5]);
-});
+  const [entry] = pilot.consoleLogs({ level: 'log' })
+  assert.deepEqual(JSON.parse(JSON.stringify(entry.args)), [
+    'NaN',
+    { inf: '-Infinity' },
+    1.5,
+  ])
+})
 
 // `levels` wrappers around `leaf`: the leaf sits at that depth.
 function nest(leaf, levels) {
-  let value = leaf;
-  for (let i = 0; i < levels; i++) value = { c: value };
-  return value;
+  let value = leaf
+  for (let i = 0; i < levels; i++) value = { c: value }
+  return value
 }
 
 function at(value, levels) {
-  for (let i = 0; i < levels; i++) value = value.c;
-  return value;
+  for (let i = 0; i < levels; i++) value = value.c
+  return value
 }
 
-test("an Error keeps its own fields and its cause", () => {
-  const pilot = loadBridge();
-  const fields = Object.assign(new Error("boom"), { code: "ECONNRESET", status: 404 });
-  const chained = new Error("outer", { cause: new TypeError("inner") });
-  const loop = new Error("loop");
-  loop.cause = loop;
-  console.error(fields, chained, loop, new Error("plain"));
+test('an Error keeps its own fields and its cause', () => {
+  const pilot = loadBridge()
+  const fields = Object.assign(new Error('boom'), {
+    code: 'ECONNRESET',
+    status: 404,
+  })
+  const chained = new Error('outer', { cause: new TypeError('inner') })
+  const loop = new Error('loop')
+  loop.cause = loop
+  console.error(fields, chained, loop, new Error('plain'))
 
-  const [entry] = pilot.consoleLogs({ level: "error" });
+  const [entry] = pilot.consoleLogs({ level: 'error' })
   assert.deepEqual(entry.args, [
-    { __type: "Error", message: "Error: boom", code: "ECONNRESET", status: 404 },
-    { __type: "Error", message: "Error: outer", cause: "TypeError: inner" },
-    { __type: "Error", message: "Error: loop", cause: "[Circular]" },
-    "Error: plain",
-  ]);
-});
+    {
+      __type: 'Error',
+      message: 'Error: boom',
+      code: 'ECONNRESET',
+      status: 404,
+    },
+    { __type: 'Error', message: 'Error: outer', cause: 'TypeError: inner' },
+    { __type: 'Error', message: 'Error: loop', cause: '[Circular]' },
+    'Error: plain',
+  ])
+})
 
-test("an object wearing only the Error tag is logged as data", () => {
-  const pilot = loadBridge();
-  console.log({ [Symbol.toStringTag]: "Error", code: 7 });
+test('an object wearing only the Error tag is logged as data', () => {
+  const pilot = loadBridge()
+  console.log({ [Symbol.toStringTag]: 'Error', code: 7 })
 
-  const [entry] = pilot.consoleLogs({ level: "log" });
-  assert.deepEqual(entry.args, [{ code: 7 }]);
-});
+  const [entry] = pilot.consoleLogs({ level: 'log' })
+  assert.deepEqual(entry.args, [{ code: 7 }])
+})
 
-test("a long Error message or node description is cut like a string", () => {
-  const pilot = loadBridgeWithDom();
-  console.log(new Error("x".repeat(50_000)), { el: new FakeElement("div", "y".repeat(50_000)) });
+test('a long Error message or node description is cut like a string', () => {
+  const pilot = loadBridgeWithDom()
+  console.log(new Error('x'.repeat(50_000)), {
+    el: new FakeElement('div', 'y'.repeat(50_000)),
+  })
 
-  const [entry] = pilot.consoleLogs({ level: "log" });
-  assert.equal(entry.args[0], "Error: " + "x".repeat(9_993) + "... (40007 more chars)");
-  assert.equal(entry.args[1].el, "<div#" + "y".repeat(9_995) + "... (40006 more chars)");
-});
+  const [entry] = pilot.consoleLogs({ level: 'log' })
+  assert.equal(
+    entry.args[0],
+    'Error: ' + 'x'.repeat(9_993) + '... (40007 more chars)'
+  )
+  assert.equal(
+    entry.args[1].el,
+    '<div#' + 'y'.repeat(9_995) + '... (40006 more chars)'
+  )
+})
 
 test("a throwing toJSON getter still leaves the object's keys", () => {
-  const pilot = loadBridge();
-  const trap = { b: 2 };
-  Object.defineProperty(trap, "toJSON", { enumerable: false, get() { throw new Error("no"); } });
-  console.log(trap);
+  const pilot = loadBridge()
+  const trap = { b: 2 }
+  Object.defineProperty(trap, 'toJSON', {
+    enumerable: false,
+    get() {
+      throw new Error('no')
+    },
+  })
+  console.log(trap)
 
-  const [entry] = pilot.consoleLogs({ level: "log" });
-  assert.deepEqual(entry.args, [{ b: 2 }]);
-});
+  const [entry] = pilot.consoleLogs({ level: 'log' })
+  assert.deepEqual(entry.args, [{ b: 2 }])
+})
 
-test("an own __proto__ key is kept as data", () => {
-  const pilot = loadBridge();
-  console.log(JSON.parse('{"__proto__":{"x":1},"a":2}'));
+test('an own __proto__ key is kept as data', () => {
+  const pilot = loadBridge()
+  console.log(JSON.parse('{"__proto__":{"x":1},"a":2}'))
 
-  const [entry] = pilot.consoleLogs({ level: "log" });
-  assert.equal(JSON.stringify(entry.args[0]), '{"__proto__":{"x":1},"a":2}');
-});
+  const [entry] = pilot.consoleLogs({ level: 'log' })
+  assert.equal(JSON.stringify(entry.args[0]), '{"__proto__":{"x":1},"a":2}')
+})
 
-test("a shared reference is copied at each place, not cut as a cycle", () => {
-  const pilot = loadBridge();
-  const shared = { n: 1 };
-  console.log({ a: shared, b: shared });
+test('a shared reference is copied at each place, not cut as a cycle', () => {
+  const pilot = loadBridge()
+  const shared = { n: 1 }
+  console.log({ a: shared, b: shared })
 
-  const [entry] = pilot.consoleLogs({ level: "log" });
-  assert.deepEqual(entry.args, [{ a: { n: 1 }, b: { n: 1 } }]);
-});
+  const [entry] = pilot.consoleLogs({ level: 'log' })
+  assert.deepEqual(entry.args, [{ a: { n: 1 }, b: { n: 1 } }])
+})
 
-test("values from another realm are recognised", () => {
-  const pilot = loadBridge();
-  console.log(runInNewContext('[new Map([["k", 1]]), new Set([2]), new TypeError("far")]'));
+test('values from another realm are recognised', () => {
+  const pilot = loadBridge()
+  console.log(
+    runInNewContext('[new Map([["k", 1]]), new Set([2]), new TypeError("far")]')
+  )
 
-  const [entry] = pilot.consoleLogs({ level: "log" });
-  assert.deepEqual(entry.args, [[
-    { __type: "Map", size: 1, entries: [["k", 1]] },
-    { __type: "Set", size: 1, values: [2] },
-    "TypeError: far",
-  ]]);
-});
+  const [entry] = pilot.consoleLogs({ level: 'log' })
+  assert.deepEqual(entry.args, [
+    [
+      { __type: 'Map', size: 1, entries: [['k', 1]] },
+      { __type: 'Set', size: 1, values: [2] },
+      'TypeError: far',
+    ],
+  ])
+})
 
-test("bigints, symbols and functions are named", () => {
-  const pilot = loadBridge();
-  console.log({ big: 10n, sym: Symbol("s"), named: function f() {}, anon: [() => {}] });
+test('bigints, symbols and functions are named', () => {
+  const pilot = loadBridge()
+  console.log({
+    big: 10n,
+    sym: Symbol('s'),
+    named: function f() {},
+    anon: [() => {}],
+  })
 
-  const [entry] = pilot.consoleLogs({ level: "log" });
-  assert.deepEqual(entry.args, [{ big: "10n", sym: "Symbol(s)", named: "[Function f]", anon: ["[Function]"] }]);
-});
+  const [entry] = pilot.consoleLogs({ level: 'log' })
+  assert.deepEqual(entry.args, [
+    {
+      big: '10n',
+      sym: 'Symbol(s)',
+      named: '[Function f]',
+      anon: ['[Function]'],
+    },
+  ])
+})
 
-test("a node that is not an element is its node name", () => {
-  const pilot = loadBridgeWithDom();
-  console.log(new FakeText());
+test('a node that is not an element is its node name', () => {
+  const pilot = loadBridgeWithDom()
+  console.log(new FakeText())
 
-  const [entry] = pilot.consoleLogs({ level: "log" });
-  assert.deepEqual(entry.args, ["#text"]);
-});
+  const [entry] = pilot.consoleLogs({ level: 'log' })
+  assert.deepEqual(entry.args, ['#text'])
+})
 
-test("element classes come from the class attribute, not className", () => {
+test('element classes come from the class attribute, not className', () => {
   // An SVG element's className is an SVGAnimatedString, not a string.
-  const pilot = loadBridgeWithDom();
-  const svg = new FakeElement("svg", "", { baseVal: "icon" });
-  svg.getAttribute = (name) => (name === "class" ? "icon big" : null);
-  console.log(svg);
+  const pilot = loadBridgeWithDom()
+  const svg = new FakeElement('svg', '', { baseVal: 'icon' })
+  svg.getAttribute = name => (name === 'class' ? 'icon big' : null)
+  console.log(svg)
 
-  const [entry] = pilot.consoleLogs({ level: "log" });
-  assert.deepEqual(entry.args, ["<svg.icon.big>"]);
-});
+  const [entry] = pilot.consoleLogs({ level: 'log' })
+  assert.deepEqual(entry.args, ['<svg.icon.big>'])
+})
 
 test("nesting is cut at exactly 8 levels, with the container's kind", () => {
-  const pilot = loadBridge();
+  const pilot = loadBridge()
   console.log(
     nest({ leaf: true }, 7),
     nest({ leaf: true }, 8),
     nest(new Map(), 8),
     nest(new Set(), 8),
-    nest([1], 8),
-  );
+    nest([1], 8)
+  )
 
-  const [entry] = pilot.consoleLogs({ level: "log" });
-  assert.deepEqual(at(entry.args[0], 7), { leaf: true });
-  assert.equal(at(entry.args[1], 8), "[Object]");
-  assert.equal(at(entry.args[2], 8), "[Map]");
-  assert.equal(at(entry.args[3], 8), "[Set]");
-  assert.equal(at(entry.args[4], 8), "[Array]");
-});
+  const [entry] = pilot.consoleLogs({ level: 'log' })
+  assert.deepEqual(at(entry.args[0], 7), { leaf: true })
+  assert.equal(at(entry.args[1], 8), '[Object]')
+  assert.equal(at(entry.args[2], 8), '[Map]')
+  assert.equal(at(entry.args[3], 8), '[Set]')
+  assert.equal(at(entry.args[4], 8), '[Array]')
+})
 
-test("one argument copies exactly 1000 objects", () => {
+test('one argument copies exactly 1000 objects', () => {
   // 1 outer array + 10 rows + 1000 leaves = 1011 objects: the last 11 leaves
   // are past the cap.
-  const pilot = loadBridge();
-  const rows = Array.from({ length: 10 }, () => Array.from({ length: 100 }, () => ({})));
-  console.log(rows);
+  const pilot = loadBridge()
+  const rows = Array.from({ length: 10 }, () =>
+    Array.from({ length: 100 }, () => ({}))
+  )
+  console.log(rows)
 
-  const [entry] = pilot.consoleLogs({ level: "log" });
-  const cut = entry.args[0].flat().filter((v) => v === "[Object]").length;
-  assert.equal(cut, 11);
-});
+  const [entry] = pilot.consoleLogs({ level: 'log' })
+  const cut = entry.args[0].flat().filter(v => v === '[Object]').length
+  assert.equal(cut, 11)
+})
 
-test("an object past 100 keys says how many it dropped", () => {
-  const pilot = loadBridge();
-  console.log(Object.fromEntries(Array.from({ length: 150 }, (_, i) => ["k" + i, i])));
+test('an object past 100 keys says how many it dropped', () => {
+  const pilot = loadBridge()
+  console.log(
+    Object.fromEntries(Array.from({ length: 150 }, (_, i) => ['k' + i, i]))
+  )
 
-  const [entry] = pilot.consoleLogs({ level: "log" });
-  const keys = Object.keys(entry.args[0]);
-  assert.equal(keys.length, 101);
-  assert.equal(entry.args[0].k99, 99);
-  assert.equal(entry.args[0]["..."], "50 more keys");
-});
+  const [entry] = pilot.consoleLogs({ level: 'log' })
+  const keys = Object.keys(entry.args[0])
+  assert.equal(keys.length, 101)
+  assert.equal(entry.args[0].k99, 99)
+  assert.equal(entry.args[0]['...'], '50 more keys')
+})
 
-test("built-ins with no keys say what they are", () => {
-  const pilot = loadBridge();
+test('built-ins with no keys say what they are', () => {
+  const pilot = loadBridge()
   console.log(
     /ab+c/gi,
     { r: /x/ },
@@ -1078,70 +1292,77 @@ test("built-ins with no keys say what they are", () => {
     new DataView(new ArrayBuffer(2)),
     new Uint8Array([1, 2, 3]),
     new BigInt64Array([5n]),
-    { [Symbol.toStringTag]: "RegExp" },
-  );
+    { [Symbol.toStringTag]: 'RegExp' }
+  )
 
-  const [entry] = pilot.consoleLogs({ level: "log" });
+  const [entry] = pilot.consoleLogs({ level: 'log' })
   assert.deepEqual(entry.args, [
-    "/ab+c/gi",
-    { r: "/x/" },
-    "[Promise]",
-    "[WeakMap]",
-    "[ArrayBuffer]",
-    "[DataView]",
-    { __type: "Uint8Array", length: 3, values: [1, 2, 3] },
-    { __type: "BigInt64Array", length: 1, values: ["5n"] },
-    "[RegExp]",
-  ]);
-});
+    '/ab+c/gi',
+    { r: '/x/' },
+    '[Promise]',
+    '[WeakMap]',
+    '[ArrayBuffer]',
+    '[DataView]',
+    { __type: 'Uint8Array', length: 3, values: [1, 2, 3] },
+    { __type: 'BigInt64Array', length: 1, values: ['5n'] },
+    '[RegExp]',
+  ])
+})
 
-test("a large typed array keeps its first items and says how many it dropped", () => {
-  const pilot = loadBridge();
-  console.log(new Float64Array(1000));
+test('a large typed array keeps its first items and says how many it dropped', () => {
+  const pilot = loadBridge()
+  console.log(new Float64Array(1000))
 
-  const [entry] = pilot.consoleLogs({ level: "log" });
-  assert.equal(entry.args[0].length, 1000);
-  assert.equal(entry.args[0].values.length, 100);
-  assert.equal(entry.args[0].truncated, 900);
-});
+  const [entry] = pilot.consoleLogs({ level: 'log' })
+  assert.equal(entry.args[0].length, 1000)
+  assert.equal(entry.args[0].values.length, 100)
+  assert.equal(entry.args[0].truncated, 900)
+})
 
-test("plain data is not probed with the Node getter", () => {
+test('plain data is not probed with the Node getter', () => {
   // In a browser the getter throws for a non-node, and an exception per
   // logged object made console.log far slower.
-  const pilot = loadBridge();
-  let probes = 0;
+  const pilot = loadBridge()
+  let probes = 0
   globalThis.Node = class {
-    get nodeType() { probes += 1; throw new TypeError("Illegal invocation"); }
-  };
-  console.log({ a: { b: [1, { c: 2 }] } });
+    get nodeType() {
+      probes += 1
+      throw new TypeError('Illegal invocation')
+    }
+  }
+  console.log({ a: { b: [1, { c: 2 }] } })
 
-  const [entry] = pilot.consoleLogs({ level: "log" });
-  assert.deepEqual(entry.args, [{ a: { b: [1, { c: 2 }] } }]);
-  assert.equal(probes, 0);
-});
+  const [entry] = pilot.consoleLogs({ level: 'log' })
+  assert.deepEqual(entry.args, [{ a: { b: [1, { c: 2 }] } }])
+  assert.equal(probes, 0)
+})
 
-test("toJSON receives its property key, as JSON.stringify passes it", () => {
-  const pilot = loadBridge();
-  const keyed = { toJSON(key) { return "key:" + key; } };
-  console.log(keyed, { a: keyed }, [keyed]);
+test('toJSON receives its property key, as JSON.stringify passes it', () => {
+  const pilot = loadBridge()
+  const keyed = {
+    toJSON(key) {
+      return 'key:' + key
+    },
+  }
+  console.log(keyed, { a: keyed }, [keyed])
 
-  const [entry] = pilot.consoleLogs({ level: "log" });
-  assert.deepEqual(entry.args, ["key:", { a: "key:a" }, ["key:0"]]);
-});
+  const [entry] = pilot.consoleLogs({ level: 'log' })
+  assert.deepEqual(entry.args, ['key:', { a: 'key:a' }, ['key:0']])
+})
 
-test("a typed array is recognised by its internal slot, not its tag", () => {
-  const pilot = loadBridge();
-  const dataView = new DataView(new ArrayBuffer(2));
-  Object.defineProperty(dataView, Symbol.toStringTag, { value: "Uint8Array" });
-  const bytes = new Uint8Array([1, 2]);
-  Object.defineProperty(bytes, Symbol.toStringTag, { value: "DataView" });
-  Object.defineProperty(bytes, "length", { value: 1e9 });
-  console.log(dataView, bytes, runInNewContext("new Int16Array([7])"));
+test('a typed array is recognised by its internal slot, not its tag', () => {
+  const pilot = loadBridge()
+  const dataView = new DataView(new ArrayBuffer(2))
+  Object.defineProperty(dataView, Symbol.toStringTag, { value: 'Uint8Array' })
+  const bytes = new Uint8Array([1, 2])
+  Object.defineProperty(bytes, Symbol.toStringTag, { value: 'DataView' })
+  Object.defineProperty(bytes, 'length', { value: 1e9 })
+  console.log(dataView, bytes, runInNewContext('new Int16Array([7])'))
 
-  const [entry] = pilot.consoleLogs({ level: "log" });
+  const [entry] = pilot.consoleLogs({ level: 'log' })
   assert.deepEqual(entry.args, [
-    "[Uint8Array]",
-    { __type: "Uint8Array", length: 2, values: [1, 2] },
-    { __type: "Int16Array", length: 1, values: [7] },
-  ]);
-});
+    '[Uint8Array]',
+    { __type: 'Uint8Array', length: 2, values: [1, 2] },
+    { __type: 'Int16Array', length: 1, values: [7] },
+  ])
+})

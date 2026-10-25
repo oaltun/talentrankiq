@@ -852,6 +852,7 @@ dependencies = [
  "env_logger",
  "libconfigreader",
  "libmodeldownloader",
+ "libmodelstorage",
  "libtriqui-cli",
  "libtriqui-client",
  "libtriqui-core",
@@ -7526,6 +7527,7 @@ dependencies = [
  "tauri-plugin-window-state",
  "tauri-specta",
  "thiserror 2.0.21",
+ "tokio",
  "wry",
 ]
 

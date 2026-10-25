@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { listen } from '@tauri-apps/api/event'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 
 import { commands, unwrapResult } from '@/lib/tauri-bindings'
@@ -12,6 +11,7 @@ import type {
 } from '@/lib/tauri-bindings'
 import { jobsQueryKeys } from '@/services/jobs'
 import { candidatesQueryKeys } from '@/services/candidates'
+import { pilotShim } from '@/lib/pilot-shim'
 
 export const embeddersQueryKey = ['embedders'] as const
 
@@ -169,61 +169,57 @@ export function useModelDownloadProgress() {
     Record<string, DownloadProgressEntry>
   >({})
 
-  console.log('[useModelDownloadProgress] Hook called, registering useEffect')
+  const handleProgress = useCallback((payload: unknown) => {
+    const { repo_id, filename, done, total } = payload as {
+      repo_id: string
+      filename: string
+      done: number
+      total: number | null
+    }
+    const key = repo_id
+    setProgress(p => ({
+      ...p,
+      [key]: { repoId: repo_id, filename, done, total },
+    }))
+  }, [])
 
   useEffect(() => {
-    console.log('[useModelDownloadProgress] useEffect running')
-    let unlisten: (() => void) | null = null
-    console.log('[useModelDownloadProgress] Setting up event listener')
-    
-    // Use try-catch to catch any synchronous errors
-    try {
-      listen<ModelDownloadProgress>('model-download-progress', event => {
-        console.log('[useModelDownloadProgress] Received event:', event)
-        console.log('[useModelDownloadProgress] Event payload:', event.payload)
-        const { repo_id, filename, done, total } = event.payload
-        const key = repo_id
-        setProgress(p => ({
-          ...p,
-          [key]: { repoId: repo_id, filename, done, total },
-        }))
-      })
-        .then(fn => {
-          console.log('[useModelDownloadProgress] Listener registered successfully')
-          unlisten = fn
-        })
-        .catch(err =>
-          console.error('[useModelDownloadProgress] Failed to listen for download progress:', err)
+    let mounted = true
+
+    const setupListener = async () => {
+      try {
+        await pilotShim.on('model-download-progress', handleProgress)
+      } catch (e) {
+        console.error(
+          '[useModelDownloadProgress] Failed to listen via pilotShim:',
+          e
         )
-    } catch (syncErr) {
-      console.error('[useModelDownloadProgress] Synchronous error in listen():', syncErr)
+        // Fallback to native Tauri events (for production)
+        try {
+          const { listen } = await import('@tauri-apps/api/event')
+          const unlisten = await listen('model-download-progress', event => {
+            if (!mounted) return
+            handleProgress(event.payload)
+          })
+          return () => unlisten()
+        } catch (fallbackErr) {
+          console.error(
+            '[useModelDownloadProgress] Fallback listen also failed:',
+            fallbackErr
+          )
+        }
+      }
     }
 
-    // Also test with a wildcard listener to see if ANY events come through
-    try {
-      const testListen = listen('*', (event) => {
-        console.log('[useModelDownloadProgress] WILDCARD received:', event.event, event.payload)
-      })
-      testListen.then(fn => console.log('Wildcard listener registered'))
-
-      // Test: emit a test event from frontend to verify event system works
-      import('@tauri-apps/api/event').then(({ emit }) => {
-        emit('test-event-from-frontend', { test: 'data', timestamp: Date.now() })
-          .then(() => console.log('[useModelDownloadProgress] Test event emitted from frontend'))
-          .catch(err => console.error('[useModelDownloadProgress] Failed to emit test event:', err))
-      })
-    } catch (e) {
-      console.error('[useModelDownloadProgress] Error in test listeners:', e)
-    }
+    setupListener()
 
     return () => {
-      console.log('[useModelDownloadProgress] Cleaning up listener')
-      unlisten?.()
-      try {
-        testListen.then(fn => fn())
-      } catch {}
+      mounted = false
+      pilotShim.off('model-download-progress', handleProgress).catch(e => {
+        console.error('[useModelDownloadProgress] Failed to off:', e)
+      })
     }
-  }, [])
+  }, [handleProgress])
 
   const clear = (slug: string) =>
     setProgress(p => {
@@ -239,30 +235,50 @@ export function useModelDownloadProgress() {
   return { get, clear }
 }
 
-interface ModelDownloadCompleteEvent {
-  slug: string
-  path: string
-}
-
 /** Listen for `model-download-complete` events and show a toast with the save path. */
 export function useModelDownloadCompleteToast() {
   useEffect(() => {
-    let unlisten: (() => void) | null = null
-    listen<ModelDownloadCompleteEvent>('model-download-complete', event => {
-      const { path } = event.payload
+    const handleComplete = (payload: unknown) => {
+      const { path } = payload as { path: string }
       toast.success('Model downloaded', {
         description: `Saved to ${path}`,
       })
-    })
-      .then(fn => {
-        unlisten = fn
-      })
-      .catch(err =>
-        console.error('Failed to listen for download complete', err)
-      )
+    }
+
+    let mounted = true
+
+    const setupListener = async () => {
+      try {
+        await pilotShim.on('model-download-complete', handleComplete)
+      } catch (e) {
+        console.error(
+          '[useModelDownloadCompleteToast] Failed to listen via pilotShim:',
+          e
+        )
+        // Fallback to native Tauri events (for production)
+        try {
+          const { listen } = await import('@tauri-apps/api/event')
+          const unlisten = await listen('model-download-complete', event => {
+            if (!mounted) return
+            handleComplete(event.payload)
+          })
+          return () => unlisten()
+        } catch (fallbackErr) {
+          console.error(
+            '[useModelDownloadCompleteToast] Fallback listen also failed:',
+            fallbackErr
+          )
+        }
+      }
+    }
+
+    setupListener()
 
     return () => {
-      unlisten?.()
+      mounted = false
+      pilotShim.off('model-download-complete', handleComplete).catch(e => {
+        console.error('[useModelDownloadCompleteToast] Failed to off:', e)
+      })
     }
   }, [])
 }

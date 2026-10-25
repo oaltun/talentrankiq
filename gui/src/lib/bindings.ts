@@ -648,6 +648,50 @@ async licenseCheckArtifact(artifactId: string) : Promise<Result<boolean, string>
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Main pilot bridge command - receives messages from external tools/tests
+ */
+async pilotBridge(message: string) : Promise<Result<string, DomainError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("pilot_bridge", { message }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Callback command - called by frontend JS shim to return script result
+ */
+async pilotCallback(id: number, result: JsonValue, error: string | null) : Promise<Result<null, DomainError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("pilot_callback", { id, result, error }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Tauri command to listen for events from the serve process
+ */
+async eventListen(event: string, id: number) : Promise<Result<null, DomainError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("event_listen", { event, id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Tauri command to unlisten for events
+ */
+async eventUnlisten(id: number) : Promise<Result<null, DomainError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("event_unlisten", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 

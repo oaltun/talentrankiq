@@ -9,20 +9,20 @@
 //
 // Run: node --test crates/tauri-plugin-pilot/js/bridge.visible.test.mjs
 
-import { test } from "node:test";
-import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
 
-const here = dirname(fileURLToPath(import.meta.url));
-const BRIDGE_SRC = readFileSync(join(here, "bridge.js"), "utf8");
+const here = dirname(fileURLToPath(import.meta.url))
+const BRIDGE_SRC = readFileSync(join(here, 'bridge.js'), 'utf8')
 const REAL_CONSOLE = {
   log: console.log.bind(console),
   warn: console.warn.bind(console),
   error: console.error.bind(console),
   info: console.info.bind(console),
-};
+}
 
 function loadBridge({ queryResult, pointResult, invalidSelector } = {}) {
   // Object.assign would go through the previous bridge's console setter and
@@ -33,102 +33,100 @@ function loadBridge({ queryResult, pointResult, invalidSelector } = {}) {
       writable: true,
       configurable: true,
       enumerable: true,
-    });
+    })
   }
-  globalThis.Node = { ELEMENT_NODE: 1, TEXT_NODE: 3 };
-  globalThis.window = { fetch() {} };
-  globalThis.getComputedStyle = (el) => el._style;
+  globalThis.Node = { ELEMENT_NODE: 1, TEXT_NODE: 3 }
+  globalThis.window = { fetch() {} }
+  globalThis.getComputedStyle = el => el._style
   globalThis.document = {
-    body: { tagName: "BODY", nodeType: 1, children: [] },
+    body: { tagName: 'BODY', nodeType: 1, children: [] },
     getElementById() {
-      return null;
+      return null
     },
     querySelector(selector) {
       if (selector === invalidSelector) {
-        throw new SyntaxError(`'${selector}' is not a valid selector`);
+        throw new SyntaxError(`'${selector}' is not a valid selector`)
       }
-      return queryResult ?? null;
+      return queryResult ?? null
     },
     querySelectorAll() {
-      return [];
+      return []
     },
     elementFromPoint() {
-      return pointResult ?? null;
+      return pointResult ?? null
     },
-  };
+  }
   function XMLHttpRequestStub() {}
-  XMLHttpRequestStub.prototype.open = function () {};
-  XMLHttpRequestStub.prototype.send = function () {};
-  globalThis.XMLHttpRequest = XMLHttpRequestStub;
-  (0, eval)(BRIDGE_SRC);
-  return globalThis.window.__PILOT__;
+  XMLHttpRequestStub.prototype.open = function () {}
+  XMLHttpRequestStub.prototype.send = function () {}
+  globalThis.XMLHttpRequest = XMLHttpRequestStub
+  ;(0, eval)(BRIDGE_SRC)
+  return globalThis.window.__PILOT__
 }
 
 function shownElement() {
   return {
-    tagName: "DIV",
+    tagName: 'DIV',
     nodeType: 1,
     offsetWidth: 10,
     offsetHeight: 10,
-    _style: { display: "block", visibility: "visible", opacity: "1" },
-  };
+    _style: { display: 'block', visibility: 'visible', opacity: '1' },
+  }
 }
 
-test("visible with missingOk reports a missing selector as not visible (#281)", () => {
-  const pilot = loadBridge();
+test('visible with missingOk reports a missing selector as not visible (#281)', () => {
+  const pilot = loadBridge()
   assert.deepEqual(
-    pilot.visible({ selector: "#does-not-exist", missingOk: true }),
-    { visible: false },
-  );
-});
+    pilot.visible({ selector: '#does-not-exist', missingOk: true }),
+    { visible: false }
+  )
+})
 
-test("visible without missingOk still throws on a missing selector", () => {
-  const pilot = loadBridge();
+test('visible without missingOk still throws on a missing selector', () => {
+  const pilot = loadBridge()
   assert.throws(
-    () => pilot.visible({ selector: "#does-not-exist" }),
-    /No element matches selector: #does-not-exist/,
-  );
-});
+    () => pilot.visible({ selector: '#does-not-exist' }),
+    /No element matches selector: #does-not-exist/
+  )
+})
 
-test("visible with missingOk still throws on an unknown ref (#281)", () => {
-  const pilot = loadBridge();
+test('visible with missingOk still throws on an unknown ref (#281)', () => {
+  const pilot = loadBridge()
   assert.throws(
-    () => pilot.visible({ ref: "e5", missingOk: true }),
-    /Unknown ref: e5/,
-  );
-});
+    () => pilot.visible({ ref: 'e5', missingOk: true }),
+    /Unknown ref: e5/
+  )
+})
 
-test("visible with missingOk still throws on an invalid selector (#281)", () => {
+test('visible with missingOk still throws on an invalid selector (#281)', () => {
   // A typo'd selector must fail `assert hidden`, not pass it as "missing".
-  const pilot = loadBridge({ invalidSelector: "[" });
+  const pilot = loadBridge({ invalidSelector: '[' })
   assert.throws(
-    () => pilot.visible({ selector: "[", missingOk: true }),
-    SyntaxError,
-  );
-});
+    () => pilot.visible({ selector: '[', missingOk: true }),
+    SyntaxError
+  )
+})
 
-test("visible with missingOk lets a ref win over a missing selector", () => {
+test('visible with missingOk lets a ref win over a missing selector', () => {
   // `resolveTarget` reads the ref first, so the relaxation must too.
-  const pilot = loadBridge();
+  const pilot = loadBridge()
   assert.throws(
-    () => pilot.visible({ ref: "e5", selector: "#gone", missingOk: true }),
-    /Unknown ref: e5/,
-  );
-});
+    () => pilot.visible({ ref: 'e5', selector: '#gone', missingOk: true }),
+    /Unknown ref: e5/
+  )
+})
 
-test("visible with missingOk resolves coordinates as before", () => {
+test('visible with missingOk resolves coordinates as before', () => {
   // Only a selector is relaxed; coordinates go through `elementFromPoint`.
-  const pilot = loadBridge({ pointResult: shownElement() });
-  assert.deepEqual(
-    pilot.visible({ x: 5, y: 5, missingOk: true }),
-    { visible: true },
-  );
-});
+  const pilot = loadBridge({ pointResult: shownElement() })
+  assert.deepEqual(pilot.visible({ x: 5, y: 5, missingOk: true }), {
+    visible: true,
+  })
+})
 
 test("visible with missingOk still reports a present element's state", () => {
-  const pilot = loadBridge({ queryResult: shownElement() });
-  assert.deepEqual(
-    pilot.visible({ selector: "#shown", missingOk: true }),
-    { visible: true },
-  );
-});
+  const pilot = loadBridge({ queryResult: shownElement() })
+  assert.deepEqual(pilot.visible({ selector: '#shown', missingOk: true }), {
+    visible: true,
+  })
+})

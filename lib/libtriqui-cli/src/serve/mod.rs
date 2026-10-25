@@ -128,6 +128,8 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
         None => default_app_dir(),
     };
     std::fs::create_dir_all(&app_dir).map_err(|e| format!("cannot create app dir: {e}"))?;
+    // Clean up stale temp download directories from previous interrupted downloads
+    crate::serve::handlers::models::cleanup_temp_dirs();
     let db_path = app_dir.join("triqui.db");
     let conn = db::open_connection_at(&db_path)?;
 
