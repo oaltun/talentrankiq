@@ -1,36 +1,19 @@
-//! The gui↔cli wire contract: every DTO that crosses the protocol.
+//! Wire protocol types with specta derives for JSON Schema and TypeScript export.
 //!
-//! These types live here (not in `triqui-core`) so the Tauri gui and
-//! `triqui-cli` share one definition — neither side can drift. The
-//! Tauri gui uses them in `#[tauri::command]` signatures, so they all
-//! derive `specta::Type` (directly or transitively) exactly as before the
-//! thin-gui migration; generated `bindings.ts` shapes are unchanged.
+//! This crate contains only the wire DTOs (data types that cross the JSONL wire).
+//! Envelope types (Request, Response, Event, Inbound, ProtocolError) stay in
+//! libcli-client because they need local trait implementations.
 
-use regex::Regex;
 use serde::{Deserialize, Serialize};
+use schemars::JsonSchema;
 use specta::Type;
-use std::sync::LazyLock;
-
-/// Default shortcut for the quick pane
-pub const DEFAULT_QUICK_PANE_SHORTCUT: &str = "CommandOrControl+Shift+.";
-
-/// Maximum size for recovery data files (10MB)
-pub const MAX_RECOVERY_DATA_BYTES: u32 = 10_485_760;
-
-/// Pre-compiled regex pattern for filename validation.
-/// Only allows alphanumeric characters, dashes, underscores, and a single extension.
-pub static FILENAME_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^[a-zA-Z0-9_-]+(\.[a-zA-Z0-9]+)?$")
-        .expect("Failed to compile filename regex pattern")
-});
 
 // ============================================================================
 // Preferences
 // ============================================================================
 
 /// Application preferences that persist to disk.
-/// Only contains settings that should be saved between sessions.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct AppPreferences {
     pub theme: String,
     /// Color scheme (palette) applied on top of light/dark mode: "default",
@@ -88,8 +71,8 @@ impl Default for AppPreferences {
         Self {
             theme: "system".to_string(),
             color_theme: default_color_theme(),
-            quick_pane_shortcut: None, // None means use default
-            language: None,            // None means use system locale
+            quick_pane_shortcut: None,
+            language: None,
             embedding_model: None,
             inference_model: None,
             cv_dir_root: None,
@@ -104,39 +87,12 @@ impl Default for AppPreferences {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::AppPreferences;
-
-    /// `preferences.json` files written before a field existed must keep
-    /// parsing (serve's prefs loader rejects nothing but real corruption).
-    #[test]
-    fn legacy_preferences_without_cv_dir_root_parse() {
-        let legacy = r#"{"theme":"dark","quick_pane_shortcut":null,"language":null,"embedding_model":null,"inference_model":null}"#;
-        let prefs: AppPreferences = serde_json::from_str(legacy).expect("legacy prefs parse");
-        assert_eq!(prefs.theme, "dark");
-        assert!(prefs.cv_dir_root.is_none());
-    }
-
-    #[test]
-    fn cv_dir_root_round_trips() {
-        let prefs = AppPreferences {
-            cv_dir_root: Some("/tmp/cv-root".into()),
-            ..Default::default()
-        };
-        let back: AppPreferences =
-            serde_json::from_str(&serde_json::to_string(&prefs).expect("serialize"))
-                .expect("parse");
-        assert_eq!(back.cv_dir_root.as_deref(), Some("/tmp/cv-root"));
-    }
-}
-
 // ============================================================================
 // Recovery Errors
 // ============================================================================
 
 /// Error types for recovery operations (typed for frontend matching)
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 #[serde(tag = "type")]
 pub enum RecoveryError {
     /// File does not exist (expected case, not a failure)
@@ -166,64 +122,11 @@ impl std::fmt::Display for RecoveryError {
 }
 
 // ============================================================================
-// Validation Functions
-// ============================================================================
-
-/// Validates a filename for safe file system operations.
-/// Only allows alphanumeric characters, dashes, underscores, and a single extension.
-pub fn validate_filename(filename: &str) -> Result<(), String> {
-    if filename.is_empty() {
-        return Err("Filename cannot be empty".to_string());
-    }
-
-    if filename.chars().count() > 100 {
-        return Err("Filename too long (max 100 characters)".to_string());
-    }
-
-    if !FILENAME_PATTERN.is_match(filename) {
-        return Err(
-            "Invalid filename: only alphanumeric characters, dashes, underscores, and dots allowed"
-                .to_string(),
-        );
-    }
-
-    Ok(())
-}
-
-/// Validates string input length (by character count, not bytes).
-pub fn validate_string_input(input: &str, max_len: usize, field_name: &str) -> Result<(), String> {
-    let char_count = input.chars().count();
-    if char_count > max_len {
-        return Err(format!("{field_name} too long (max {max_len} characters)"));
-    }
-    Ok(())
-}
-
-/// Validates theme value.
-pub fn validate_theme(theme: &str) -> Result<(), String> {
-    match theme {
-        "light" | "dark" | "system" => Ok(()),
-        _ => Err("Invalid theme: must be 'light', 'dark', or 'system'".to_string()),
-    }
-}
-
-/// Validates the color-scheme preference (palette overlay on light/dark).
-pub fn validate_color_theme(color_theme: &str) -> Result<(), String> {
-    match color_theme {
-        "default" | "slate" | "ocean" | "forest" | "amber" | "contrast" => Ok(()),
-        _ => Err(
-            "Invalid color theme: must be 'default', 'slate', 'ocean', 'forest', 'amber', or 'contrast'"
-                .to_string(),
-        ),
-    }
-}
-
-// ============================================================================
 // Domain: TalentRankIQ (Baseline ranking — vectors, scores, explanations)
 // ============================================================================
 
 /// Supported CV file types.
-#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq, schemars::JsonSchema)]
 pub enum FileType {
     Doc,
     Docx,
@@ -233,7 +136,7 @@ pub enum FileType {
 }
 
 /// Per-candidate extraction lifecycle.
-#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq, schemars::JsonSchema)]
 pub enum ExtractionStatus {
     Queued,
     Extracting,
@@ -264,7 +167,7 @@ impl FileType {
 }
 
 impl ExtractionStatus {
-    #[allow(dead_code)] // Phase-2 ranking writes will use it
+    #[allow(dead_code)]
     pub fn as_str(&self) -> &'static str {
         match self {
             ExtractionStatus::Queued => "Queued",
@@ -285,7 +188,7 @@ impl ExtractionStatus {
 }
 
 /// A single hiring opening the HR user is screening for.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct Job {
     pub id: String,
     pub title: String,
@@ -318,25 +221,6 @@ pub struct Job {
     pub job_ad_path: Option<String>,
 }
 
-/// The job-ad **file**: where it is and what it says.
-///
-/// The ad is a plain text file the user edits in their own editor — the app
-/// has no ad editor. Serve hands this to the gui so the path shown is always
-/// the resolved one, and `created` lets the gui say "we made this empty file"
-/// exactly once instead of guessing.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct JobAdFile {
-    /// Absolute path to the ad file. Created empty on first resolution.
-    pub path: String,
-    /// The file's contents; empty when the user has not written an ad yet.
-    #[serde(default)]
-    pub text: String,
-    /// True when this call had to create the file.
-    #[serde(default)]
-    pub created: bool,
-}
-
 fn default_ad_weight() -> f64 {
     50.0
 }
@@ -349,8 +233,22 @@ fn default_fb_profile_weight() -> f64 {
     10.0
 }
 
+/// The job-ad **file**: where it is and what it says.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct JobAdFile {
+    /// Absolute path to the ad file. Created empty on first resolution.
+    pub path: String,
+    /// The file's contents; empty when the user has not written an ad yet.
+    #[serde(default)]
+    pub text: String,
+    /// True when this call had to create the file.
+    #[serde(default)]
+    pub created: bool,
+}
+
 /// An extra requirement beyond the job ad (always positive — negative criteria removed).
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct Criterion {
     pub id: String,
     pub job_id: String,
@@ -360,8 +258,8 @@ pub struct Criterion {
 }
 
 /// One applicant's CV within a Job.
-#[allow(dead_code)] // canonical domain entity; Phase-2 full-row queries use it
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[allow(dead_code)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct Candidate {
     pub id: String,
     pub job_id: String,
@@ -376,7 +274,7 @@ pub struct Candidate {
 }
 
 /// A ranked triqui row (no extracted text — fetched on overlay open).
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct TriqiItem {
     pub id: String,
     pub file_name: String,
@@ -399,7 +297,7 @@ pub struct TriqiItem {
 }
 
 /// Which kind of rubric question a row represents.
-#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq, schemars::JsonSchema)]
 pub enum QuestionKind {
     Ad,
     /// "Job fit (judge)" — pairwise-judge win-rate replacing the `Ad` cosine
@@ -415,16 +313,9 @@ pub enum QuestionKind {
     Scout,
 }
 
-/// Which cascade stage currently backs a candidate's total (the total's ad
 /// Which embedding space a candidate's *criteria and feedback* similarities were
-/// computed in (scoring v3, `gui/design/app1/cascade-simple.md`).
-///
-/// The heavy embedder's space is better than the scout's, so the sheet's default
-/// order is heavy first, then total within a space. It is a separate axis from
-/// [`AdSource`]: a candidate can have scout-space criteria scores and a judge
-/// win-rate on its ad slot at the same time, and collapsing that into one "basis"
-/// chip is what made the old ordering hard to reason about.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Type)]
+/// computed in (scoring v3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Type, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum GradeSpace {
     /// The cheap scout's space — the candidate has not been reached by the heavy
@@ -436,7 +327,7 @@ pub enum GradeSpace {
 }
 
 /// What backs the ad slot of a candidate's total.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Type, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum AdSource {
     /// The scout's ad cosine.
@@ -451,8 +342,6 @@ pub enum AdSource {
 impl GradeSpace {
     /// The space that backs a candidate's rubric scores, from its score rows.
     pub fn from_scores(scores: &[RubricScore]) -> Option<GradeSpace> {
-        // The heavy embedder's ad grade exists exactly when this candidate has
-        // been embedded, so it is the whole test.
         if scores.iter().any(|s| s.kind == QuestionKind::Ad) {
             Some(GradeSpace::Heavy)
         } else {
@@ -516,17 +405,14 @@ impl QuestionKind {
     }
 
     /// Whether rows of this kind are stage grades *outside* the rubric the
-    /// total is made of. The job ad (`Ad`) is the embed stage's grade **and** a
-    /// rubric row, so it is not one: the Total's capacity must count its weight
-    /// exactly once, which is also true in judge mode, where the `AdJudge` row
-    /// replaces it in the total while keeping the same weight.
+    /// total is made of.
     pub fn is_stage(&self) -> bool {
         matches!(self, QuestionKind::Scout | QuestionKind::AdJudge)
     }
 }
 
 /// One question in a job's rubric (the scoring model) — no per-candidate value.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct RubricQuestion {
     pub question_id: String,
     pub label: String,
@@ -536,7 +422,7 @@ pub struct RubricQuestion {
 }
 
 /// One row of a candidate's rubric score: points earned on a single question.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct RubricScore {
     pub question_id: String,
     pub label: String,
@@ -551,7 +437,7 @@ pub struct RubricScore {
 }
 
 /// One chunk that contributed to a rubric score via maxsim.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct ChunkExplanation {
     /// The chunk text from the CV.
     pub text: String,
@@ -562,7 +448,7 @@ pub struct ChunkExplanation {
 /// Which text the CV chunks are compared against in the Match Lens
 /// (CV Inspector). Serialized externally tagged: `"JobAd"`,
 /// `{"Criterion": {"id": "..."}}`.
-#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq, schemars::JsonSchema)]
 pub enum ChunkMatchTarget {
     /// The job advertisement text.
     JobAd,
@@ -572,7 +458,7 @@ pub enum ChunkMatchTarget {
 
 /// One CV chunk with its char range in the extracted text and its cosine
 /// similarity to the target.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct ChunkSim {
     /// Char index of the chunk start in the candidate's extracted text.
     pub char_start: usize,
@@ -585,7 +471,7 @@ pub struct ChunkSim {
 /// Match Lens response: EVERY chunk of the candidate at the requested size,
 /// in document order. The frontend picks the top-n and ranks, so changing n
 /// re-ranks client-side without a refetch.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct ChunkMatchResult {
     /// Model slug that produced the vectors.
     pub model: String,
@@ -594,7 +480,7 @@ pub struct ChunkMatchResult {
 }
 
 /// One row in the Jobs list — precomputed facts (no status enum).
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct JobSummary {
     pub id: String,
     pub title: String,
@@ -611,7 +497,7 @@ pub struct JobSummary {
 }
 
 /// Full Job-view payload.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct JobDetail {
     pub job: Job,
     pub criteria: Vec<Criterion>,
@@ -622,9 +508,7 @@ pub struct JobDetail {
     pub rubric: Vec<RubricQuestion>,
     /// Σ |max_points| over the questions that count towards `points` — the
     /// rubric's whole weight. Backend-derived so the sheet never has to
-    /// re-decide which columns are rubric and which are stages. The sheet
-    /// shows each score as `points / max_points × 100`, so it reads the
-    /// Average out of 100 and does not need this capacity as a caption.
+    /// re-decide which columns are rubric and which are stages.
     #[serde(default)]
     pub rubric_capacity: f32,
     pub triqui: Vec<TriqiItem>,
@@ -634,7 +518,7 @@ pub struct JobDetail {
 }
 
 /// Candidate overlay payload.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct CandidateDetail {
     pub id: String,
     pub job_id: String,
@@ -665,7 +549,7 @@ pub struct CandidateDetail {
 
 /// One row in the candidate browser (all of a job's candidates, not just the ranked
 /// triqui). Carries the per-question breakdown for the spreadsheet columns.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct CandidateSummary {
     pub id: String,
     pub file_name: String,
@@ -699,7 +583,7 @@ pub struct CandidateSummary {
 }
 
 /// A page of candidate results for the browser.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct CandidatePage {
     pub items: Vec<CandidateSummary>,
     pub total: i32,
@@ -707,7 +591,7 @@ pub struct CandidatePage {
 
 /// Prev/next candidate ids in the job's global ordering (for overlay navigation
 /// across all candidates, not just the triqui).
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct CandidateNeighbors {
     #[serde(default)]
     pub prev_id: Option<String>,
@@ -716,9 +600,7 @@ pub struct CandidateNeighbors {
 }
 
 /// What the engine is working on right now — one human-readable status line.
-/// Backend-derived: the gui renders it (i18n-mapping the stage code) and
-/// never reconstructs it.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct Activity {
     /// Stable stage code: `scout` | `embed` | `judge` | `inspect`.
     pub stage: String,
@@ -737,7 +619,7 @@ pub struct Activity {
 }
 
 /// Snapshot of the modelcaller engine state for the UI.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct RuntimeStatusInfo {
     /// `"Starting"` | `"Running"` | `"Error"` | `"Stopped"`.
     pub status: String,
@@ -751,8 +633,7 @@ pub struct RuntimeStatusInfo {
     #[serde(default)]
     pub error: Option<String>,
     /// The arm serving `model` as its load response reported it: `"ort"` or
-    /// `"mlx"` (design 15 §15.4). `None` until the first load — the value
-    /// comes from the arm, not from what the host asked for.
+    /// `"mlx"`. `None` until the first load.
     #[serde(default)]
     #[specta(optional)]
     pub backend: Option<String>,
@@ -763,10 +644,8 @@ pub struct RuntimeStatusInfo {
 }
 
 /// Which arm serves an embedder slug on this machine, and whether its weights
-/// are on disk — resolved engine-free (no model load, no wrapper). The gui
-/// uses this to name the effective variant in a consent-to-download prompt
-/// and to show the arm next to the model.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+/// are on disk — resolved engine-free (no model load, no wrapper).
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct EmbedderVariants {
     pub model: String,
     /// `"ort"` or `"mlx"` — the arm `embed` would be served by.
@@ -781,27 +660,19 @@ pub struct EmbedderVariants {
     pub mlx_present: Option<bool>,
 }
 
-/// Backend-owned enablement state for a job's Re-rank button — the gui is a
-/// pure projection of this (reason codes map to strings; it computes nothing).
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+/// Backend-owned enablement state for a job's Re-rank button.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct JobUiState {
     /// Engine status is `Running` (a rank may need it for re-embedding).
     pub engine_ready: bool,
     /// At least one extracted CV — without it ranking is meaningless.
     pub sort_allowed: bool,
     /// Ranking inputs changed since the last rank (or never ranked).
-    /// This is the "Re-rank becomes active" signal.
     pub rerank_dirty: bool,
     /// Stable reason code for the current state, precedence:
     /// `no-cvs` > `no-jobad` > `engine-not-ready` > `stale` > `clean`.
-    /// `no-jobad`: CVs are imported but the job has no job-ad text, so a rank
-    /// has nothing to score against.
     pub reason: Option<String>,
-    /// One-shot guidance code, backend-decided: `add-job-ad` when the job
-    /// holds embedded CVs but no job ad **and** the import auto-start's
-    /// embed-prefill cascade has converged — all the ad-independent work is
-    /// done, so ranking is the only missing step. The gui surfaces this as a
-    /// dismissible banner; `None` = nothing to nudge about.
+    /// One-shot guidance code, backend-decided.
     #[serde(default)]
     #[specta(optional)]
     pub nudge: Option<String>,
@@ -826,9 +697,7 @@ fn default_rank_state() -> RankState {
 }
 
 /// Read-model of the last rank of a job: what the judge stage actually did.
-/// `judge_mode`: `ran` (≥1 fresh verdict), `cached` (engaged, zero fresh —
-/// every verdict memoized), `skipped` (stage not engaged).
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct SortReport {
     pub job_id: String,
     pub judge_mode: String,
@@ -850,21 +719,12 @@ pub struct SortReport {
     pub created_at: String,
 }
 
-/// Backend-derived state of a job's progressive-ranking cascade — the gui is
-/// a pure projection of this (reason codes map to strings; it computes
-/// nothing).
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+/// Backend-derived state of a job's progressive-ranking cascade.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct RankState {
-    /// A cascade run is active for this job right now. Note that the
-    /// import auto-start runs ad-less jobs as an **embed-prefill** cascade
-    /// (design §9), which reports `running: true` without producing a
-    /// ranking — the button-facing flag is [`RankState::ranking`].
+    /// A cascade run is active for this job right now.
     pub running: bool,
-    /// The active cascade is actually ranking this job: in flight **and**
-    /// the job has a job ad to score against (an ad landing mid-run flips
-    /// this on at the next poll). The rank buttons spin on this, not on
-    /// [`RankState::running`] — background embedding of an ad-less job is
-    /// status-bar activity, not a ranking in progress.
+    /// The active cascade is actually ranking this job.
     #[serde(default)]
     pub ranking: bool,
     /// Live stage of the active run: `lex` | `embed` | `sort`.
@@ -887,9 +747,7 @@ pub struct RankState {
 }
 
 /// Progress event payload for a running cascade (`rank-progress` event).
-/// Emitted per stage edge and throttled per wave; `running: false` marks the
-/// terminal event (`stage`: `done` | `cancelled` | `error`).
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct RankProgress {
     pub job_id: String,
     pub stage: String,
@@ -900,20 +758,14 @@ pub struct RankProgress {
     pub candidates: u32,
     pub running: bool,
     /// Stable reason code while the run is alive but not making progress:
-    /// `holding` = the system-capacity budget says hold (low memory —
-    /// libsyscap design §4); the gui shows a visible notice. `None` while
-    /// waves run normally.
+    /// `holding` = the system-capacity budget says hold (low memory).
     #[serde(default)]
     #[specta(optional)]
     pub reason: Option<String>,
 }
 
-/// Backend-derived snapshot of the system-capacity budget (libsyscap):
-/// how much of the machine this serve may use right now. `holding: true`
-/// (verdict `hold`) is the only state the gui must surface — a visible
-/// notice; `polite`/`backoff` adapt silently. A general load indicator is
-/// phase 2.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+/// Backend-derived snapshot of the system-capacity budget (libsyscap).
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct SystemBudget {
     /// `full` | `polite` | `backoff` | `hold` (snake_case verdict code).
     pub verdict: String,
@@ -921,8 +773,7 @@ pub struct SystemBudget {
     pub wave_scale: f64,
     /// Effective intra-op thread cap the budget hands out.
     pub thread_cap: u32,
-    /// Effective embed batch cap (`None` = config sets none — consumer
-    /// default stays).
+    /// Effective embed batch cap (`None` = config sets none).
     #[specta(optional)]
     pub embed_batch: Option<u32>,
     /// Convenience mirror of `verdict == "hold"`.
@@ -932,7 +783,7 @@ pub struct SystemBudget {
 }
 
 /// One live-load sample (libsyscap `LoadSnapshot`), for provenance/UX.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct SystemLoad {
     /// Whole-system CPU utilization, 0..=100.
     pub cpu_pct: f64,
@@ -946,7 +797,7 @@ pub struct SystemLoad {
 }
 
 /// Fallible-domain errors (typed for frontend matching via `#[serde(tag = "type")]`).
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 #[serde(tag = "type")]
 pub enum DomainError {
     NotFound { entity: String, id: String },
@@ -969,11 +820,11 @@ impl std::fmt::Display for DomainError {
 }
 
 // ============================================================================
-// Models management (was gui `commands/models.rs`)
+// Models management
 // ============================================================================
 
 /// Which kind of model an operation targets.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum ModelKind {
     Embedding,
@@ -986,9 +837,8 @@ impl ModelKind {
     }
 }
 
-/// Progress payload emitted during an ONNX model download. Mirrors the frontend's
-/// `model-download-progress` listener (`repo_id`, `filename`, `done`, `total`).
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+/// Progress payload emitted during an ONNX model download.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct ModelDownloadProgress {
     pub repo_id: String,
     pub filename: String,
@@ -997,14 +847,14 @@ pub struct ModelDownloadProgress {
 }
 
 /// Completion payload emitted when an ONNX model download finishes.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct ModelDownloadComplete {
     pub slug: String,
     pub path: String,
 }
 
 /// One ONNX embedder from `triq.yaml` `gui_embedders`, enriched with on-disk state.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct GuiEmbedder {
     /// Model slug (also the cache directory name), e.g. `nomic-embed-text-v1.5`.
     pub slug: String,
@@ -1027,7 +877,7 @@ pub struct GuiEmbedder {
 }
 
 /// Result of a single pair-wise cosine comparison.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct CosinePair {
     pub i: usize,
     pub j: usize,
@@ -1037,7 +887,7 @@ pub struct CosinePair {
 }
 
 /// Result of the "try model" benchmark.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct TryModelResult {
     /// Per-CV processing times in milliseconds (one per CV).
     pub per_cv_ms: Vec<f64>,
@@ -1050,7 +900,7 @@ pub struct TryModelResult {
 }
 
 /// Per-CV progress event emitted during `try_model`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TryModelProgress {
     pub cv_index: usize,
@@ -1059,10 +909,10 @@ pub struct TryModelProgress {
 }
 
 // ============================================================================
-// Vetted embedders (was gui `commands/vetted_embedders.rs`)
+// Vetted embedders
 // ============================================================================
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct VettedEmbedder {
     pub slug: String,
     pub name: String,
@@ -1072,18 +922,15 @@ pub struct VettedEmbedder {
     pub downloaded: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct VettedEmbeddersResponse {
     pub embedders: Vec<VettedEmbedder>,
     pub system_ram_mb: u64,
     pub recommended_slug: String,
 }
 
-/// License status for the judge license (wire-compatible with the CLI's
-/// `libtriqui_license::LicenseStatus`). The GUI projects this for the UI;
-/// the CLI serializes its own `LicenseStatus` into JSON and the GUI
-/// deserializes into this type.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+/// License status for the judge license.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 #[serde(tag = "kind")]
 pub enum LicenseStatus {
     Licensed { customer: String, expires_at: String, artifacts: Vec<String> },
@@ -1093,12 +940,11 @@ pub enum LicenseStatus {
 }
 
 // ============================================================================
-// Progress event payloads (were gui `commands/import.rs` / `commands/embed.rs`)
+// Progress event payloads
 // ============================================================================
 
-/// Payload for the `job-import-progress` event. Also reused by the job-bundle
-/// import so both flows drive the same UI progress.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Payload for the `job-import-progress` event.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct ImportProgress {
     pub job_id: String,
     pub done: i64,
@@ -1106,13 +952,12 @@ pub struct ImportProgress {
     pub failed: i64,
     pub active: bool,
     /// Which sub-phase is running: "extracting" | "embedding" | "ranking" |
-    /// "engine-unavailable" | "done". Lets the UI show one continuous pipeline instead
-    /// of declaring the import "finished" before embedding/ranking have run.
+    /// "engine-unavailable" | "done".
     pub phase: String,
 }
 
 /// Payload for the `job-embedding-progress` event.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct EmbeddingProgress {
     pub job_id: String,
     pub done: i64,
@@ -1122,11 +967,11 @@ pub struct EmbeddingProgress {
 }
 
 // ============================================================================
-// Results CSV export (was `libtriqui_core::results_csv::ResultsCsvSummary`)
+// Results CSV export
 // ============================================================================
 
 /// Outcome of a results CSV export (surfaced as a toast).
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct ResultsCsvSummary {
     /// Data rows written (ranked candidates).
     pub rows: i64,
@@ -1135,13 +980,11 @@ pub struct ResultsCsvSummary {
 }
 
 // ============================================================================
-// Job bundle export/import (contract DTOs from `libtriqui_core::job_bundle`)
+// Job bundle export/import
 // ============================================================================
 
-/// What to include in an export. CV files are always included — without them
-/// the bundle is just names and numbers, which the app cannot interpret (there
-/// is no NER extracting candidate identity).
-#[derive(Debug, Clone, Default, Serialize, Deserialize, Type)]
+/// What to include in an export.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct BundleExportOptions {
     #[serde(default)]
     pub include_ad: bool,
@@ -1161,9 +1004,23 @@ pub struct BundleExportOptions {
 }
 
 /// Outcome of an export (surfaced as a toast / log).
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct BundleExportSummary {
     pub candidates_total: i64,
     pub files_missing: i64,
     pub criteria_included: usize,
+}
+
+// ============================================================================
+// Download status
+// ============================================================================
+
+/// Download status for a model.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+#[serde(tag = "status")]
+pub enum DownloadStatus {
+    NotDownloaded,
+    Downloading { progress: f32 },
+    Downloaded { path: String },
+    Failed { error: String },
 }

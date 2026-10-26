@@ -57,6 +57,18 @@ enum Commands {
     },
     /// List available embedders from config
     ListEmbedders,
+    /// Output the TypeScript types for the CLI protocol
+    ProtocolTs {
+        /// Output file (default: stdout)
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
+    /// Output the JSON Schema for the CLI protocol
+    ProtocolSchema {
+        /// Output file (default: stdout)
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
 }
 
 fn main() {
@@ -176,6 +188,24 @@ fn main() {
             CONFIG.set(config.clone()).ok();
             for ge in &config.gui_embedders {
                 println!("{} ({}) - {} MB", ge.slug, ge.name, ge.memory_mb);
+            }
+        }
+        Commands::ProtocolTs { output } => {
+            let ts = include_str!("../../lib/libcli-client/protocol.ts");
+            if let Some(path) = output {
+                std::fs::write(&path, ts).expect("Failed to write protocol TypeScript");
+                eprintln!("Protocol TypeScript written to {}", path.display());
+            } else {
+                println!("{ts}");
+            }
+        }
+        Commands::ProtocolSchema { output } => {
+            let schema = include_str!("../../lib/libcli-client/protocol-schema.json");
+            if let Some(path) = output {
+                std::fs::write(&path, schema).expect("Failed to write protocol schema");
+                eprintln!("Protocol JSON Schema written to {}", path.display());
+            } else {
+                println!("{schema}");
             }
         }
     }

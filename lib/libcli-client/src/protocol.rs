@@ -10,15 +10,17 @@
 //! request simply stays open when the frontend awaits completion — either way
 //! the request loop never blocks on modelcaller/modeldownloader).
 
+use libcli_client_types::{DomainError, RecoveryError};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use specta::Type;
 
 /// Defensive cap on one protocol line (16 MB). Bulk data must go through
 /// files (path in the message), never through the pipe.
 pub const MAX_LINE_BYTES: u64 = 16 * 1024 * 1024;
 
 /// A request from the gui to the serve process.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct Request {
     pub id: u64,
     pub cmd: String,
@@ -27,9 +29,9 @@ pub struct Request {
 }
 
 /// A protocol error. `domain` carries the serialized typed error (e.g.
-/// [`DomainError`] / [`crate::types::RecoveryError`]) for commands whose
+/// [`DomainError`] / [`RecoveryError`]) for commands whose
 /// frontend signature matches on it; `message` is always the display form.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct ProtocolError {
     /// `"domain"` when `domain` is set, `"internal"` otherwise.
     pub code: String,
@@ -71,20 +73,20 @@ impl std::fmt::Display for ProtocolError {
 
 /// `?`-friendly conversion so handlers can propagate fallible-domain errors
 /// (`Result<_, DomainError>`) directly into `Result<_, ProtocolError>`.
-impl From<crate::types::DomainError> for ProtocolError {
-    fn from(err: crate::types::DomainError) -> Self {
+impl From<DomainError> for ProtocolError {
+    fn from(err: DomainError) -> Self {
         Self::domain(&err)
     }
 }
 
-impl From<crate::types::RecoveryError> for ProtocolError {
-    fn from(err: crate::types::RecoveryError) -> Self {
+impl From<RecoveryError> for ProtocolError {
+    fn from(err: RecoveryError) -> Self {
         Self::domain(&err)
     }
 }
 
 /// A response to one request. Exactly one of `ok`/`err` is set.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct Response {
     pub id: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -114,14 +116,14 @@ impl Response {
 /// An unsolicited event from the serve process (progress, status, ...).
 /// The gui bridge forwards these as Tauri events with the same name/payload,
 /// so frontend listeners are unchanged by the migration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct Event {
     pub event: String,
     pub data: Value,
 }
 
 /// Anything the serve process can send on stdout.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(untagged)]
 pub enum Inbound {
     Response(Response),
@@ -131,7 +133,7 @@ pub enum Inbound {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::DomainError;
+    use libcli_client_types::DomainError;
 
     #[test]
     fn response_round_trip_ok() {

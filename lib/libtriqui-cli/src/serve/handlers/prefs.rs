@@ -5,7 +5,7 @@ use serde_json::Value;
 use std::path::PathBuf;
 
 use libtriqui_client::protocol::ProtocolError;
-use libtriqui_client::types::{validate_color_theme, validate_theme, AppPreferences};
+use libtriqui_client::{validate_color_theme, validate_theme, AppPreferences};
 
 use crate::serve::handlers::{ok_json, string_err};
 use crate::serve::watch::cv_root;

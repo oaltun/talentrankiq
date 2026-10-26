@@ -1,0 +1,2335 @@
+{
+  "definitions": {
+    "Activity": {
+      "title": "Activity",
+      "description": "What the engine is working on right now — one human-readable status line.",
+      "type": "object",
+      "required": [
+        "stage",
+        "subject"
+      ],
+      "properties": {
+        "detail": {
+          "description": "Fine-grained position within the subject, e.g. `chunk 3/17` or `pair 210/1120`.",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "description": "Model slug serving this work (the embedder, the scout, or the judge's embedder).",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stage": {
+          "description": "Stable stage code: `scout` | `embed` | `judge` | `inspect`.",
+          "type": "string"
+        },
+        "subject": {
+          "description": "The thing being worked on — a CV file name, or `a.pdf vs b.pdf`.",
+          "type": "string"
+        }
+      }
+    },
+    "AdSource": {
+      "title": "AdSource",
+      "description": "What backs the ad slot of a candidate's total.",
+      "oneOf": [
+        {
+          "description": "The scout's ad cosine.",
+          "type": "string",
+          "enum": [
+            "scout"
+          ]
+        },
+        {
+          "description": "The heavy embedder's ad cosine.",
+          "type": "string",
+          "enum": [
+            "heavy"
+          ]
+        },
+        {
+          "description": "The judge's pairwise win-rate. It replaces the ad slot's *value* and never its weight, so it changes no row's max-points.",
+          "type": "string",
+          "enum": [
+            "judge"
+          ]
+        }
+      ]
+    },
+    "AppPreferences": {
+      "title": "AppPreferences",
+      "description": "Application preferences that persist to disk.",
+      "type": "object",
+      "required": [
+        "theme"
+      ],
+      "properties": {
+        "color_theme": {
+          "description": "Color scheme (palette) applied on top of light/dark mode: \"default\", \"slate\", \"ocean\", \"forest\", \"amber\", or \"contrast\"",
+          "default": "default",
+          "type": "string"
+        },
+        "cv_dir_root": {
+          "description": "Root folder for new jobs' default CV directories (`<root>/job-N/cv`), set from Settings → General → CV directory. If None, serve falls back to `gui_cv_dir_root` from `triq.yaml`, then the platform Documents dir + `jobs`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "embedding_model": {
+          "description": "Selected embedding model (e.g. \"nomic-embed-text-v1.5\"). If None, falls back to the runtime default or the TRIQI_EMBED_MODEL env var.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "engine_backend": {
+          "description": "Engine backend preference: \"auto\" | \"ort\" | \"mlx\". Only set by advanced users; if None, uses the config `engine.backend` (\"auto\" by default).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "engine_embed_batch": {
+          "description": "Embed batch size ceiling. If None, uses config (derived from budget).",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "engine_exec_provider": {
+          "description": "ONNX execution provider: \"auto\" | \"cpu\" | \"coreml\" | etc. If None, uses the config `engine.exec_provider` (None = CPU).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "engine_inter_threads": {
+          "description": "Inter-op thread cap. If None, uses config (single-threaded by default).",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "engine_intra_threads": {
+          "description": "Intra-op thread cap. If None, uses config (derived from libsyscap budget).",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "engine_max_cores": {
+          "description": "Max cores cap. If None, uses config (no cap).",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "engine_no_cache": {
+          "description": "Benchmark mode: skip caches. If None, uses config (default false).",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "inference_model": {
+          "description": "Selected text-inference model. If None, falls back to the runtime default.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "language": {
+          "description": "User's preferred language (e.g., \"en\", \"es\", \"de\") If None, uses system locale detection",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "quick_pane_shortcut": {
+          "description": "Global shortcut for quick pane (e.g., \"CommandOrControl+Shift+.\") If None, uses the default shortcut",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "theme": {
+          "type": "string"
+        }
+      }
+    },
+    "BundleExportOptions": {
+      "title": "BundleExportOptions",
+      "description": "What to include in an export.",
+      "type": "object",
+      "properties": {
+        "criterion_ids": {
+          "description": "Ids of the criteria to include (order preserved).",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "include_ad": {
+          "default": false,
+          "type": "boolean"
+        },
+        "include_likes": {
+          "default": false,
+          "type": "boolean"
+        },
+        "include_results": {
+          "default": false,
+          "type": "boolean"
+        },
+        "include_weights": {
+          "default": false,
+          "type": "boolean"
+        },
+        "top_n": {
+          "description": "Export only the top N ranked candidates (CV files + result rows); `None` = all. Unranked candidates sort last and are dropped first.",
+          "default": null,
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      }
+    },
+    "BundleExportSummary": {
+      "title": "BundleExportSummary",
+      "description": "Outcome of an export (surfaced as a toast / log).",
+      "type": "object",
+      "required": [
+        "candidates_total",
+        "criteria_included",
+        "files_missing"
+      ],
+      "properties": {
+        "candidates_total": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "criteria_included": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "files_missing": {
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
+    "Candidate": {
+      "title": "Candidate",
+      "description": "One applicant's CV within a Job.",
+      "type": "object",
+      "required": [
+        "extraction_status",
+        "file_name",
+        "file_type",
+        "id",
+        "imported_at",
+        "job_id",
+        "source_file_path"
+      ],
+      "properties": {
+        "extracted_text": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "extraction_status": {
+          "$ref": "#/definitions/ExtractionStatus"
+        },
+        "file_name": {
+          "type": "string"
+        },
+        "file_type": {
+          "$ref": "#/definitions/FileType"
+        },
+        "id": {
+          "type": "string"
+        },
+        "imported_at": {
+          "type": "string"
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "rank": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32"
+        },
+        "ranked_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_file_path": {
+          "type": "string"
+        }
+      }
+    },
+    "CandidateDetail": {
+      "title": "CandidateDetail",
+      "description": "Candidate overlay payload.",
+      "type": "object",
+      "required": [
+        "extraction_status",
+        "file_name",
+        "file_type",
+        "id",
+        "job_id",
+        "original_available",
+        "source_file_path"
+      ],
+      "properties": {
+        "extracted_text": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "extraction_status": {
+          "$ref": "#/definitions/ExtractionStatus"
+        },
+        "file_name": {
+          "type": "string"
+        },
+        "file_type": {
+          "$ref": "#/definitions/FileType"
+        },
+        "id": {
+          "type": "string"
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "liked": {
+          "description": "Whether the user has starred this CV (feedback signal).",
+          "default": false,
+          "type": "boolean"
+        },
+        "original_available": {
+          "type": "boolean"
+        },
+        "points": {
+          "description": "Total rubric points. None until ranked.",
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "points_max": {
+          "description": "Sum of question max-points (the rubric capacity). None until ranked.",
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "rank": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32"
+        },
+        "rubric_scores": {
+          "description": "Per-question rubric breakdown. Empty until ranked.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RubricScore"
+          }
+        },
+        "source_file_path": {
+          "type": "string"
+        },
+        "viewed_at": {
+          "description": "When the user last opened this CV in the inspector (read/unread marking; NULL = unread).",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "CandidateNeighbors": {
+      "title": "CandidateNeighbors",
+      "description": "Prev/next candidate ids in the job's global ordering (for overlay navigation across all candidates, not just the triqui).",
+      "type": "object",
+      "properties": {
+        "next_id": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "prev_id": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "CandidatePage": {
+      "title": "CandidatePage",
+      "description": "A page of candidate results for the browser.",
+      "type": "object",
+      "required": [
+        "items",
+        "total"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/CandidateSummary"
+          }
+        },
+        "total": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "CandidateSummary": {
+      "description": "One row in the candidate browser (all of a job's candidates, not just the ranked triqui). Carries the per-question breakdown for the spreadsheet columns.",
+      "type": "object",
+      "required": [
+        "extraction_status",
+        "file_name",
+        "file_type",
+        "id"
+      ],
+      "properties": {
+        "ad_source": {
+          "description": "What backs the ad slot of this candidate's total.",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/AdSource"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "extraction_status": {
+          "$ref": "#/definitions/ExtractionStatus"
+        },
+        "file_name": {
+          "type": "string"
+        },
+        "file_type": {
+          "$ref": "#/definitions/FileType"
+        },
+        "grade_space": {
+          "description": "Which embedding space this candidate's criteria/feedback similarities come from. `None` until something has graded it at all.",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/GradeSpace"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "liked": {
+          "description": "Whether the user has liked this CV (feedback signal).",
+          "default": false,
+          "type": "boolean"
+        },
+        "points": {
+          "description": "Total rubric points. None until ranked.",
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "points_max": {
+          "description": "Sum of question max-points (the rubric capacity). None until ranked.",
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "rank": {
+          "default": null,
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32"
+        },
+        "scores": {
+          "description": "Per-question points (one row per rubric question). Empty until ranked.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RubricScore"
+          }
+        },
+        "viewed_at": {
+          "description": "When the user last opened this CV in the inspector (read/unread marking; NULL = unread).",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "ChunkExplanation": {
+      "title": "ChunkExplanation",
+      "description": "One chunk that contributed to a rubric score via maxsim.",
+      "type": "object",
+      "required": [
+        "similarity",
+        "text"
+      ],
+      "properties": {
+        "similarity": {
+          "description": "Cosine similarity of this chunk against the question vector.",
+          "type": "number",
+          "format": "double"
+        },
+        "text": {
+          "description": "The chunk text from the CV.",
+          "type": "string"
+        }
+      }
+    },
+    "ChunkMatchResult": {
+      "title": "ChunkMatchResult",
+      "description": "Match Lens response: EVERY chunk of the candidate at the requested size, in document order. The frontend picks the top-n and ranks, so changing n re-ranks client-side without a refetch.",
+      "type": "object",
+      "required": [
+        "chunks",
+        "model"
+      ],
+      "properties": {
+        "chunks": {
+          "description": "All chunks, in document order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ChunkSim"
+          }
+        },
+        "model": {
+          "description": "Model slug that produced the vectors.",
+          "type": "string"
+        }
+      }
+    },
+    "ChunkMatchTarget": {
+      "title": "ChunkMatchTarget",
+      "description": "Which text the CV chunks are compared against in the Match Lens (CV Inspector). Serialized externally tagged: `\"JobAd\"`, `{\"Criterion\": {\"id\": \"...\"}}`.",
+      "oneOf": [
+        {
+          "description": "The job advertisement text.",
+          "type": "string",
+          "enum": [
+            "JobAd"
+          ]
+        },
+        {
+          "description": "One criterion, by id.",
+          "type": "object",
+          "required": [
+            "Criterion"
+          ],
+          "properties": {
+            "Criterion": {
+              "type": "object",
+              "required": [
+                "id"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ChunkSim": {
+      "description": "One CV chunk with its char range in the extracted text and its cosine similarity to the target.",
+      "type": "object",
+      "required": [
+        "char_end",
+        "char_start",
+        "similarity"
+      ],
+      "properties": {
+        "char_end": {
+          "description": "Char index one past the chunk end.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "char_start": {
+          "description": "Char index of the chunk start in the candidate's extracted text.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "similarity": {
+          "description": "Cosine similarity of the chunk embedding against the target embedding.",
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "CosinePair": {
+      "title": "CosinePair",
+      "description": "Result of a single pair-wise cosine comparison.",
+      "type": "object",
+      "required": [
+        "i",
+        "j",
+        "label_i",
+        "label_j",
+        "similarity"
+      ],
+      "properties": {
+        "i": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "j": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "label_i": {
+          "type": "string"
+        },
+        "label_j": {
+          "type": "string"
+        },
+        "similarity": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "Criterion": {
+      "title": "Criterion",
+      "description": "An extra requirement beyond the job ad (always positive — negative criteria removed).",
+      "type": "object",
+      "required": [
+        "created_at",
+        "id",
+        "job_id",
+        "text",
+        "weight"
+      ],
+      "properties": {
+        "created_at": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "weight": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "DomainError": {
+      "title": "DomainError",
+      "description": "Fallible-domain errors (typed for frontend matching via `#[serde(tag = \"type\")]`).",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "entity",
+            "id",
+            "type"
+          ],
+          "properties": {
+            "entity": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "NotFound"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "message",
+            "type"
+          ],
+          "properties": {
+            "message": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "ValidationError"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "message",
+            "type"
+          ],
+          "properties": {
+            "message": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "DbError"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "message",
+            "type"
+          ],
+          "properties": {
+            "message": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "IoError"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "message",
+            "type"
+          ],
+          "properties": {
+            "message": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "ParseError"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "DownloadStatus": {
+      "title": "DownloadStatus",
+      "description": "Download status for a model.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "status"
+          ],
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "NotDownloaded"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "progress",
+            "status"
+          ],
+          "properties": {
+            "progress": {
+              "type": "number",
+              "format": "float"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "Downloading"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "path",
+            "status"
+          ],
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "Downloaded"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "error",
+            "status"
+          ],
+          "properties": {
+            "error": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "Failed"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "EmbedderVariants": {
+      "title": "EmbedderVariants",
+      "description": "Which arm serves an embedder slug on this machine, and whether its weights are on disk — resolved engine-free (no model load, no wrapper).",
+      "type": "object",
+      "required": [
+        "model",
+        "onnx_present",
+        "present",
+        "runtime"
+      ],
+      "properties": {
+        "mlx_present": {
+          "description": "The MLX variant exists (`None` when the model declares no variant).",
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "model": {
+          "type": "string"
+        },
+        "onnx_present": {
+          "description": "The ONNX graph exists (the arm-independent fallback).",
+          "type": "boolean"
+        },
+        "present": {
+          "description": "The effective arm's weights exist on disk.",
+          "type": "boolean"
+        },
+        "runtime": {
+          "description": "`\"ort\"` or `\"mlx\"` — the arm `embed` would be served by.",
+          "type": "string"
+        }
+      }
+    },
+    "EmbeddingProgress": {
+      "title": "EmbeddingProgress",
+      "description": "Payload for the `job-embedding-progress` event.",
+      "type": "object",
+      "required": [
+        "active",
+        "done",
+        "failed",
+        "job_id",
+        "total"
+      ],
+      "properties": {
+        "active": {
+          "type": "boolean"
+        },
+        "done": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "failed": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "total": {
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
+    "Event": {
+      "type": "object",
+      "required": [
+        "data",
+        "event"
+      ],
+      "properties": {
+        "data": true,
+        "event": {
+          "type": "string"
+        }
+      }
+    },
+    "ExtractionStatus": {
+      "title": "ExtractionStatus",
+      "description": "Per-candidate extraction lifecycle.",
+      "type": "string",
+      "enum": [
+        "Queued",
+        "Extracting",
+        "Extracted",
+        "Failed"
+      ]
+    },
+    "FileType": {
+      "title": "FileType",
+      "description": "Supported CV file types.",
+      "type": "string",
+      "enum": [
+        "Doc",
+        "Docx",
+        "Pdf",
+        "Txt",
+        "Other"
+      ]
+    },
+    "GradeSpace": {
+      "title": "GradeSpace",
+      "description": "Which embedding space a candidate's *criteria and feedback* similarities were computed in (scoring v3).",
+      "oneOf": [
+        {
+          "description": "The cheap scout's space — the candidate has not been reached by the heavy embedder yet. Every candidate has a complete scorecard here, because the scout scores the whole rubric rather than only the ad.",
+          "type": "string",
+          "enum": [
+            "scout"
+          ]
+        },
+        {
+          "description": "The selected embedder's space.",
+          "type": "string",
+          "enum": [
+            "heavy"
+          ]
+        }
+      ]
+    },
+    "GuiEmbedder": {
+      "title": "GuiEmbedder",
+      "description": "One ONNX embedder from `triq.yaml` `gui_embedders`, enriched with on-disk state.",
+      "type": "object",
+      "required": [
+        "dim",
+        "downloaded",
+        "is_default",
+        "max_context_window",
+        "memory_mb",
+        "name",
+        "size_bytes",
+        "slug",
+        "source"
+      ],
+      "properties": {
+        "dim": {
+          "description": "Embedding dimension.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "downloaded": {
+          "description": "True when the ONNX files are present in the model cache.",
+          "type": "boolean"
+        },
+        "is_default": {
+          "description": "True when this is the active default embedder (per saved preferences).",
+          "type": "boolean"
+        },
+        "max_context_window": {
+          "description": "Max context window in tokens.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "memory_mb": {
+          "description": "Approximate RAM footprint in MB.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "name": {
+          "description": "Human-readable name shown in the UI.",
+          "type": "string"
+        },
+        "size_bytes": {
+          "description": "On-disk size of the cached model, in bytes (0 when not downloaded).",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "slug": {
+          "description": "Model slug (also the cache directory name), e.g. `nomic-embed-text-v1.5`.",
+          "type": "string"
+        },
+        "source": {
+          "description": "Hugging Face source (`hf:org/repo`) used by `modeldownloader`.",
+          "type": "string"
+        }
+      }
+    },
+    "ImportProgress": {
+      "title": "ImportProgress",
+      "description": "Payload for the `job-import-progress` event.",
+      "type": "object",
+      "required": [
+        "active",
+        "done",
+        "failed",
+        "job_id",
+        "phase",
+        "total"
+      ],
+      "properties": {
+        "active": {
+          "type": "boolean"
+        },
+        "done": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "failed": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "phase": {
+          "description": "Which sub-phase is running: \"extracting\" | \"embedding\" | \"ranking\" | \"engine-unavailable\" | \"done\".",
+          "type": "string"
+        },
+        "total": {
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
+    "Inbound": {
+      "title": "Inbound",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Response"
+        },
+        {
+          "$ref": "#/definitions/Event"
+        }
+      ]
+    },
+    "Job": {
+      "description": "A single hiring opening the HR user is screening for.",
+      "type": "object",
+      "required": [
+        "archived",
+        "created_at",
+        "id",
+        "title",
+        "triqui_size",
+        "updated_at"
+      ],
+      "properties": {
+        "ad_weight": {
+          "description": "Rubric weight: max points for the job-ad question.",
+          "default": 50.0,
+          "type": "number",
+          "format": "double"
+        },
+        "archived": {
+          "type": "boolean"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "fb_job_weight": {
+          "description": "Rubric weight: max points for the per-job feedback question.",
+          "default": 10.0,
+          "type": "number",
+          "format": "double"
+        },
+        "fb_profile_weight": {
+          "description": "Rubric weight: max points for the cross-job feedback question.",
+          "default": 10.0,
+          "type": "number",
+          "format": "double"
+        },
+        "id": {
+          "type": "string"
+        },
+        "import_directory_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "inputs_updated_at": {
+          "description": "When ranking inputs (ad / N / criteria) last changed. Drives the stale badge (NOT bumped on a mere title edit).",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "job_ad_path": {
+          "description": "The job-ad **file** this job reads its ad from, absolute. Resolved on first read to `<cv-root>/<job-slug>/job-ad.txt` and created empty; the user can point it elsewhere (\"Change\"). The ad itself lives in that file — this app has no ad editor — and edits on disk are picked up and re-ranked. `None` only until it has been resolved once.",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "job_ad_text": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_ranked_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "triqui_size": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      }
+    },
+    "JobAdFile": {
+      "title": "JobAdFile",
+      "description": "The job-ad **file**: where it is and what it says.",
+      "type": "object",
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "created": {
+          "description": "True when this call had to create the file.",
+          "default": false,
+          "type": "boolean"
+        },
+        "path": {
+          "description": "Absolute path to the ad file. Created empty on first resolution.",
+          "type": "string"
+        },
+        "text": {
+          "description": "The file's contents; empty when the user has not written an ad yet.",
+          "default": "",
+          "type": "string"
+        }
+      }
+    },
+    "JobDetail": {
+      "title": "JobDetail",
+      "description": "Full Job-view payload.",
+      "type": "object",
+      "required": [
+        "criteria",
+        "cv_failed",
+        "cv_imported",
+        "importing",
+        "job",
+        "rubric",
+        "triqui"
+      ],
+      "properties": {
+        "criteria": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Criterion"
+          }
+        },
+        "cv_failed": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "cv_imported": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "importing": {
+          "type": "boolean"
+        },
+        "job": {
+          "$ref": "#/definitions/Job"
+        },
+        "rubric": {
+          "description": "The results-table columns, in display order: the cascade's stage grades in pipeline order (lexical, scout, the job-ad cosine the heavy embedder gives, the judge's win-rate), then the rubric the total is made of (criteria and the two feedback rows).",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RubricQuestion"
+          }
+        },
+        "rubric_capacity": {
+          "description": "Σ |max_points| over the questions that count towards `points` — the rubric's whole weight. Backend-derived so the sheet never has to re-decide which columns are rubric and which are stages.",
+          "default": 0.0,
+          "type": "number",
+          "format": "float"
+        },
+        "triqui": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/TriqiItem"
+          }
+        }
+      }
+    },
+    "JobSummary": {
+      "title": "JobSummary",
+      "description": "One row in the Jobs list — precomputed facts (no status enum).",
+      "type": "object",
+      "required": [
+        "ad_set",
+        "archived",
+        "avoid_count",
+        "created_at",
+        "cv_failed",
+        "cv_imported",
+        "id",
+        "importing",
+        "title",
+        "triqui_size",
+        "want_count"
+      ],
+      "properties": {
+        "ad_set": {
+          "type": "boolean"
+        },
+        "archived": {
+          "type": "boolean"
+        },
+        "avoid_count": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "cv_failed": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "cv_imported": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "id": {
+          "type": "string"
+        },
+        "importing": {
+          "type": "boolean"
+        },
+        "last_ranked_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "triqui_size": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "want_count": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "JobUiState": {
+      "title": "JobUiState",
+      "description": "Backend-owned enablement state for a job's Re-rank button.",
+      "type": "object",
+      "required": [
+        "engine_ready",
+        "rerank_dirty",
+        "sort_allowed"
+      ],
+      "properties": {
+        "engine_ready": {
+          "description": "Engine status is `Running` (a rank may need it for re-embedding).",
+          "type": "boolean"
+        },
+        "nudge": {
+          "description": "One-shot guidance code, backend-decided.",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rank": {
+          "description": "Progressive-ranking cascade state (live run + last-rank coverage).",
+          "default": {
+            "candidates": 0,
+            "converged": false,
+            "embedded_done": 0,
+            "embedded_total": 0,
+            "judged": 0,
+            "ranking": false,
+            "reason": null,
+            "running": false,
+            "stage": null,
+            "wave": null
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/RankState"
+            }
+          ]
+        },
+        "reason": {
+          "description": "Stable reason code for the current state, precedence: `no-cvs` > `no-jobad` > `engine-not-ready` > `stale` > `clean`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rerank_dirty": {
+          "description": "Ranking inputs changed since the last rank (or never ranked).",
+          "type": "boolean"
+        },
+        "sort_allowed": {
+          "description": "At least one extracted CV — without it ranking is meaningless.",
+          "type": "boolean"
+        }
+      }
+    },
+    "LicenseStatus": {
+      "title": "LicenseStatus",
+      "description": "License status for the judge license.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "artifacts",
+            "customer",
+            "expires_at",
+            "kind"
+          ],
+          "properties": {
+            "artifacts": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "customer": {
+              "type": "string"
+            },
+            "expires_at": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "Licensed"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "reason"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "Invalid"
+              ]
+            },
+            "reason": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "NotFound"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "reason"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "Revoked"
+              ]
+            },
+            "reason": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "ModelDownloadComplete": {
+      "title": "ModelDownloadComplete",
+      "description": "Completion payload emitted when an ONNX model download finishes.",
+      "type": "object",
+      "required": [
+        "path",
+        "slug"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        }
+      }
+    },
+    "ModelDownloadProgress": {
+      "title": "ModelDownloadProgress",
+      "description": "Progress payload emitted during an ONNX model download.",
+      "type": "object",
+      "required": [
+        "done",
+        "filename",
+        "repo_id"
+      ],
+      "properties": {
+        "done": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "filename": {
+          "type": "string"
+        },
+        "repo_id": {
+          "type": "string"
+        },
+        "total": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0.0
+        }
+      }
+    },
+    "ModelKind": {
+      "title": "ModelKind",
+      "description": "Which kind of model an operation targets.",
+      "type": "string",
+      "enum": [
+        "embedding",
+        "textGeneration"
+      ]
+    },
+    "ProtocolError": {
+      "title": "ProtocolError",
+      "type": "object",
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "domain": true,
+        "message": {
+          "type": "string"
+        }
+      }
+    },
+    "QuestionKind": {
+      "title": "QuestionKind",
+      "description": "Which kind of rubric question a row represents.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "Ad",
+            "Criterion",
+            "FeedbackJob",
+            "FeedbackProfile"
+          ]
+        },
+        {
+          "description": "\"Job fit (judge)\" — pairwise-judge win-rate replacing the `Ad` cosine row when the gui judge stage is active (`gui_judge_artifact`).",
+          "type": "string",
+          "enum": [
+            "AdJudge"
+          ]
+        },
+        {
+          "description": "Stage-0.5 scout row — the cheap multilingual embedder's similarity to the job ad, in the ad row's currency. Scored for *every* candidate, so the results table can show what the scout thought of a CV that the heavy embedder has not reached yet.",
+          "type": "string",
+          "enum": [
+            "Scout"
+          ]
+        }
+      ]
+    },
+    "RankProgress": {
+      "title": "RankProgress",
+      "description": "Progress event payload for a running cascade (`rank-progress` event).",
+      "type": "object",
+      "required": [
+        "candidates",
+        "embedded_done",
+        "embedded_total",
+        "job_id",
+        "judged",
+        "running",
+        "stage",
+        "wave"
+      ],
+      "properties": {
+        "candidates": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "embedded_done": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "embedded_total": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "judged": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "reason": {
+          "description": "Stable reason code while the run is alive but not making progress: `holding` = the system-capacity budget says hold (low memory).",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "running": {
+          "type": "boolean"
+        },
+        "stage": {
+          "type": "string"
+        },
+        "wave": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      }
+    },
+    "RankState": {
+      "title": "RankState",
+      "description": "Backend-derived state of a job's progressive-ranking cascade.",
+      "type": "object",
+      "required": [
+        "candidates",
+        "converged",
+        "embedded_done",
+        "embedded_total",
+        "judged",
+        "running"
+      ],
+      "properties": {
+        "candidates": {
+          "description": "Extracted candidates overall.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "converged": {
+          "description": "The last completed rank covers every candidate and inputs are clean.",
+          "type": "boolean"
+        },
+        "embedded_done": {
+          "description": "Candidates embedded with the current model so far.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "embedded_total": {
+          "description": "Candidates with embeddable text — the embed stage's total.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "judged": {
+          "description": "Candidates in the judge pool so far.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "ranking": {
+          "description": "The active cascade is actually ranking this job.",
+          "default": false,
+          "type": "boolean"
+        },
+        "reason": {
+          "description": "Stable reason code for the cascade state, precedence: `running` > `cancelled` > `stale` > `converged` > `partial`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "running": {
+          "description": "A cascade run is active for this job right now.",
+          "type": "boolean"
+        },
+        "stage": {
+          "description": "Live stage of the active run: `lex` | `embed` | `sort`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "wave": {
+          "description": "Current wave number (1-based) while running waves.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      }
+    },
+    "RecoveryError": {
+      "title": "RecoveryError",
+      "description": "Error types for recovery operations (typed for frontend matching)",
+      "oneOf": [
+        {
+          "description": "File does not exist (expected case, not a failure)",
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "FileNotFound"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Filename validation failed",
+          "type": "object",
+          "required": [
+            "message",
+            "type"
+          ],
+          "properties": {
+            "message": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "ValidationError"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Data exceeds size limit",
+          "type": "object",
+          "required": [
+            "max_bytes",
+            "type"
+          ],
+          "properties": {
+            "max_bytes": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "DataTooLarge"
+              ]
+            }
+          }
+        },
+        {
+          "description": "File system read/write error",
+          "type": "object",
+          "required": [
+            "message",
+            "type"
+          ],
+          "properties": {
+            "message": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "IoError"
+              ]
+            }
+          }
+        },
+        {
+          "description": "JSON serialization/deserialization error",
+          "type": "object",
+          "required": [
+            "message",
+            "type"
+          ],
+          "properties": {
+            "message": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "ParseError"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "Request": {
+      "title": "Request",
+      "type": "object",
+      "required": [
+        "cmd",
+        "id"
+      ],
+      "properties": {
+        "cmd": {
+          "type": "string"
+        },
+        "id": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "params": {
+          "default": null
+        }
+      }
+    },
+    "Response": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "err": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ProtocolError"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "ok": true
+      }
+    },
+    "ResultsCsvSummary": {
+      "title": "ResultsCsvSummary",
+      "description": "Outcome of a results CSV export (surfaced as a toast).",
+      "type": "object",
+      "required": [
+        "questions",
+        "rows"
+      ],
+      "properties": {
+        "questions": {
+          "description": "Rubric question columns (job ad + criteria).",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "rows": {
+          "description": "Data rows written (ranked candidates).",
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
+    "RubricQuestion": {
+      "title": "RubricQuestion",
+      "description": "One question in a job's rubric (the scoring model) — no per-candidate value.",
+      "type": "object",
+      "required": [
+        "kind",
+        "label",
+        "max_points",
+        "question_id"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/definitions/QuestionKind"
+        },
+        "label": {
+          "type": "string"
+        },
+        "max_points": {
+          "description": "Max points (weight) for this question.",
+          "type": "number",
+          "format": "float"
+        },
+        "question_id": {
+          "type": "string"
+        }
+      }
+    },
+    "RubricScore": {
+      "title": "RubricScore",
+      "description": "One row of a candidate's rubric score: points earned on a single question.",
+      "type": "object",
+      "required": [
+        "kind",
+        "label",
+        "max_points",
+        "points",
+        "question_id"
+      ],
+      "properties": {
+        "chunk_explanations": {
+          "description": "Top matching CV chunk texts with similarity scores (maxsim explanation).",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ChunkExplanation"
+          }
+        },
+        "kind": {
+          "$ref": "#/definitions/QuestionKind"
+        },
+        "label": {
+          "type": "string"
+        },
+        "max_points": {
+          "description": "Max points (weight) for this question.",
+          "type": "number",
+          "format": "float"
+        },
+        "points": {
+          "description": "Points earned.",
+          "type": "number",
+          "format": "float"
+        },
+        "question_id": {
+          "type": "string"
+        }
+      }
+    },
+    "RuntimeStatusInfo": {
+      "title": "RuntimeStatusInfo",
+      "description": "Snapshot of the modelcaller engine state for the UI.",
+      "type": "object",
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "activity": {
+          "description": "What the engine is working on right now, when it is.",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Activity"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "backend": {
+          "description": "The arm serving `model` as its load response reported it: `\"ort\"` or `\"mlx\"`. `None` until the first load.",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "busy": {
+          "description": "An embed is currently in flight (only meaningful while `Running`).",
+          "default": false,
+          "type": "boolean"
+        },
+        "dim": {
+          "description": "Vector dimension; `0` until the first embedding response.",
+          "default": 0,
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "error": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "description": "`\"Starting\"` | `\"Running\"` | `\"Error\"` | `\"Stopped\"`.",
+          "type": "string"
+        }
+      }
+    },
+    "SortReport": {
+      "title": "SortReport",
+      "description": "Read-model of the last rank of a job: what the judge stage actually did.",
+      "type": "object",
+      "required": [
+        "created_at",
+        "job_id",
+        "judge_mode",
+        "judge_pairs_cached",
+        "judge_pairs_fresh"
+      ],
+      "properties": {
+        "cancelled": {
+          "description": "The last rank was cancelled mid-run (partial coverage).",
+          "default": false,
+          "type": "boolean"
+        },
+        "complete": {
+          "description": "The last rank covered every candidate (not cancelled mid-run).",
+          "default": false,
+          "type": "boolean"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "judge_mode": {
+          "type": "string"
+        },
+        "judge_pairs_cached": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "judge_pairs_fresh": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "mode": {
+          "description": "How the last rank ran: `full` (one blocking pass) or `waves` (progressive cascade).",
+          "default": "",
+          "type": "string"
+        },
+        "waves": {
+          "description": "Waves completed by the last rank (0 for full passes).",
+          "default": 0,
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      }
+    },
+    "SystemBudget": {
+      "title": "SystemBudget",
+      "description": "Backend-derived snapshot of the system-capacity budget (libsyscap).",
+      "type": "object",
+      "required": [
+        "holding",
+        "load",
+        "thread_cap",
+        "verdict",
+        "wave_scale"
+      ],
+      "properties": {
+        "embed_batch": {
+          "description": "Effective embed batch cap (`None` = config sets none).",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "holding": {
+          "description": "Convenience mirror of `verdict == \"hold\"`.",
+          "type": "boolean"
+        },
+        "load": {
+          "description": "The load sample the verdict was computed from.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/SystemLoad"
+            }
+          ]
+        },
+        "thread_cap": {
+          "description": "Effective intra-op thread cap the budget hands out.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "verdict": {
+          "description": "`full` | `polite` | `backoff` | `hold` (snake_case verdict code).",
+          "type": "string"
+        },
+        "wave_scale": {
+          "description": "Cascade wave multiplier currently applied (1.0 / 0.5 / 0.25 / 0.0).",
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "SystemLoad": {
+      "title": "SystemLoad",
+      "description": "One live-load sample (libsyscap `LoadSnapshot`), for provenance/UX.",
+      "type": "object",
+      "required": [
+        "cpu_pct",
+        "loadavg_1",
+        "mem_available_bytes",
+        "mem_total_bytes"
+      ],
+      "properties": {
+        "cpu_pct": {
+          "description": "Whole-system CPU utilization, 0..=100.",
+          "type": "number",
+          "format": "double"
+        },
+        "loadavg_1": {
+          "description": "1-minute load average.",
+          "type": "number",
+          "format": "double"
+        },
+        "mem_available_bytes": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "mem_total_bytes": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "on_battery": {
+          "description": "`None` when the host has no readable battery.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      }
+    },
+    "TriqiItem": {
+      "description": "A ranked triqui row (no extracted text — fetched on overlay open).",
+      "type": "object",
+      "required": [
+        "extraction_status",
+        "file_name",
+        "file_type",
+        "id",
+        "rank"
+      ],
+      "properties": {
+        "extraction_status": {
+          "$ref": "#/definitions/ExtractionStatus"
+        },
+        "file_name": {
+          "type": "string"
+        },
+        "file_type": {
+          "$ref": "#/definitions/FileType"
+        },
+        "id": {
+          "type": "string"
+        },
+        "liked": {
+          "description": "Whether the user has liked this CV (feedback signal).",
+          "default": false,
+          "type": "boolean"
+        },
+        "points": {
+          "description": "Total rubric points. None until ranked.",
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "points_max": {
+          "description": "Sum of question max-points (the rubric capacity). None until ranked.",
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "rank": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "viewed_at": {
+          "description": "When the user last opened this CV in the inspector (read/unread marking; NULL = unread).",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "TryModelProgress": {
+      "title": "TryModelProgress",
+      "description": "Per-CV progress event emitted during `try_model`.",
+      "type": "object",
+      "required": [
+        "cvIndex",
+        "cvLabel",
+        "cvTotal"
+      ],
+      "properties": {
+        "cvIndex": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "cvLabel": {
+          "type": "string"
+        },
+        "cvTotal": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
+        }
+      }
+    },
+    "TryModelResult": {
+      "title": "TryModelResult",
+      "description": "Result of the \"try model\" benchmark.",
+      "type": "object",
+      "required": [
+        "labels",
+        "median_ms",
+        "pairs",
+        "per_cv_ms"
+      ],
+      "properties": {
+        "labels": {
+          "description": "CV labels (short descriptions for the matrix).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "median_ms": {
+          "description": "Median processing time per CV in milliseconds.",
+          "type": "number",
+          "format": "double"
+        },
+        "pairs": {
+          "description": "All pair-wise cosine similarities (45 pairs for 10 CVs).",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/CosinePair"
+          }
+        },
+        "per_cv_ms": {
+          "description": "Per-CV processing times in milliseconds (one per CV).",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      }
+    },
+    "VettedEmbedder": {
+      "type": "object",
+      "required": [
+        "dim",
+        "downloaded",
+        "max_context_window",
+        "memory_mb",
+        "name",
+        "slug"
+      ],
+      "properties": {
+        "dim": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "downloaded": {
+          "type": "boolean"
+        },
+        "max_context_window": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "memory_mb": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "name": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        }
+      }
+    },
+    "VettedEmbeddersResponse": {
+      "title": "VettedEmbeddersResponse",
+      "type": "object",
+      "required": [
+        "embedders",
+        "recommended_slug",
+        "system_ram_mb"
+      ],
+      "properties": {
+        "embedders": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/VettedEmbedder"
+          }
+        },
+        "recommended_slug": {
+          "type": "string"
+        },
+        "system_ram_mb": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        }
+      }
+    }
+  }
+}

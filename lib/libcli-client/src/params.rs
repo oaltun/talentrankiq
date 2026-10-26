@@ -2,12 +2,11 @@
 //! protocol so neither can drift. Field names are the wire keys the gui shell
 //! serializes; `triqui-cli` deserializes exactly these structs.
 //!
-//! Responses reuse [`crate::types`] DTOs; events reuse the progress payloads
+//! Responses reuse [`libcli_client_types`] DTOs; events reuse the progress payloads
 //! there too.
 
+use libcli_client_types::{AppPreferences, BundleExportOptions, ChunkMatchTarget, ModelKind};
 use serde::{Deserialize, Serialize};
-
-use crate::types::{AppPreferences, BundleExportOptions, ChunkMatchTarget, ModelKind};
 
 macro_rules! params {
     (
@@ -146,18 +145,18 @@ params! {
         chunk_size: usize,
     }
 
-struct DownloadEmbedderParams { slug: String }
+    struct DownloadEmbedderParams { slug: String }
 
-struct RemoveEmbedderParams { slug: String }
+    struct RemoveEmbedderParams { slug: String }
 
-struct SetDefaultModelParams { kind: ModelKind, repo_id: String }
+    struct SetDefaultModelParams { kind: ModelKind, repo_id: String }
 
-struct SetEmbeddingModelParams { slug: String }
+    struct SetEmbeddingModelParams { slug: String }
 
-struct DownloadStatusParams { slug: String }
+    struct DownloadStatusParams { slug: String }
 
-/// Which arm would serve `model`, and are its weights on disk — engine-free.
-struct ModelVariantsParams { model: String }
+    /// Which arm would serve `model`, and are its weights on disk — engine-free.
+    struct ModelVariantsParams { model: String }
 
     struct TryModelParams { slug: String }
 

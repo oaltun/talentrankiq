@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use libtriqui_client::protocol::ProtocolError;
-use libtriqui_client::types::{validate_filename, RecoveryError, MAX_RECOVERY_DATA_BYTES};
+use libtriqui_client::{validate_filename, MAX_RECOVERY_DATA_BYTES, RecoveryError};
 
 use crate::serve::handlers::ok_json;
 use crate::serve::ServeState;

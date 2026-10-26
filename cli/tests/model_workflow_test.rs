@@ -1,7 +1,7 @@
 use libmodelstorage;
-use libtriqui_client::client::TriqiClient;
-use libtriqui_client::protocol::Event;
-use libtriqui_client::types::{
+use libcli_client::client::TriqiClient;
+use libcli_client::protocol::Event;
+use libcli_client::types::{
     GuiEmbedder, ModelDownloadComplete, ModelDownloadProgress, TryModelResult,
 };
 use serde_json::Value;
@@ -173,7 +173,7 @@ fn copy_benchmark_cvs(src: &std::path::Path, dst: &std::path::Path) -> Result<()
 }
 
 fn list_embedders(client: &TestClient) -> Result<Vec<GuiEmbedder>, Box<dyn std::error::Error>> {
-    let result: Vec<GuiEmbedder> = client.call("list_embedders", &libtriqui_client::params::EmptyParams {})?;
+    let result: Vec<GuiEmbedder> = client.call("list_embedders", &libcli_client::params::EmptyParams {})?;
     Ok(result)
 }
 
@@ -217,7 +217,7 @@ fn test_cli_model_workflow() {
         let was_downloaded = embedder.downloaded;
         if !was_downloaded {
             let download_result = client
-                .call_raw("download_embedder", &libtriqui_client::params::DownloadEmbedderParams { slug: slug.to_string() });
+.call_raw("download_embedder", &libcli_client::params::DownloadEmbedderParams { slug: slug.to_string() });
 
             if download_result.is_err() {
                 eprintln!("Download failed for {}: {:?}, skipping to next embedder", slug, download_result);
@@ -243,7 +243,7 @@ fn test_cli_model_workflow() {
         assert!(embedder.size_bytes > 0, "size_bytes > 0 for {}", slug);
 
         let result: TryModelResult = client
-            .call("try_model", &libtriqui_client::params::TryModelParams { slug: slug.to_string() })
+            .call("try_model", &libcli_client::params::TryModelParams { slug: slug.to_string() })
             .expect("try_model");
 
         assert_eq!(result.per_cv_ms.len(), 11, "11 CVs processed for {}", slug);
@@ -259,7 +259,7 @@ fn test_cli_model_workflow() {
         assert!(twin_similarity > 0.95, "twin similarity > 0.95 for {}, got {}", slug, twin_similarity);
 
         client
-            .call_raw("set_embedding_model", &libtriqui_client::params::SetEmbeddingModelParams { slug: slug.to_string() })
+            .call_raw("set_embedding_model", &libcli_client::params::SetEmbeddingModelParams { slug: slug.to_string() })
             .expect("set_embedding_model");
 
         let embedders = list_embedders(&client).expect("list_embedders after set default");
@@ -273,7 +273,7 @@ fn test_cli_model_workflow() {
         }
 
         client
-            .call_raw("remove_embedder", &libtriqui_client::params::RemoveEmbedderParams { slug: slug.to_string() })
+            .call_raw("remove_embedder", &libcli_client::params::RemoveEmbedderParams { slug: slug.to_string() })
             .expect("remove_embedder");
 
         let embedders = list_embedders(&client).expect("list_embedders after remove");
@@ -311,7 +311,7 @@ fn test_cli_model_download_interrupted() {
 
     // Start download
     let download_result = client
-        .call_raw("download_embedder", &libtriqui_client::params::DownloadEmbedderParams { slug: slug.to_string() });
+        .call_raw("download_embedder", &libcli_client::params::DownloadEmbedderParams { slug: slug.to_string() });
     download_result.expect("download_embedder request");
 
     // Wait for first progress event (confirms download started)

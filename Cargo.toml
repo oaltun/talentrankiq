@@ -6,6 +6,8 @@ members = [
     "lib/libtriqui-core",
     "lib/libtriqui-cli",
     "lib/libtriqui-client",
+    "lib/libcli-client",
+    "lib/libcli-client-types",
     "lib/libtriqui-license",
     "lib/libconfigreader",
     "lib/libcvparser",
