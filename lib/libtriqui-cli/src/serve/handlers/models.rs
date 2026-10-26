@@ -576,9 +576,9 @@ fn run_mlx_download(
                 }
             }
 
-            // Atomically move <temp_dir>/<slug>/ to final location <model_dir>/<slug>/
+            // Atomically move <temp_dir>/<slug>/<revision>/ to final location <model_dir>/<slug>/<revision>/
             // modeldownloader writes to <temp_dir>/<slug>/<revision>/
-            let downloaded_slug_dir = temp_dir.join(slug);
+            let downloaded_revision_dir = temp_dir.join(slug).join(&revision);
             if final_dir.exists() {
                 fs::remove_dir_all(&final_dir).map_err(|e| string_err(format!("failed to remove existing final dir: {e}")))?;
             }
@@ -586,7 +586,7 @@ fn run_mlx_download(
             if let Some(parent) = final_dir.parent() {
                 fs::create_dir_all(parent).map_err(|e| string_err(format!("failed to create final parent dir: {e}")))?;
             }
-            fs::rename(&downloaded_slug_dir, &final_dir).map_err(|e| {
+            fs::rename(&downloaded_revision_dir, &final_dir).map_err(|e| {
                 // On error, clean up temp dir and return error
                 let _ = fs::remove_dir_all(&temp_dir);
                 string_err(format!("failed to atomically move download to final location: {e}"))
