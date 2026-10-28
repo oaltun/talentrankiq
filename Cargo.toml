@@ -1,7 +1,6 @@
 [workspace]
 resolver = "2"
 members = [
-    "gui/src-tauri",
     "cli",
     "lib/libtriqui-core",
     "lib/libtriqui-cli",
@@ -36,8 +35,3 @@ opt-level = "s"
 panic = "unwind"
 strip = true
 
-# esaxx-rs forces .static_crt(true) → /MT on Windows, which conflicts with the
-# /MD used by every other C dependency in the graph (ort_sys, ...). Patch it
-# locally so the gui's cdylib/dll links cleanly on Windows. A no-op elsewhere.
-[patch.crates-io]
-esaxx-rs = { path = "gui/src-tauri/patches/esaxx-rs" }
