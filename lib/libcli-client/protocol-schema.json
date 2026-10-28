@@ -1823,6 +1823,13 @@
         },
         "params": {
           "default": null
+        },
+        "protocol_version": {
+          "description": "Protocol version sent by the client (e.g., \"1.2.0\"). The server uses this to verify compatibility.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },

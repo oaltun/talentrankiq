@@ -253,6 +253,10 @@ fn dispatch(state: &Arc<ServeState>, cmd: &str, params: &Value) -> Result<Value,
             let p: SetDefaultModelParams = from_params(params)?;
             models::set_default_model(state, p.kind, &p.repo_id).map(|_| Value::Null)
         }
+        "make_default_embedder" => {
+            let p: MakeDefaultEmbedderParams = from_params(params)?;
+            models::make_default_embedder(state, &p.slug).map(|_| Value::Null)
+        }
         "set_embedding_model" => {
             let p: SetEmbeddingModelParams = from_params(params)?;
             models::set_embedding_model(state, &p.slug).map(|_| Value::Null)

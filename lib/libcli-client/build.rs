@@ -16,6 +16,10 @@ struct Request {
     cmd: String,
     #[serde(default)]
     params: Value,
+    /// Protocol version sent by the client (e.g., "1.2.0").
+    /// The server uses this to verify compatibility.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    protocol_version: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, JsonSchema)]

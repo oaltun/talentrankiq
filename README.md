@@ -1,4 +1,4 @@
-# TalentRankIQ
+# TalentRankIQ CLI
 
 Local-first desktop app for ranking applicant CVs against job advertisements.
 Everything runs on-device (Tauri + Rust + React); no CV data leaves the machine.
@@ -73,22 +73,6 @@ At the repo root:
 
 ```sh
 cargo build --release
-```
-
-Builds the whole workspace — every `lib/` crate and `gui/src-tauri` — including `vendor/mlxcel`, which is linked through `libmlxembed`. Use `cargo build` (dev profile) for faster iteration.
-
-### 2. Build & run the GUI
-
-```sh
-cd gui
-npm install
-npm run tauri:dev
-```
-
-`npm run tauri:dev` rebuilds Rust in dev mode and launches the app. For a release bundle:
-
-```sh
-npm run tauri:build
 ```
 
 ## License

@@ -621,7 +621,12 @@ export type RecoveryError =
  */
 { type: "ParseError"; message: string }
 
-export type Request = { id: number; cmd: string; params?: JsonValue }
+export type Request = { id: number; cmd: string; params?: JsonValue; 
+/**
+ * Protocol version sent by the client (e.g., "1.2.0").
+ * The server uses this to verify compatibility.
+ */
+protocol_version?: string | null }
 
 export type Response = { id: number; ok?: JsonValue | null; err?: ProtocolError | null }
 

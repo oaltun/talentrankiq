@@ -151,6 +151,8 @@ params! {
 
     struct SetDefaultModelParams { kind: ModelKind, repo_id: String }
 
+    struct MakeDefaultEmbedderParams { slug: String }
+
     struct SetEmbeddingModelParams { slug: String }
 
     struct DownloadStatusParams { slug: String }

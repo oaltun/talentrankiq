@@ -815,6 +815,14 @@ pub fn set_default_model(
     save_app_preferences(state, prefs).map_err(string_err)
 }
 
+/// Set the embedder as the default embedding model (persisted to preferences).
+pub fn make_default_embedder(
+    state: &Arc<ServeState>,
+    slug: &str,
+) -> Result<(), ProtocolError> {
+    set_default_model(state, ModelKind::Embedding, slug)
+}
+
 /// Switch the embedding model: persists the choice, wipes every stored vector
 /// that belonged to the previous model (candidate chunk vectors + centroids,
 /// job-ad + criteria vectors), and swaps the engine's model over. The engine
