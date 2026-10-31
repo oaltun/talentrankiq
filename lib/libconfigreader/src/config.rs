@@ -1089,6 +1089,8 @@ pub struct UserOverrides {
     pub engine_provider_logging: Option<bool>,
     pub engine_max_cores: Option<usize>,
     pub engine_no_cache: Option<bool>,
+    /// Idle-unload timeout for the embedding engine in seconds (0 = disable idle unload).
+    pub gui_idle_unload_secs: Option<u64>,
 }
 
 impl UserOverrides {

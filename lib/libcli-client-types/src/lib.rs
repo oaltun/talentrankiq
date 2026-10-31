@@ -60,6 +60,9 @@ pub struct AppPreferences {
     /// Benchmark mode: skip caches. If None, uses config (default false).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub engine_no_cache: Option<bool>,
+    /// Idle-unload timeout for the embedding engine in seconds (0 = disable idle unload).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gui_idle_unload_secs: Option<u64>,
 }
 
 fn default_color_theme() -> String {
@@ -83,6 +86,7 @@ impl Default for AppPreferences {
             engine_embed_batch: None,
             engine_max_cores: None,
             engine_no_cache: None,
+            gui_idle_unload_secs: None,
         }
     }
 }

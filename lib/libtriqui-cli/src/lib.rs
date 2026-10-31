@@ -12,6 +12,7 @@ use libtriqui_core::db;
 use libtriqui_core::embeddings;
 use libtriqui_core::runtime::{EngineRuntime, RuntimeConfig};
 use libtriqui_core::sort;
+use libconfigreader::Config;
 
 pub mod inprocess;
 pub mod serve;
@@ -78,8 +79,11 @@ pub fn open(db_path: &std::path::Path) -> rusqlite::Connection {
 
 /// Spawn the engine and block until ready (or exit with the error).
 pub fn start_engine(model: &Option<String>, db_path: &std::path::Path) -> std::sync::Arc<EngineRuntime> {
+    let app_dir = db_path.parent().unwrap();
+    let user_ovr = crate::serve::user_overrides_from_prefs(app_dir);
+    let cfg = Config::load().with_user_overrides(&user_ovr);
     let rt = EngineRuntime::new(
-        RuntimeConfig::discover(model.clone()),
+        RuntimeConfig::discover(model.clone(), Some(cfg)),
         db_path.to_path_buf(),
     );
     // Surface status changes as info logs instead of UI events.

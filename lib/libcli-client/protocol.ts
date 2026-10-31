@@ -111,7 +111,11 @@ engine_max_cores?: number | null;
 /**
  * Benchmark mode: skip caches. If None, uses config (default false).
  */
-engine_no_cache?: boolean | null }
+engine_no_cache?: boolean | null; 
+/**
+ * Idle-unload timeout for the embedding engine in seconds (0 = disable idle unload).
+ */
+gui_idle_unload_secs?: number | null }
 
 /**
  * What to include in an export.

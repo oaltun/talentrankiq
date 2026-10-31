@@ -42,6 +42,8 @@ pub struct RuntimeConfig {
     /// Judge stage artifacts (`gui_judge_artifact`): per-embedder overrides
     /// plus a default; empty = judge disabled.
     pub judge_artifacts: libconfigreader::GuiJudgeArtifact,
+    /// Idle-unload timeout for the embedding engine in seconds (0 = disable idle unload).
+    pub gui_idle_unload_secs: u64,
 }
 
 impl RuntimeConfig {
@@ -49,21 +51,24 @@ impl RuntimeConfig {
     /// `SHORTLIST_EMBED_MODEL`, else the `gui_embedders` default from
     /// `triq.yaml`) is resolved by the caller when it has extra sources
     /// (the GUI layers user preferences on top).
-    pub fn discover(model: Option<String>) -> Self {
+    pub fn discover(model: Option<String>, cfg: Option<libconfigreader::Config>) -> Self {
+        let mut loaded_cfg = app_config::load_triq();
+        let base_cfg = cfg.as_ref().unwrap_or_else(|| &loaded_cfg);
         let model = model
             .or_else(|| std::env::var("SHORTLIST_EMBED_MODEL").ok())
             .unwrap_or_else(|| {
-                let cfg = app_config::load_triq();
-                cfg.gui_embedders
+                base_cfg.gui_embedders
                     .iter()
                     .find(|ge| ge.default)
                     .map(|ge| ge.slug.clone())
                     .unwrap_or_default()
             });
+        let gui_idle_unload_secs = base_cfg.gui_idle_unload_secs;
         Self {
             model_dir: app_config::model_dir(),
             model,
             judge_artifacts: app_config::gui_judge_artifacts(),
+            gui_idle_unload_secs,
         }
     }
 }
@@ -792,7 +797,7 @@ impl EngineRuntime {
     /// automatically on the next use because `wait_until_ready` restarts from
     /// `Stopped`. A timeout of `0` disables idle unloading.
     pub fn spawn_idle_monitor(self: &Arc<Self>) {
-        let secs = app_config::gui_idle_unload_secs();
+        let secs = self.cfg.gui_idle_unload_secs;
         if secs == 0 {
             log::info!("engine runtime: idle unload disabled (gui_idle_unload_secs: 0)");
             return;

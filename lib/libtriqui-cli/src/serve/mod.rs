@@ -36,6 +36,7 @@ use libtriqui_client::types::RuntimeStatusInfo;
 use serde::Serialize;
 use libtriqui_core::db::{self, DbConnection, ImportState};
 use libtriqui_core::runtime::{EngineRuntime, RuntimeConfig};
+use libconfigreader::Config;
 
 use crate::serve::watch::WatchHandle;
 
@@ -169,7 +170,9 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
     let model = std::env::var("TRIQI_EMBED_MODEL")
         .ok()
         .or_else(|| prefs_default_model(&app_dir));
-    let runtime = EngineRuntime::new(RuntimeConfig::discover(model), db_path.clone());
+    let user_ovr = user_overrides_from_prefs(&app_dir);
+    let cfg = Config::load().with_user_overrides(&user_ovr);
+    let runtime = EngineRuntime::new(RuntimeConfig::discover(model, Some(cfg)), db_path.clone());
 
     // Outbound queue + dedicated writer thread (invariant: only it touches
     // the output stream, so lines never interleave and a blocked write never
@@ -333,7 +336,7 @@ fn prefs_default_model(app_dir: &std::path::Path) -> Option<String> {
 
 /// Convert saved AppPreferences engine overrides into the libconfigreader
 /// `UserOverrides` shape used by `Config::with_user_overrides()`.
-fn user_overrides_from_prefs(app_dir: &std::path::Path) -> libconfigreader::UserOverrides {
+pub fn user_overrides_from_prefs(app_dir: &std::path::Path) -> libconfigreader::UserOverrides {
     let prefs = load_app_preferences(app_dir);
     libconfigreader::UserOverrides {
         engine_backend: prefs.engine_backend,
@@ -345,6 +348,7 @@ fn user_overrides_from_prefs(app_dir: &std::path::Path) -> libconfigreader::User
         engine_provider_logging: None,
         engine_max_cores: prefs.engine_max_cores.map(|v| v as usize),
         engine_no_cache: prefs.engine_no_cache,
+        gui_idle_unload_secs: prefs.gui_idle_unload_secs.map(|v| v as u64),
     }
 }
 

@@ -146,6 +146,15 @@
             "null"
           ]
         },
+        "gui_idle_unload_secs": {
+          "description": "Idle-unload timeout for the embedding engine in seconds (0 = disable idle unload).",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0.0
+        },
         "inference_model": {
           "description": "Selected text-inference model. If None, falls back to the runtime default.",
           "type": [
