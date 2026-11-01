@@ -72,6 +72,12 @@ pub fn add_criterion(
         )
         .map_err(libtriqui_core::db::db_err)?;
     drop(conn);
+    state.shadow_dispatch(libcv_state::Event::CriterionAdded {
+        criterion_id: id.clone(),
+        job_id: job_id.to_string(),
+        text: text.to_string(),
+        weight,
+    });
     // One invalidation path for every ranking input (`rescore::inputs_changed`):
     // embed the one criterion text that changed and re-project. No cancel, and no
     // "stale until you press Re-rank" — the rubric is the only state a rank reads,
@@ -130,6 +136,11 @@ pub fn update_criterion(
         )
         .map_err(libtriqui_core::db::db_err)?;
     drop(conn);
+    state.shadow_dispatch(libcv_state::Event::CriterionUpdated {
+        criterion_id: id.to_string(),
+        text: text.to_string(),
+        weight,
+    });
     if let Some(jid) = jid {
         reproject(state, &jid)?;
     }
@@ -142,6 +153,9 @@ pub fn delete_criterion(state: &Arc<ServeState>, id: &str) -> Result<(), Protoco
     conn.execute("DELETE FROM criteria WHERE id = ?1", rusqlite::params![id])
         .map_err(libtriqui_core::db::db_err)?;
     drop(conn);
+    state.shadow_dispatch(libcv_state::Event::CriterionRemoved {
+        criterion_id: id.to_string(),
+    });
     if let Some(jid) = jid {
         reproject(state, &jid)?;
     }

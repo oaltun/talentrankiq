@@ -6,8 +6,9 @@ pub type CvId = String;
 pub type JobId = String;
 pub type CriterionId = String;
 pub type FavId = String;
+pub type PairKey = (CvId, CvId);
 
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 pub enum ExtractionStatus {
     #[default]
     Pending,
@@ -15,7 +16,7 @@ pub enum ExtractionStatus {
     Failed,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "type")]
 pub enum Event {
     CvAdded { cv_id: CvId, job_id: JobId, file_path: String, file_name: String, file_type: String },
@@ -38,7 +39,7 @@ pub enum Event {
     CvForgotten { cv_id: CvId },
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
 pub struct CvRecord {
     pub id: CvId,
     pub job_id: JobId,
@@ -55,7 +56,7 @@ pub struct CvRecord {
     pub model_bundle_version: u32,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
 pub struct JobRecord {
     pub id: JobId,
     pub text: String,
@@ -64,7 +65,7 @@ pub struct JobRecord {
     pub weights: Vec<f64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, specta::Type)]
 pub struct GlickoState {
     pub rating: f64,
     pub rd: f64,
@@ -76,7 +77,7 @@ impl Default for GlickoState {
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
 pub struct FavRecord {
     pub fav_id: FavId,
     pub cv_id: CvId,
@@ -84,7 +85,7 @@ pub struct FavRecord {
     pub ts: i64,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
 pub struct State {
     pub cvs: HashMap<CvId, CvRecord>,
     pub jobs: HashMap<JobId, JobRecord>,
@@ -193,7 +194,7 @@ pub fn reduce(mut state: State, event: &Event) -> State {
     state
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
 pub struct Entitlements {
     pub head_to_head: bool,
 }
@@ -202,7 +203,7 @@ pub fn compute_entitlements(state: &State) -> Entitlements {
     Entitlements { head_to_head: state.license.is_some() }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
 pub struct Progress {
     pub total: usize,
     pub done: usize,
@@ -214,7 +215,7 @@ pub fn compute_progress(state: &State, job_id: &str) -> Progress {
     Progress { total, done }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
 pub struct RankedCandidate {
     pub cv_id: CvId,
     pub heavy_similarity: Option<f64>,
@@ -242,14 +243,33 @@ pub fn append_event(conn: &rusqlite::Connection, event: &Event) -> Result<(), St
         "CREATE TABLE IF NOT EXISTS event_log (seq INTEGER PRIMARY KEY AUTOINCREMENT, cv_id TEXT, job_id TEXT, event_type TEXT NOT NULL, payload TEXT NOT NULL, ts INTEGER NOT NULL)",
         [],
     ).map_err(|e| e.to_string())?;
+    let event_type = serde_json::to_value(event)
+        .ok()
+        .and_then(|v| v.get("type").and_then(|t| t.as_str()).map(String::from))
+        .unwrap_or_else(|| "event".to_string());
     conn.execute(
         "INSERT INTO event_log (cv_id, job_id, event_type, payload, ts) VALUES (NULL, NULL, ?1, ?2, strftime('%s','now'))",
-        rusqlite::params!["event", payload],
+        rusqlite::params![event_type, payload],
     ).map_err(|e| e.to_string())?;
     Ok(())
 }
 
-pub fn replay_from(conn: &rusqlite::Connection, _seq: i64) -> Result<Vec<Event>, String> {
-    let _ = conn;
-    Ok(Vec::new())
+pub fn replay_from(conn: &rusqlite::Connection, seq: i64) -> Result<Vec<Event>, String> {
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS event_log (seq INTEGER PRIMARY KEY AUTOINCREMENT, cv_id TEXT, job_id TEXT, event_type TEXT NOT NULL, payload TEXT NOT NULL, ts INTEGER NOT NULL)",
+        [],
+    ).map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare("SELECT payload FROM event_log WHERE seq > ?1 ORDER BY seq")
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(rusqlite::params![seq], |r| r.get::<_, String>(0))
+        .map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    for row in rows {
+        let payload = row.map_err(|e| e.to_string())?;
+        let event: Event = serde_json::from_str(&payload).map_err(|e| e.to_string())?;
+        out.push(event);
+    }
+    Ok(out)
 }

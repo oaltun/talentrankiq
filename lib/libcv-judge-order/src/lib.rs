@@ -26,8 +26,27 @@ pub fn first_opponent(
     provisional_sim_rank: &[(CvId, f64)],
     already_compared: &HashSet<PairKey>,
 ) -> Option<CvId> {
-    let mut candidate = None;
-    for (cv, _sim) in provisional_sim_rank {
+    let idx = provisional_sim_rank.iter().position(|(cv, _)| cv == &new_cv);
+    // Try nearest neighbors in sim-rank order (both directions), expanding outward.
+    let order: Vec<usize> = match idx {
+        Some(i) => {
+            let mut v = Vec::new();
+            let mut d = 1usize;
+            while i + d < provisional_sim_rank.len() || i >= d {
+                if i + d < provisional_sim_rank.len() {
+                    v.push(i + d);
+                }
+                if i >= d {
+                    v.push(i - d);
+                }
+                d += 1;
+            }
+            v
+        }
+        None => (0..provisional_sim_rank.len()).collect(),
+    };
+    for i in order {
+        let cv = &provisional_sim_rank[i].0;
         if cv == &new_cv {
             continue;
         }
@@ -39,10 +58,9 @@ pub fn first_opponent(
         if already_compared.contains(&key) {
             continue;
         }
-        candidate = Some(cv.clone());
-        break;
+        return Some(cv.clone());
     }
-    candidate
+    None
 }
 
 pub fn exploration_opponents(

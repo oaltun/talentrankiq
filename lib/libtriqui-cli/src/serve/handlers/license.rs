@@ -30,7 +30,7 @@ fn convert_status(s: LicenseLibStatus) -> LicenseStatus {
 
 /// Activate a judge license with a license key.
 /// Downloads the license from the server, verifies it, and saves it locally.
-pub fn license_activate(state: &ServeState, params: LicenseActivateParams) -> Result<Value, String> {
+pub fn license_activate(_state: &ServeState, params: LicenseActivateParams) -> Result<Value, String> {
     set_license_api_url("https://talentrankiq.com/api/license".to_string());
 
     match rt().block_on(activate_license(&params.license_key)) {

@@ -38,7 +38,7 @@ use libtriqui_core::db::{self, DbConnection, ImportState};
 use libtriqui_core::runtime::{EngineRuntime, RuntimeConfig};
 use libconfigreader::Config;
 use libtriqui_core::config::CascadeConfig;
-use libcv_state::{State as CvState, Event as CvEvent, reduce};
+use libcv_state::State as CvState;
 
 use crate::serve::watch::WatchHandle;
 
@@ -221,7 +221,6 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
     let (jobs_tx, jobs_rx) = std::sync::mpsc::channel::<String>();
     let (ad_tx, ad_rx) = std::sync::mpsc::channel::<String>();
 
-    let cv_state = Arc::new(Mutex::new(CvState::default()));
     let state = Arc::new(ServeState {
         app_dir,
         app_version,
