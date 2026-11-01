@@ -150,7 +150,11 @@ pub fn reduce(mut state: State, event: &Event) -> State {
             }
         }
         Event::ComparisonCompleted { pair, job_version, model_bundle_version, result } => {
-            state.comparisons.insert((pair.0.clone(), pair.1.clone(), *job_version, *model_bundle_version));
+            let key = (pair.0.clone(), pair.1.clone(), *job_version, *model_bundle_version);
+            if state.comparisons.contains(&key) {
+                return state;
+            }
+            state.comparisons.insert(key);
             let score_min = if *result < 0.0 {
                 0.0
             } else if *result > 1.0 {

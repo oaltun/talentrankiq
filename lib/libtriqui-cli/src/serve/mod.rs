@@ -114,6 +114,42 @@ impl ServeState {
     pub fn shadow_dispatch(&self, event: libcv_state::Event) {
         if let Ok(mut s) = self.cv_state.lock() {
             *s = libcv_state::reduce(s.clone(), &event);
+            match &event {
+                libcv_state::Event::ComparisonCompleted { pair, job_version, model_bundle_version, result } => {
+                    self.events.emit(
+                        "comparison-completed",
+                        &libtriqui_client::types::ComparisonCompletedEvent {
+                            cv_a_id: pair.0.clone(),
+                            cv_b_id: pair.1.clone(),
+                            job_ad_version: *job_version,
+                            model_bundle_version: *model_bundle_version,
+                            result: *result,
+                            judged_at: 0,
+                        },
+                    );
+                }
+                libcv_state::Event::GlickoUpdated { cv_id, job_version, rating, rd } => {
+                    self.events.emit(
+                        "glicko-updated",
+                        &libtriqui_client::types::GlickoUpdatedEvent {
+                            cv_id: cv_id.clone(),
+                            job_ad_version: *job_version,
+                            rating: *rating,
+                            rd: *rd,
+                        },
+                    );
+                }
+                libcv_state::Event::LicenseActivated { .. } => {
+                    let ent = libcv_state::compute_entitlements(&*s);
+                    self.events.emit(
+                        "entitlements-updated",
+                        &libtriqui_client::types::EntitlementsUpdatedEvent {
+                            head_to_head: ent.head_to_head,
+                        },
+                    );
+                }
+                _ => {}
+            }
         }
     }
 }
