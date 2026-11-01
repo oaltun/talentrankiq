@@ -2,11 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
-pub type CvId = String;
-pub type JobId = String;
-pub type CriterionId = String;
-pub type FavId = String;
-pub type PairKey = (CvId, CvId);
+pub use libcv_core::{CvId, JobId, CriterionId, FavId, PairKey};
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 pub enum ExtractionStatus {
@@ -153,8 +149,42 @@ pub fn reduce(mut state: State, event: &Event) -> State {
                 cv.heavy_similarity = Some(*similarity);
             }
         }
-        Event::ComparisonCompleted { pair, job_version, model_bundle_version, result: _ } => {
+        Event::ComparisonCompleted { pair, job_version, model_bundle_version, result } => {
             state.comparisons.insert((pair.0.clone(), pair.1.clone(), *job_version, *model_bundle_version));
+            let score_min = if *result < 0.0 {
+                0.0
+            } else if *result > 1.0 {
+                1.0
+            } else {
+                *result
+            };
+            let score_max = 1.0 - score_min;
+            let g_a = state
+                .glicko
+                .get(&(pair.0.clone(), *job_version))
+                .copied()
+                .unwrap_or_default();
+            let g_b = state
+                .glicko
+                .get(&(pair.1.clone(), *job_version))
+                .copied()
+                .unwrap_or_default();
+            let new_a = libjudge::tournament::glicko_update(
+                libjudge::tournament::GlickoState { rating: g_a.rating, rd: g_a.rd },
+                &[(libjudge::tournament::GlickoState { rating: g_b.rating, rd: g_b.rd }, score_min)],
+            );
+            let new_b = libjudge::tournament::glicko_update(
+                libjudge::tournament::GlickoState { rating: g_b.rating, rd: g_b.rd },
+                &[(libjudge::tournament::GlickoState { rating: g_a.rating, rd: g_a.rd }, score_max)],
+            );
+            state.glicko.insert(
+                (pair.0.clone(), *job_version),
+                GlickoState { rating: new_a.rating, rd: new_a.rd },
+            );
+            state.glicko.insert(
+                (pair.1.clone(), *job_version),
+                GlickoState { rating: new_b.rating, rd: new_b.rd },
+            );
         }
         Event::GlickoUpdated { cv_id, job_version, rating, rd } => {
             state.glicko.insert((cv_id.clone(), *job_version), GlickoState { rating: *rating, rd: *rd });
@@ -223,17 +253,51 @@ pub struct RankedCandidate {
 }
 
 pub fn compute_ranking(state: &State, job_id: &str) -> Vec<RankedCandidate> {
+    let job_version = state.jobs.get(job_id).map(|j| j.version).unwrap_or(0);
     let mut out: Vec<RankedCandidate> = state
         .cvs
         .values()
         .filter(|c| c.job_id == job_id && !c.deleted)
-        .map(|c| RankedCandidate {
-            cv_id: c.id.clone(),
-            heavy_similarity: c.heavy_similarity,
-            glicko_rating: state.glicko.get(&(c.id.clone(), state.jobs.get(job_id).map(|j| j.version).unwrap_or(0))).map(|g| g.rating),
+        .map(|c| {
+            let glicko_rating = state
+                .glicko
+                .get(&(c.id.clone(), job_version))
+                .map(|g| g.rating);
+            RankedCandidate {
+                cv_id: c.id.clone(),
+                heavy_similarity: c.heavy_similarity,
+                glicko_rating,
+            }
         })
         .collect();
-    out.sort_by(|a, b| b.heavy_similarity.partial_cmp(&a.heavy_similarity).unwrap_or(std::cmp::Ordering::Equal));
+    out.sort_by(|a, b| {
+        let ga = a
+            .glicko_rating
+            .map(|r| {
+                libjudge::tournament::glicko_to_score(libjudge::tournament::GlickoState {
+                    rating: r,
+                    rd: 350.0,
+                })
+            })
+            .unwrap_or(0.5);
+        let gb = b
+            .glicko_rating
+            .map(|r| {
+                libjudge::tournament::glicko_to_score(libjudge::tournament::GlickoState {
+                    rating: r,
+                    rd: 350.0,
+                })
+            })
+            .unwrap_or(0.5);
+        match b
+            .heavy_similarity
+            .partial_cmp(&a.heavy_similarity)
+            .unwrap_or(std::cmp::Ordering::Equal)
+        {
+            std::cmp::Ordering::Equal => gb.partial_cmp(&ga).unwrap_or(std::cmp::Ordering::Equal),
+            other => other,
+        }
+    });
     out
 }
 

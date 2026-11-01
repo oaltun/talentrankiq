@@ -11,4 +11,6 @@ name = "libcv_pipeline"
 
 [dependencies]
 libcv-state = { path = "../libcv-state" }
+libcv-judge-order = { path = "../libcv-judge-order" }
+libjudge = { path = "../libjudge" }
 libsyscap = { path = "../libsyscap" }

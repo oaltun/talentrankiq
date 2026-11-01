@@ -2009,7 +2009,9 @@ dependencies = [
 name = "libcv-pipeline"
 version = "0.1.0"
 dependencies = [
+ "libcv-judge-order",
  "libcv-state",
+ "libjudge",
  "libsyscap",
 ]
 
@@ -2024,6 +2026,7 @@ dependencies = [
 name = "libcv-state"
 version = "0.1.0"
 dependencies = [
+ "libcv-core",
  "libjudge",
  "rusqlite",
  "serde",
