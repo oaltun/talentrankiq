@@ -37,6 +37,8 @@ use serde::Serialize;
 use libtriqui_core::db::{self, DbConnection, ImportState};
 use libtriqui_core::runtime::{EngineRuntime, RuntimeConfig};
 use libconfigreader::Config;
+use libtriqui_core::config::CascadeConfig;
+use libcv_state::{State as CvState, Event as CvEvent, reduce};
 
 use crate::serve::watch::WatchHandle;
 
@@ -98,11 +100,22 @@ pub struct ServeState {
     pub events: EventSink,
     pub watch: WatchHandle,
     /// Cascade config for progressive ranking (from `cascade:` in `triq.yaml`).
-    pub config: libtriqui_core::config::CascadeConfig,
+    pub config: CascadeConfig,
     /// Live cascade runners per job (see [`handlers::rank::CascadeGens`]).
     pub cascade_gens: Arc<crate::serve::handlers::rank::CascadeGens>,
     /// Per-model download progress for polling (keyed by slug).
     pub download_progress: Arc<Mutex<HashMap<String, DownloadProgressState>>>,
+    /// Shadow cv_state reducer for drift detection.
+    pub cv_state: Arc<Mutex<CvState>>,
+}
+
+impl ServeState {
+    /// Dispatch an event to the shadow cv_state reducer (drift detection).
+    pub fn shadow_dispatch(&self, event: libcv_state::Event) {
+        if let Ok(mut s) = self.cv_state.lock() {
+            *s = libcv_state::reduce(s.clone(), &event);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -208,6 +221,7 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
     let (jobs_tx, jobs_rx) = std::sync::mpsc::channel::<String>();
     let (ad_tx, ad_rx) = std::sync::mpsc::channel::<String>();
 
+    let cv_state = Arc::new(Mutex::new(CvState::default()));
     let state = Arc::new(ServeState {
         app_dir,
         app_version,
@@ -220,6 +234,7 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
         config: libtriqui_core::app_config::cascade_config(),
         cascade_gens: Arc::new(crate::serve::handlers::rank::CascadeGens::new()),
         download_progress: Arc::new(Mutex::new(HashMap::new())),
+        cv_state: Arc::new(Mutex::new(CvState::default())),
     });
 
     {

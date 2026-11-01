@@ -171,4 +171,8 @@ params! {
 
     /// Check whether a license authorizes a given artifact id.
     struct LicenseCheckArtifactParams { artifact_id: String }
+
+    struct SoftDeleteCvParams { cv_id: String }
+
+    struct ForgetCvParams { cv_id: String }
 }

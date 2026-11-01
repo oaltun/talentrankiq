@@ -1,6 +1,6 @@
 [package]
 name = "libcli-client"
-version = "0.1.0"
+version = "0.2.0"
 description = "JSONL wire protocol crate for triq CLI server. Defines the contract between clients and the triq serve loop. Exports JSON Schema and TypeScript bindings via specta."
 authors = ["oaltun"]
 edition = "2021"

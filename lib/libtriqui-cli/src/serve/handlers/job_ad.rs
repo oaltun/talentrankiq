@@ -143,6 +143,12 @@ pub fn set_job_ad_path(
         )
         .map_err(libtriqui_core::db::db_err)?;
     }
+    // Shadow reducer dispatch (drift detection).
+    state.shadow_dispatch(libcv_state::Event::JobAdUpdated {
+        job_id: job_id.to_string(),
+        version: 0,
+        text: String::new(),
+    });
     watch::watch_job_ad(state, job_id, &new_path);
     // Adopt the new file's text and, since that is a ranking input, kick the same
     // full re-rank a disk edit would. Without this the job would keep scoring
@@ -175,6 +181,13 @@ fn adopt_text(state: &Arc<ServeState>, job_id: &str, path: &Path) -> Result<bool
         rusqlite::params![job_ad::text_to_db(&text), job_id],
     )
     .map_err(|e| e.to_string())?;
+    drop(conn);
+    // Shadow reducer dispatch.
+    state.shadow_dispatch(libcv_state::Event::JobAdUpdated {
+        job_id: job_id.to_string(),
+        version: 0,
+        text: text.clone(),
+    });
     Ok(true)
 }
 

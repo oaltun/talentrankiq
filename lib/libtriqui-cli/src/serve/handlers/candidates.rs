@@ -8,8 +8,24 @@ use libtriqui_client::protocol::ProtocolError;
 use libtriqui_client::types::DomainError;
 use libtriqui_core::candidates;
 
-use crate::serve::handlers::{domain, lock_err, ok_json};
+use crate::serve::handlers::{domain, lock_err, ok_json, string_err};
 use crate::serve::ServeState;
+
+pub fn soft_delete_cv(state: &Arc<ServeState>, cv_id: &str) -> Result<Value, ProtocolError> {
+    let conn = state.db.0.lock().map_err(lock_err)?;
+    libtriqui_core::candidates::soft_delete_candidate(&conn, cv_id).map_err(string_err)?;
+    drop(conn);
+    state.shadow_dispatch(libcv_state::Event::CvSoftDeleted { cv_id: cv_id.to_string() });
+    Ok(serde_json::Value::Null)
+}
+
+pub fn forget_cv(state: &Arc<ServeState>, cv_id: &str) -> Result<Value, ProtocolError> {
+    let conn = state.db.0.lock().map_err(lock_err)?;
+    libtriqui_core::candidates::forget_candidate(&conn, cv_id).map_err(string_err)?;
+    drop(conn);
+    state.shadow_dispatch(libcv_state::Event::CvForgotten { cv_id: cv_id.to_string() });
+    Ok(serde_json::Value::Null)
+}
 
 fn as_domain(e: DomainError) -> ProtocolError {
     domain(&e)

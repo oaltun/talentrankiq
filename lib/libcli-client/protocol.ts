@@ -276,6 +276,11 @@ char_end: number;
 similarity: number }
 
 /**
+ * Payload for the `comparison-completed` event.
+ */
+export type ComparisonCompletedEvent = { cv_a_id: string; cv_b_id: string; job_ad_version: number; model_bundle_version: number; result: number; judged_at: number }
+
+/**
  * Result of a single pair-wise cosine comparison.
  */
 export type CosinePair = { i: number; j: number; label_i: string; label_j: string; similarity: number }
@@ -322,6 +327,11 @@ mlx_present?: boolean | null }
  */
 export type EmbeddingProgress = { job_id: string; done: number; total: number; failed: number; active: boolean }
 
+/**
+ * Payload for the `entitlements-updated` event.
+ */
+export type EntitlementsUpdatedEvent = { head_to_head: boolean }
+
 export type Event = { event: string; data: JsonValue }
 
 /**
@@ -333,6 +343,11 @@ export type ExtractionStatus = "Queued" | "Extracting" | "Extracted" | "Failed"
  * Supported CV file types.
  */
 export type FileType = "Doc" | "Docx" | "Pdf" | "Txt" | "Other"
+
+/**
+ * Payload for the `glicko-updated` event.
+ */
+export type GlickoUpdatedEvent = { cv_id: string; job_ad_version: number; rating: number; rd: number }
 
 /**
  * Which embedding space a candidate's *criteria and feedback* similarities were

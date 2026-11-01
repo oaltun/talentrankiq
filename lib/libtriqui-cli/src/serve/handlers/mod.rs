@@ -188,11 +188,13 @@ fn dispatch(state: &Arc<ServeState>, cmd: &str, params: &Value) -> Result<Value,
             let p: GetCandidateParams = from_params(params)?;
             candidates::get_candidate(state, &p.candidate_id)
         }
-        "list_candidates" => {
-            let p: ListCandidatesParams = from_params(params)?;
-            candidates::list_candidates(
-                state, &p.job_id, p.offset, p.limit, p.query, p.sort_by, p.sort_dir,
-            )
+        "soft_delete_cv" => {
+            let p: SoftDeleteCvParams = from_params(params)?;
+            candidates::soft_delete_cv(state, &p.cv_id)
+        }
+        "forget_cv" => {
+            let p: ForgetCvParams = from_params(params)?;
+            candidates::forget_cv(state, &p.cv_id)
         }
         "candidate_neighbors" => {
             let p: CandidateNeighborsParams = from_params(params)?;

@@ -970,6 +970,32 @@ pub struct EmbeddingProgress {
     pub active: bool,
 }
 
+/// Payload for the `comparison-completed` event.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct ComparisonCompletedEvent {
+    pub cv_a_id: String,
+    pub cv_b_id: String,
+    pub job_ad_version: u32,
+    pub model_bundle_version: u32,
+    pub result: f64,
+    pub judged_at: i64,
+}
+
+/// Payload for the `glicko-updated` event.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct GlickoUpdatedEvent {
+    pub cv_id: String,
+    pub job_ad_version: u32,
+    pub rating: f64,
+    pub rd: f64,
+}
+
+/// Payload for the `entitlements-updated` event.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct EntitlementsUpdatedEvent {
+    pub head_to_head: bool,
+}
+
 // ============================================================================
 // Results CSV export
 // ============================================================================

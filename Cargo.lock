@@ -1942,7 +1942,7 @@ checksum = "ce5d3ddc6d3fa000eb1536d85e147bfe31aacaba692ed6a876f95cb7c855be78"
 
 [[package]]
 name = "libcli-client"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "libcli-client-types",
  "log",
@@ -2186,6 +2186,7 @@ dependencies = [
  "dirs 6.0.0",
  "env_logger",
  "libconfigreader",
+ "libcv-state",
  "libembedrank",
  "libmodelcallerclient",
  "libmodeldownloader",
