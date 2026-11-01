@@ -1974,6 +1974,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "libcv-judge-order"
+version = "0.1.0"
+dependencies = [
+ "libjudge",
+ "serde",
+]
+
+[[package]]
+name = "libcv-pipeline"
+version = "0.1.0"
+dependencies = [
+ "libcv-state",
+ "libsyscap",
+]
+
+[[package]]
+name = "libcv-state"
+version = "0.1.0"
+dependencies = [
+ "libjudge",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "specta",
+]
+
+[[package]]
 name = "libcvevidence"
 version = "0.1.0"
 dependencies = [

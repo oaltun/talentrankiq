@@ -2,6 +2,9 @@
 resolver = "2"
 members = [
     "cli",
+    "lib/libcv-pipeline",
+    "lib/libcv-state",
+    "lib/libcv-judge-order",
     "lib/libtriqui-core",
     "lib/libtriqui-cli",
     "lib/libtriqui-client",

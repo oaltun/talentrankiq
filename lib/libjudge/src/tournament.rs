@@ -217,6 +217,82 @@ pub fn bradley_terry(p: &[Vec<f64>], iters: usize) -> Vec<f64> {
     s
 }
 
+/// Glicko-1 rating + Ratings Deviation for one CV.
+#[derive(Debug, Clone, Copy)]
+pub struct GlickoState {
+    pub rating: f64,
+    pub rd: f64,
+}
+
+impl Default for GlickoState {
+    fn default() -> Self {
+        Self {
+            rating: 1000.0,
+            rd: 350.0,
+        }
+    }
+}
+
+/// Glicko volatility — Glicko-1 uses a fixed value; Glicko-2 makes it dynamic.
+pub const GLICKO_VOLATILITY: f64 = 0.06;
+
+fn glicko_g(phi: f64) -> f64 {
+    1.0 / (1.0 + 3.0 * phi * phi / (std::f64::consts::PI * std::f64::consts::PI)).sqrt()
+}
+
+/// Update one CV's Glicko state given a series of comparison results.
+pub fn glicko_update(player: GlickoState, opponents: &[(GlickoState, f64)]) -> GlickoState {
+    if opponents.is_empty() {
+        return player;
+    }
+    let mu = player.rating;
+    let phi = player.rd;
+    let mut sum_g2_e1e = 0.0f64;
+    let mut sum_g_se = 0.0f64;
+    for (opp, score) in opponents {
+        let g = glicko_g(opp.rd);
+        let e = 1.0 / (1.0 + (-g * (mu - opp.rating)).exp());
+        sum_g2_e1e += g * g * e * (1.0 - e);
+        sum_g_se += g * (score - e);
+    }
+    let v = if sum_g2_e1e == 0.0 {
+        f64::INFINITY
+    } else {
+        1.0 / sum_g2_e1e
+    };
+    let _delta = v * sum_g_se;
+    let new_phi_sq = 1.0 / (1.0 / (phi * phi) + 1.0 / v);
+    let new_phi = new_phi_sq.sqrt().max(0.0);
+    let new_mu = mu + new_phi_sq * sum_g_se;
+    let mut rd = new_phi.max(30.0);
+    if rd > 350.0 {
+        rd = 350.0;
+    }
+    GlickoState {
+        rating: new_mu,
+        rd,
+    }
+}
+
+/// Compute Glicko scores for all CVs from the pairwise probability matrix.
+pub fn glicko_scores(p: &[Vec<f64>]) -> Vec<GlickoState> {
+    let n = p.len();
+    (0..n)
+        .map(|i| {
+            let opponents: Vec<(GlickoState, f64)> = (0..n)
+                .filter(|&j| j != i)
+                .map(|j| (GlickoState::default(), p[i][j]))
+                .collect();
+            glicko_update(GlickoState::default(), &opponents)
+        })
+        .collect()
+}
+
+/// The rubric's head-to-head term: logistic function of the rating.
+pub fn glicko_to_score(state: GlickoState) -> f64 {
+    1.0 / (1.0 + (-(state.rating / 400.0)).exp())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -457,12 +533,37 @@ mod tests {
     }
 
     #[test]
-    fn prob_matrix_is_antisymmetric() {
-        let p = vec![vec![0.5f64, 0.7], vec![0.3, 0.5]];
-        for i in 0..2 {
-            for j in 0..2 {
-                assert!((p[i][j] + p[j][i] - 1.0).abs() < 1e-9);
-            }
-        }
+    fn glicko_transitive_tournament() {
+        let p = vec![
+            vec![0.5, 0.9, 0.9],
+            vec![0.1, 0.5, 0.8],
+            vec![0.1, 0.2, 0.5],
+        ];
+        let s = glicko_scores(&p);
+        assert!(s[0].rating > s[1].rating && s[1].rating > s[2].rating);
+    }
+
+    #[test]
+    fn glicko_update_winning_raises_rating() {
+        let player = GlickoState::default();
+        let opp = GlickoState::default();
+        let updated = glicko_update(player, &[(opp, 1.0)]);
+        assert!(updated.rating > 1000.0);
+        assert!(updated.rd < 350.0);
+    }
+
+    #[test]
+    fn glicko_to_score_monotone() {
+        let a = GlickoState { rating: 0.0, rd: 350.0 };
+        let b = GlickoState { rating: 1000.0, rd: 350.0 };
+        assert!(glicko_to_score(b) > glicko_to_score(a));
+    }
+
+    #[test]
+    fn glicko_no_opponents_keeps_state() {
+        let player = GlickoState { rating: 1200.0, rd: 100.0 };
+        let updated = glicko_update(player, &[]);
+        assert_eq!(updated.rating, player.rating);
+        assert_eq!(updated.rd, player.rd);
     }
 }

@@ -5,6 +5,7 @@
 use std::path::Path;
 
 use rusqlite::Connection;
+use rusqlite::OptionalExtension;
 
 use crate::db::db_err;
 use crate::types::{
@@ -83,7 +84,7 @@ fn resolve_sort(sort_by: &Option<String>) -> SortCol {
 fn browser_clause(like: &Option<String>, sort: &SortCol, asc: bool) -> (String, bool, bool) {
     let has_like = like.is_some();
     let dir = if asc { "ASC" } else { "DESC" };
-    let mut where_sql = String::from("WHERE job_id = ?");
+    let mut where_sql = String::from("WHERE job_id = ? AND deleted = 0");
     if has_like {
         where_sql.push_str(" AND lower(extracted_text) LIKE ? ESCAPE '\\'");
     }
@@ -226,14 +227,14 @@ pub fn list_candidates(
     let total: i64 = match &like {
         Some(l) => conn
             .query_row(
-                "SELECT COUNT(*) FROM candidates WHERE job_id = ?1 AND lower(extracted_text) LIKE ?2 ESCAPE '\\'",
+                "SELECT COUNT(*) FROM candidates WHERE job_id = ?1 AND deleted = 0 AND lower(extracted_text) LIKE ?2 ESCAPE '\\'",
                 rusqlite::params![&job_id, l],
                 |r| r.get(0),
             )
             .map_err(db_err)?,
         None => conn
             .query_row(
-                "SELECT COUNT(*) FROM candidates WHERE job_id = ?1",
+                "SELECT COUNT(*) FROM candidates WHERE job_id = ?1 AND deleted = 0",
                 rusqlite::params![&job_id],
                 |r| r.get(0),
             )
@@ -371,6 +372,84 @@ pub fn candidate_neighbors(
     };
 
     Ok(CandidateNeighbors { prev_id, next_id })
+}
+
+/// Soft-delete a candidate: sets `deleted = 1`. Retains text/vectors/comparisons.
+pub fn soft_delete_candidate(conn: &Connection, cv_id: &str) -> Result<(), String> {
+    conn.execute(
+        "UPDATE candidates SET deleted = 1 WHERE id = ?1",
+        rusqlite::params![cv_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Hard-delete (GDPR): removes all traces of a candidate.
+pub fn forget_candidate(conn: &Connection, cv_id: &str) -> Result<(), String> {
+    conn.execute("DELETE FROM candidate_scores WHERE candidate_id = ?1", rusqlite::params![cv_id])
+        .map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM candidate_chunks WHERE candidate_id = ?1", rusqlite::params![cv_id])
+        .map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM comparisons WHERE cv_a_id = ?1 OR cv_b_id = ?1", rusqlite::params![cv_id])
+        .map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM candidates WHERE id = ?1", rusqlite::params![cv_id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Retrieve a candidate's heavy vector regardless of deleted status.
+pub fn get_heavy(conn: &Connection, cv_id: &str) -> Result<Option<Vec<f32>>, String> {
+    let blob: Option<Vec<u8>> = conn
+        .query_row(
+            "SELECT vector FROM candidates WHERE id = ?1",
+            rusqlite::params![cv_id],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    Ok(blob.map(|b| {
+        b.chunks_exact(4)
+            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect()
+    }))
+}
+
+/// Canonical comparison helpers.
+pub fn insert_comparison(
+    conn: &Connection,
+    a: &str,
+    b: &str,
+    job_version: i64,
+    bundle_version: i64,
+    result: f64,
+) -> Result<(), String> {
+    let (x, y) = if a <= b { (a, b) } else { (b, a) };
+    let r = if a <= b { result } else { -result };
+    conn.execute(
+        "INSERT OR REPLACE INTO comparisons (cv_a_id, cv_b_id, job_ad_version, model_bundle_version, result, judged_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, strftime('%s','now'))",
+        rusqlite::params![x, y, job_version, bundle_version, r],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn already_judged(
+    conn: &Connection,
+    a: &str,
+    b: &str,
+    job_version: i64,
+    bundle_version: i64,
+) -> Result<bool, String> {
+    let (x, y) = if a <= b { (a, b) } else { (b, a) };
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM comparisons WHERE cv_a_id = ?1 AND cv_b_id = ?2 AND job_ad_version = ?3 AND model_bundle_version = ?4",
+            rusqlite::params![x, y, job_version, bundle_version],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(count > 0)
 }
 
 #[cfg(test)]

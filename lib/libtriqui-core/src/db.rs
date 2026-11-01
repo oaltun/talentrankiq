@@ -73,7 +73,8 @@ CREATE TABLE IF NOT EXISTS candidates (
   extracted_text   TEXT,
   rank             INTEGER,
   imported_at      TEXT NOT NULL DEFAULT (datetime('now')),
-  ranked_at        TEXT
+  ranked_at        TEXT,
+  deleted          INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_candidates_job  ON candidates(job_id);
@@ -284,6 +285,19 @@ CREATE TABLE IF NOT EXISTS judge_pool (
   position     INTEGER NOT NULL,
   PRIMARY KEY (job_id, candidate_id)
 );
+
+-- Head-to-head comparison records, canonicalized by (min(a,b), max(a,b)).
+CREATE TABLE IF NOT EXISTS comparisons (
+  cv_a_id TEXT NOT NULL,
+  cv_b_id TEXT NOT NULL,
+  job_ad_version INTEGER NOT NULL,
+  model_bundle_version INTEGER NOT NULL,
+  result REAL NOT NULL,
+  judged_at INTEGER NOT NULL,
+  PRIMARY KEY (cv_a_id, cv_b_id, job_ad_version, model_bundle_version)
+);
+CREATE INDEX IF NOT EXISTS comparisons_by_job ON comparisons(job_ad_version, cv_a_id);
+
 ";
 
 /// The Tauri app identifier — the GUI's app-data dir is `<data_root>/<identifier>`.
@@ -557,7 +571,7 @@ pub(crate) fn migrate(conn: &Connection) -> Result<(), String> {
     // Maxsim chunk explanation texts (JSON array) per rubric score row.
     add_column_if_missing(conn, "candidate_scores", "chunk_texts", "TEXT")?;
     // Read/unread marking (CV Inspector opened) — progressive-ranking design §13.
-    add_column_if_missing(conn, "candidates", "viewed_at", "TEXT")?;
+    add_column_if_missing(conn, "candidates", "deleted", "INTEGER NOT NULL DEFAULT 0")?;
     // Cascade read-model: how the last rank ran (§10 of
     // gui/design/app1/progressive-ranking.md). `mode`: full | waves.
     add_column_if_missing(conn, "sort_reports", "mode", "TEXT NOT NULL DEFAULT 'full'")?;
