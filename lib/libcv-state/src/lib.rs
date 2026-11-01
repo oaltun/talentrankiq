@@ -337,6 +337,30 @@ pub fn replay_from(conn: &rusqlite::Connection, seq: i64) -> Result<Vec<Event>, 
     }
     Ok(out)
 }
+
+pub mod event {
+    pub use super::ExtractionStatus;
+    pub use super::Event;
+}
+pub mod state {
+    pub use super::{State, CvRecord, JobRecord, GlickoState, FavRecord, Entitlements, Progress, RankedCandidate};
+}
+pub mod reducer {
+    pub use super::reduce;
+}
+pub mod projections {
+    pub use super::{compute_entitlements, compute_progress, compute_ranking, Entitlements, Progress, RankedCandidate};
+}
+pub mod event_log {
+    pub use super::{append_event, replay_from};
+}
+
+
+pub mod shadow {
+    pub use super::reduce;
+    pub use super::State;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

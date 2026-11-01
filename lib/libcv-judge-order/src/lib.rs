@@ -220,3 +220,7 @@ mod tests {
         assert_eq!(h2h_status("a".into(), &state), H2HStatus::Live);
     }
 }
+
+pub mod confidence {
+    pub use super::{H2HStatus, h2h_status};
+}

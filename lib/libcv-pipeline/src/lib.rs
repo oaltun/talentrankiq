@@ -222,6 +222,10 @@ impl Orchestrator {
         }
     }
 
+    pub fn with_workers(workers: usize) -> Self {
+        Self { workers: workers.max(1) }
+    }
+
     pub fn worker_count(&self) -> usize {
         self.workers
     }
@@ -237,6 +241,35 @@ impl Default for EffectRunner {
     fn default() -> Self {
         Self::new()
     }
+}
+
+
+pub mod worker {
+    pub use super::{Worker, WorkerError};
+}
+pub mod work_item {
+    pub use super::WorkItem;
+}
+pub mod effect_runner {
+    pub use super::EffectRunner;
+}
+pub mod orchestrator {
+    pub use super::Orchestrator;
+}
+pub mod text_worker {
+    pub use super::TextWorker;
+}
+pub mod scout_worker {
+    pub use super::ScoutWorker;
+}
+pub mod heavy_worker {
+    pub use super::HeavyWorker;
+}
+pub mod match_worker {
+    pub use super::MatchWorker;
+}
+pub mod judge_worker {
+    pub use super::JudgeWorker;
 }
 
 #[cfg(test)]

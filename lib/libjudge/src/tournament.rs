@@ -218,7 +218,7 @@ pub fn bradley_terry(p: &[Vec<f64>], iters: usize) -> Vec<f64> {
 }
 
 /// Glicko-1 rating + Ratings Deviation for one CV.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GlickoState {
     pub rating: f64,
     pub rd: f64,
