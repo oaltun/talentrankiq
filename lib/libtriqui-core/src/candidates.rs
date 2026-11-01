@@ -520,3 +520,59 @@ mod tests {
         ));
     }
 }
+
+#[cfg(test)]
+mod extra_cv_tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    fn test_conn() -> Connection {
+        let path = std::env::temp_dir().join(format!("cv-test-db-{}.db", uuid::Uuid::new_v4()));
+        crate::db::open_connection_at(&path).expect("test db")
+    }
+
+    #[test]
+    fn soft_delete_filters_list() {
+        let conn = test_conn();
+        conn.execute("INSERT INTO jobs (id, title, triqui_size) VALUES ('j1','Job',1)", []).unwrap();
+        conn.execute("INSERT INTO candidates (id, job_id, source_file_path, file_name, file_type, extraction_status) VALUES ('c1','j1','/tmp/c1.pdf','c1.pdf','Pdf','Extracted')", []).unwrap();
+        assert!(soft_delete_candidate(&conn, "c1").is_ok());
+        let page = list_candidates(&conn, "j1", 0, 100, None, None, None).unwrap();
+        assert_eq!(page.total, 0);
+    }
+
+    #[test]
+    fn get_heavy_returns_vector_after_soft_delete() {
+        let conn = test_conn();
+        conn.execute("INSERT INTO jobs (id, title, triqui_size) VALUES ('j1','Job',1)", []).unwrap();
+        conn.execute("INSERT INTO candidates (id, job_id, source_file_path, file_name, file_type, extraction_status) VALUES ('c1','j1','/tmp/c1.pdf','c1.pdf','Pdf','Extracted')", []).unwrap();
+        let bytes: Vec<u8> = [1.0f32, 2.0f32].iter().flat_map(|f| f.to_le_bytes()).collect();
+        conn.execute("UPDATE candidates SET vector = ?1 WHERE id = 'c1'", rusqlite::params![bytes]).unwrap();
+        soft_delete_candidate(&conn, "c1").unwrap();
+        let v = get_heavy(&conn, "c1").unwrap().unwrap();
+        assert_eq!(v, vec![1.0f32, 2.0f32]);
+    }
+
+    #[test]
+    fn forget_candidate_removes_all() {
+        let conn = test_conn();
+        conn.execute("INSERT INTO jobs (id, title, triqui_size) VALUES ('j1','Job',1)", []).unwrap();
+        conn.execute("INSERT INTO candidates (id, job_id, source_file_path, file_name, file_type, extraction_status) VALUES ('c1','j1','/tmp/c1.pdf','c1.pdf','Pdf','Extracted')", []).unwrap();
+        forget_candidate(&conn, "c1").unwrap();
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM candidates WHERE id='c1'", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn insert_comparison_canonicalizes() {
+        let conn = test_conn();
+        conn.execute("INSERT INTO jobs (id, title, triqui_size) VALUES ('j1','Job',1)", []).unwrap();
+        // need candidate rows? comparisons FK? no FK. insert
+        insert_comparison(&conn, "b", "a", 1, 1, 0.7).unwrap();
+        assert!(already_judged(&conn, "a", "b", 1, 1).unwrap());
+        assert!(already_judged(&conn, "b", "a", 1, 1).unwrap());
+        // one row
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM comparisons", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 1);
+    }
+}

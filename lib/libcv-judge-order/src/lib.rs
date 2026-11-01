@@ -99,15 +99,49 @@ pub fn exploration_opponents(
 }
 
 pub fn next_pair(state: &JudgeOrderState) -> Option<PairKey> {
-    // Priority: new CVs needing first comparison -> exploration -> top-of-leaderboard.
+    // Priority (a): new CVs (no comparisons yet) needing first comparison.
     for (cv, _) in &state.provisional_sim_rank {
-        let already: HashSet<PairKey> = state.comparisons.clone();
-        if let Some(opp) = first_opponent(cv.clone(), &state.provisional_sim_rank, &already) {
+        let has = state.comparisons.iter().any(|(a, b)| a == cv || b == cv);
+        if has {
+            continue;
+        }
+        if let Some(opp) = first_opponent(cv.clone(), &state.provisional_sim_rank, &state.comparisons) {
             let key = if *cv <= opp {
                 (cv.clone(), opp)
             } else {
                 (opp, cv.clone())
             };
+            if !state.comparisons.contains(&key) {
+                return Some(key);
+            }
+        }
+    }
+    // Priority (b): CVs needing exploration opponents.
+    for (cv, _) in &state.provisional_sim_rank {
+        let opps = exploration_opponents(
+            cv.clone(),
+            &state.glicko,
+            state.job_version,
+            &state.comparisons,
+            1,
+        );
+        if let Some(opp) = opps.into_iter().next() {
+            let key = if *cv <= opp {
+                (cv.clone(), opp)
+            } else {
+                (opp, cv.clone())
+            };
+            if !state.comparisons.contains(&key) {
+                return Some(key);
+            }
+        }
+    }
+    // Priority (c): top-of-leaderboard pairs not yet compared.
+    for i in 0..state.provisional_sim_rank.len() {
+        for j in (i + 1)..state.provisional_sim_rank.len() {
+            let a = state.provisional_sim_rank[i].0.clone();
+            let b = state.provisional_sim_rank[j].0.clone();
+            let key = if a <= b { (a, b) } else { (b, a) };
             if !state.comparisons.contains(&key) {
                 return Some(key);
             }
@@ -127,5 +161,62 @@ pub fn h2h_status(cv: CvId, state: &JudgeOrderState) -> H2HStatus {
         H2HStatus::Frozen
     } else {
         H2HStatus::Off
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn first_opponent_picks_sim_neighbor() {
+        let rank = vec![("a".to_string(), 0.9), ("b".to_string(), 0.8), ("c".to_string(), 0.7)];
+        let compared = HashSet::new();
+        let opp = first_opponent("a".into(), &rank, &compared).unwrap();
+        assert_eq!(opp, "b");
+    }
+
+    #[test]
+    fn first_opponent_skips_compared() {
+        let rank = vec![("a".to_string(), 0.9), ("b".to_string(), 0.8), ("c".to_string(), 0.7)];
+        let mut compared = HashSet::new();
+        compared.insert(("a".to_string(), "b".to_string()));
+        let opp = first_opponent("a".into(), &rank, &compared).unwrap();
+        assert_eq!(opp, "c");
+    }
+
+    #[test]
+    fn exploration_opponents_picks_elo_neighbors() {
+        let mut g = HashMap::new();
+        g.insert(("a".to_string(), 1u32), GlickoState { rating: 1000.0, rd: 100.0 });
+        g.insert(("b".to_string(), 1u32), GlickoState { rating: 1010.0, rd: 100.0 });
+        g.insert(("c".to_string(), 1u32), GlickoState { rating: 1500.0, rd: 100.0 });
+        let compared = HashSet::new();
+        let opps = exploration_opponents("a".into(), &g, 1, &compared, 1);
+        assert_eq!(opps, vec!["b".to_string()]);
+    }
+
+    #[test]
+    fn next_pair_prioritizes_uncompared() {
+        let state = JudgeOrderState {
+            glicko: HashMap::new(),
+            comparisons: HashSet::new(),
+            provisional_sim_rank: vec![("a".to_string(), 0.9), ("b".to_string(), 0.8)],
+            job_version: 1,
+        };
+        let p = next_pair(&state).unwrap();
+        assert_eq!(p, ("a".to_string(), "b".to_string()));
+    }
+
+    #[test]
+    fn h2h_status_variants() {
+        let mut state = JudgeOrderState {
+            glicko: HashMap::new(),
+            comparisons: HashSet::new(),
+            provisional_sim_rank: vec![],
+            job_version: 1,
+        };
+        assert_eq!(h2h_status("a".into(), &state), H2HStatus::Pending);
+        state.comparisons.insert(("a".to_string(), "b".to_string()));
+        assert_eq!(h2h_status("a".into(), &state), H2HStatus::Live);
     }
 }

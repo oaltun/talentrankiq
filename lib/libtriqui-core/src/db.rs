@@ -572,6 +572,7 @@ pub(crate) fn migrate(conn: &Connection) -> Result<(), String> {
     add_column_if_missing(conn, "candidate_scores", "chunk_texts", "TEXT")?;
     // Read/unread marking (CV Inspector opened) — progressive-ranking design §13.
     add_column_if_missing(conn, "candidates", "deleted", "INTEGER NOT NULL DEFAULT 0")?;
+    add_column_if_missing(conn, "candidates", "viewed_at", "TEXT")?;
     // Cascade read-model: how the last rank ran (§10 of
     // gui/design/app1/progressive-ranking.md). `mode`: full | waves.
     add_column_if_missing(conn, "sort_reports", "mode", "TEXT NOT NULL DEFAULT 'full'")?;

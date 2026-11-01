@@ -1,0 +1,13 @@
+[package]
+name = "libcv-match"
+version = "0.1.0"
+description = "Cosine similarity matching for TalentRankIQ."
+authors = ["oaltun"]
+edition = "2021"
+rust-version = "1.82"
+
+[lib]
+name = "libcv_match"
+
+[dependencies]
+libembedrank = { path = "../libembedrank" }

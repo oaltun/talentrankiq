@@ -1,0 +1,13 @@
+[package]
+name = "libcv-heavy"
+version = "0.1.0"
+description = "TalentRankIQ crate."
+authors = ["oaltun"]
+edition = "2021"
+rust-version = "1.82"
+
+[lib]
+name = "libcv_heavy"
+
+[dependencies]
+libtriqui-core = { path = "../libtriqui-core" }

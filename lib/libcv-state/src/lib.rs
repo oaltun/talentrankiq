@@ -39,7 +39,7 @@ pub enum Event {
     CvForgotten { cv_id: CvId },
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct CvRecord {
     pub id: CvId,
     pub job_id: JobId,
@@ -56,7 +56,7 @@ pub struct CvRecord {
     pub model_bundle_version: u32,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct JobRecord {
     pub id: JobId,
     pub text: String,
@@ -65,7 +65,7 @@ pub struct JobRecord {
     pub weights: Vec<f64>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct GlickoState {
     pub rating: f64,
     pub rd: f64,
@@ -77,7 +77,7 @@ impl Default for GlickoState {
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct FavRecord {
     pub fav_id: FavId,
     pub cv_id: CvId,
@@ -85,7 +85,7 @@ pub struct FavRecord {
     pub ts: i64,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct State {
     pub cvs: HashMap<CvId, CvRecord>,
     pub jobs: HashMap<JobId, JobRecord>,
@@ -194,7 +194,7 @@ pub fn reduce(mut state: State, event: &Event) -> State {
     state
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct Entitlements {
     pub head_to_head: bool,
 }
@@ -203,7 +203,7 @@ pub fn compute_entitlements(state: &State) -> Entitlements {
     Entitlements { head_to_head: state.license.is_some() }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct Progress {
     pub total: usize,
     pub done: usize,
@@ -215,7 +215,7 @@ pub fn compute_progress(state: &State, job_id: &str) -> Progress {
     Progress { total, done }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct RankedCandidate {
     pub cv_id: CvId,
     pub heavy_similarity: Option<f64>,
@@ -272,4 +272,85 @@ pub fn replay_from(conn: &rusqlite::Connection, seq: i64) -> Result<Vec<Event>, 
         out.push(event);
     }
     Ok(out)
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reducer_purity() {
+        let s = State::default();
+        let e = Event::CvAdded {
+            cv_id: "c1".into(),
+            job_id: "j1".into(),
+            file_path: "/tmp/c1.pdf".into(),
+            file_name: "c1.pdf".into(),
+            file_type: "Pdf".into(),
+        };
+        let a = reduce(s.clone(), &e);
+        let b = reduce(s, &e);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn reducer_idempotent_cv_added() {
+        let s = State::default();
+        let e = Event::CvAdded {
+            cv_id: "c1".into(),
+            job_id: "j1".into(),
+            file_path: "/tmp/c1.pdf".into(),
+            file_name: "c1.pdf".into(),
+            file_type: "Pdf".into(),
+        };
+        let once = reduce(s.clone(), &e);
+        let twice = reduce(once.clone(), &e);
+        assert_eq!(once, twice);
+    }
+
+    #[test]
+    fn replay_produces_same_state() {
+        let e1 = Event::CvAdded {
+            cv_id: "c1".into(),
+            job_id: "j1".into(),
+            file_path: "/tmp/c1.pdf".into(),
+            file_name: "c1.pdf".into(),
+            file_type: "Pdf".into(),
+        };
+        let e2 = Event::TextExtracted {
+            cv_id: "c1".into(),
+            text: "hello".into(),
+            status: ExtractionStatus::Extracted,
+        };
+        let mut s = State::default();
+        s = reduce(s, &e1);
+        s = reduce(s, &e2);
+        // replay via fresh
+        let mut s2 = State::default();
+        for e in [&e1, &e2] {
+            s2 = reduce(s2, e);
+        }
+        assert_eq!(s, s2);
+    }
+
+    #[test]
+    fn compute_ranking_filters_deleted() {
+        let mut s = State::default();
+        s.cvs.insert("c1".into(), CvRecord {
+            id: "c1".into(),
+            job_id: "j1".into(),
+            heavy_similarity: Some(0.9),
+            deleted: false,
+            ..Default::default()
+        });
+        s.cvs.insert("c2".into(), CvRecord {
+            id: "c2".into(),
+            job_id: "j1".into(),
+            heavy_similarity: Some(0.5),
+            deleted: true,
+            ..Default::default()
+        });
+        let r = compute_ranking(&s, "j1");
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].cv_id, "c1");
+    }
 }

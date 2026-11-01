@@ -1,6 +1,11 @@
 [workspace]
 resolver = "2"
 members = [
+    "lib/libcv-core",
+    "lib/libcv-scout",
+    "lib/libcv-heavy",
+    "lib/libcv-match",
+    "lib/libcv-store",
     "cli",
     "lib/libcv-pipeline",
     "lib/libcv-state",

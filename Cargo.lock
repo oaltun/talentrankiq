@@ -1974,11 +1974,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "libcv-core"
+version = "0.1.0"
+dependencies = [
+ "libtriqui-client",
+ "serde",
+ "serde_json",
+ "specta",
+]
+
+[[package]]
+name = "libcv-heavy"
+version = "0.1.0"
+dependencies = [
+ "libtriqui-core",
+]
+
+[[package]]
 name = "libcv-judge-order"
 version = "0.1.0"
 dependencies = [
  "libjudge",
  "serde",
+]
+
+[[package]]
+name = "libcv-match"
+version = "0.1.0"
+dependencies = [
+ "libembedrank",
 ]
 
 [[package]]
@@ -1990,6 +2014,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "libcv-scout"
+version = "0.1.0"
+dependencies = [
+ "libtriqui-core",
+]
+
+[[package]]
 name = "libcv-state"
 version = "0.1.0"
 dependencies = [
@@ -1998,6 +2029,13 @@ dependencies = [
  "serde",
  "serde_json",
  "specta",
+]
+
+[[package]]
+name = "libcv-store"
+version = "0.1.0"
+dependencies = [
+ "libtriqui-core",
 ]
 
 [[package]]

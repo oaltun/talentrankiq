@@ -1,0 +1,13 @@
+[package]
+name = "libcv-store"
+version = "0.1.0"
+description = "TalentRankIQ crate."
+authors = ["oaltun"]
+edition = "2021"
+rust-version = "1.82"
+
+[lib]
+name = "libcv_store"
+
+[dependencies]
+libtriqui-core = { path = "../libtriqui-core" }
