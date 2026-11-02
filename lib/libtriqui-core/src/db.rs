@@ -687,6 +687,56 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
         [],
     );
 
+    // Optional migration from a legacy `judge_cache` table (if present).
+    let cols: Vec<String> = conn
+        .prepare("PRAGMA table_info(judge_cache)")
+        .ok()
+        .map(|mut stmt| {
+            stmt.query_map([], |r| r.get::<_, String>(1))
+                .ok()
+                .map(|rows| rows.filter_map(|x| x.ok()).collect())
+                .unwrap_or_default()
+        })
+        .unwrap_or_default();
+    if cols.iter().any(|c| c == "cv_a_id") && cols.iter().any(|c| c == "cv_b_id") {
+        let job_col = if cols.iter().any(|c| c == "job_ad_version") {
+            "job_ad_version"
+        } else {
+            "0"
+        };
+        let model_col = if cols.iter().any(|c| c == "model_bundle_version") {
+            "model_bundle_version"
+        } else {
+            "0"
+        };
+        let result_col = if cols.iter().any(|c| c == "result") {
+            "result"
+        } else if cols.iter().any(|c| c == "prob") {
+            "prob"
+        } else {
+            "0.5"
+        };
+        let judged_col = if cols.iter().any(|c| c == "judged_at") {
+            "judged_at"
+        } else {
+            "strftime('%s','now')"
+        };
+        let sql = format!(
+            "INSERT OR IGNORE INTO comparisons (cv_a_id, cv_b_id, job_ad_version, model_bundle_version, result, judged_at) \
+             SELECT CASE WHEN cv_a_id <= cv_b_id THEN cv_a_id ELSE cv_b_id END, \
+                    CASE WHEN cv_a_id <= cv_b_id THEN cv_b_id ELSE cv_a_id END, \
+                    COALESCE({job_col},0), COALESCE({model_col},0), \
+                    CASE WHEN cv_a_id <= cv_b_id THEN {result_col} ELSE {result_col} END, \
+                    COALESCE({judged_col}, strftime('%s','now')) \
+             FROM judge_cache",
+            job_col = job_col,
+            model_col = model_col,
+            result_col = result_col,
+            judged_col = judged_col,
+        );
+        let _ = conn.execute(&sql, []);
+    }
+
     Ok(())
 }
 
