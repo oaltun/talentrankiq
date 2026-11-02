@@ -139,7 +139,7 @@ impl ServeState {
                         },
                     );
                 }
-                libcv_state::Event::LicenseActivated { .. } => {
+                libcv_state::Event::LicenseActivated { .. } | libcv_state::Event::LicenseExpired { .. } => {
                     let ent = libcv_state::compute_entitlements(&*s);
                     self.events.emit(
                         "entitlements-updated",

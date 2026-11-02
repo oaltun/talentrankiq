@@ -221,6 +221,9 @@ mod tests {
     }
 }
 
+pub mod types {
+    pub use super::*;
+}
 pub mod confidence {
     pub use super::{H2HStatus, h2h_status};
 }

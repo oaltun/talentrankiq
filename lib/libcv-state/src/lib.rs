@@ -150,7 +150,12 @@ pub fn reduce(mut state: State, event: &Event) -> State {
             }
         }
         Event::ComparisonCompleted { pair, job_version, model_bundle_version, result } => {
-            let key = (pair.0.clone(), pair.1.clone(), *job_version, *model_bundle_version);
+            let (a, b) = if pair.0 <= pair.1 {
+                (pair.0.clone(), pair.1.clone())
+            } else {
+                (pair.1.clone(), pair.0.clone())
+            };
+            let key = (a.clone(), b.clone(), *job_version, *model_bundle_version);
             if state.comparisons.contains(&key) {
                 return state;
             }
@@ -165,12 +170,12 @@ pub fn reduce(mut state: State, event: &Event) -> State {
             let score_max = 1.0 - score_min;
             let g_a = state
                 .glicko
-                .get(&(pair.0.clone(), *job_version))
+                .get(&(a.clone(), *job_version))
                 .copied()
                 .unwrap_or_default();
             let g_b = state
                 .glicko
-                .get(&(pair.1.clone(), *job_version))
+                .get(&(b.clone(), *job_version))
                 .copied()
                 .unwrap_or_default();
             let new_a = libjudge::tournament::glicko_update(
@@ -182,11 +187,11 @@ pub fn reduce(mut state: State, event: &Event) -> State {
                 &[(libjudge::tournament::GlickoState { rating: g_a.rating, rd: g_a.rd }, score_max)],
             );
             state.glicko.insert(
-                (pair.0.clone(), *job_version),
+                (a.clone(), *job_version),
                 GlickoState { rating: new_a.rating, rd: new_a.rd },
             );
             state.glicko.insert(
-                (pair.1.clone(), *job_version),
+                (b.clone(), *job_version),
                 GlickoState { rating: new_b.rating, rd: new_b.rd },
             );
         }
@@ -342,6 +347,9 @@ pub fn replay_from(conn: &rusqlite::Connection, seq: i64) -> Result<Vec<Event>, 
     Ok(out)
 }
 
+pub mod types {
+    pub use super::*;
+}
 pub mod event {
     pub use super::ExtractionStatus;
     pub use super::Event;

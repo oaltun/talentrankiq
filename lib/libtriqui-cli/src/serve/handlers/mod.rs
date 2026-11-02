@@ -54,6 +54,7 @@ pub fn handle(state: &Arc<ServeState>, request: &Request) -> Response {
 fn dispatch(state: &Arc<ServeState>, cmd: &str, params: &Value) -> Result<Value, ProtocolError> {
     use libtriqui_client::params::*;
     match cmd {
+        "handshake" => Ok(serde_json::json!({"server_version": "1.1.0"})),
         // Preferences
         "load_preferences" => prefs::load_preferences(state),
         "save_preferences" => {
