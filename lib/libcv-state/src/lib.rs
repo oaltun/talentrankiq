@@ -27,6 +27,7 @@ pub enum Event {
     HeavyMatched { cv_id: CvId, job_version: u32, similarity: f64 },
     ComparisonCompleted { pair: (CvId, CvId), job_version: u32, model_bundle_version: u32, result: f64 },
     GlickoUpdated { cv_id: CvId, job_version: u32, rating: f64, rd: f64 },
+    RankCancelled { job_id: JobId },
     FavToggled { cv_id: CvId, workspace_id: JobId, fav_id: FavId, ts: i64 },
     RubricWeightChanged { job_id: JobId, weights: Vec<f64> },
     LicenseActivated { license: String },
@@ -198,6 +199,7 @@ pub fn reduce(mut state: State, event: &Event) -> State {
         Event::GlickoUpdated { cv_id, job_version, rating, rd } => {
             state.glicko.insert((cv_id.clone(), *job_version), GlickoState { rating: *rating, rd: *rd });
         }
+        Event::RankCancelled { job_id: _ } => {}
         Event::FavToggled { fav_id, cv_id, workspace_id, ts } => {
             if state.favs.contains_key(fav_id) {
                 state.favs.remove(fav_id);

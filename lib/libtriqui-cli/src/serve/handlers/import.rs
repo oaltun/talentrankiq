@@ -128,6 +128,11 @@ pub fn spawn_dir_import(
         // shows the stage-0 sheet immediately and follows `rank-progress` until
         // convergence.
         auto_start_cascade(&st, &jid);
+        // Tell the shadow reducer about every CV that landed in the database so
+        // cv_state mirrors the candidates table. Idempotent: re-dispatching for a
+        // CV already tracked is a no-op, so re-imports and watcher catch-up
+        // scans never duplicate state.
+        dispatch_cv_added(&st, &jid);
     });
 
     Ok(())
@@ -145,7 +150,7 @@ pub fn spawn_dir_import(
 /// scoring-only cascade (`jobs::update_job`).
 fn auto_start_cascade(state: &Arc<ServeState>, job_id: &str) {
     let extracted: i64 = {
-        let conn = match state.db.0.lock() {
+    let mut conn = match state.db.0.lock() {
             Ok(c) => c,
             Err(e) => {
                 log::error!("import: db lock failed, cascade not started: {e}");
@@ -167,6 +172,67 @@ fn auto_start_cascade(state: &Arc<ServeState>, job_id: &str) {
         Ok(false) => log::info!("import: cascade already running for job {job_id}"),
         Err(e) => log::warn!("import: could not start cascade for job {job_id}: {e}"),
     }
+}
+
+/// Tell the shadow reducer about every successfully imported CV of `job_id`.
+///
+/// Runs after the import pipeline finishes, on the background thread. The
+/// `CvAdded` reducer inserts a `CvRecord` keyed by `cv_id`, so re-dispatching
+/// for a CV already tracked is idempotent — re-imports and watcher catch-up
+/// scans never duplicate shadow state.
+fn dispatch_cv_added(state: &Arc<ServeState>, job_id: &str) {
+    let mut conn = match state.db.0.lock() {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("import: db lock failed, not dispatching CvAdded for {job_id}: {e}");
+            return;
+        }
+    };
+    let rows = query_extracted_candidates(&mut *conn, job_id);
+    // `conn` (the DB lock) is released here, before the reducer dispatch below.
+    drop(conn);
+    let rows = match rows {
+        Ok(r) => r,
+        Err(e) => {
+            log::warn!("import: {e}");
+            return;
+        }
+    };
+    for (cv_id, file_path, file_name, file_type) in rows {
+        state.shadow_dispatch(libcv_state::Event::CvAdded {
+            cv_id,
+            job_id: job_id.to_string(),
+            file_path,
+            file_name,
+            file_type,
+        });
+    }
+}
+
+/// Query the successfully imported CVs of `job_id` from the database.
+fn query_extracted_candidates(
+    conn: &mut rusqlite::Connection,
+    job_id: &str,
+) -> Result<Vec<(String, String, String, String)>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, source_file_path, file_name, file_type FROM candidates \
+             WHERE job_id = ?1 AND extraction_status = 'Extracted'",
+        )
+        .map_err(|e| format!("CvAdded prepare failed for {job_id}: {e}"))?;
+    let mapped = stmt
+        .query_map(rusqlite::params![job_id], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+            ))
+        })
+        .map_err(|e| format!("CvAdded query failed for {job_id}: {e}"))?;
+    mapped
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| format!("CvAdded collect failed for {job_id}: {e}"))
 }
 
 pub fn import_cv_directory(

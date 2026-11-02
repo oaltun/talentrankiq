@@ -15,6 +15,7 @@ pub mod db;
 pub mod embed;
 pub mod embeddings;
 pub mod feedback;
+pub mod favs;
 pub mod import;
 pub mod job_ad;
 pub mod job_bundle;

@@ -1,6 +1,6 @@
 # CLI Protocol Versioning
 
-`GUI_PROTOCOL_VERSION = 1.1.0` (new events: comparison-completed, glicko-updated, entitlements-updated).
+`GUI_PROTOCOL_VERSION = 1.2.0` (new events: comparison-completed, glicko-updated, entitlements-updated, rank-cancelled, fav-toggled).
 
 The JSONL protocol between the GUI and `triq serve` uses semantic versioning.
 

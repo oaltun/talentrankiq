@@ -340,6 +340,11 @@ export type Event = { event: string; data: JsonValue }
 export type ExtractionStatus = "Queued" | "Extracting" | "Extracted" | "Failed"
 
 /**
+ * Payload for the `fav-toggled` event.
+ */
+export type FavToggledEvent = { fav_id: string; cv_id: string; workspace_id: string; ts: number }
+
+/**
  * Supported CV file types.
  */
 export type FileType = "Doc" | "Docx" | "Pdf" | "Txt" | "Other"
@@ -558,6 +563,11 @@ export type QuestionKind = "Ad" |
  * heavy embedder has not reached yet.
  */
 "Scout"
+
+/**
+ * Payload for the `rank-cancelled` event.
+ */
+export type RankCancelledEvent = { job_id: string }
 
 /**
  * Progress event payload for a running cascade (`rank-progress` event).

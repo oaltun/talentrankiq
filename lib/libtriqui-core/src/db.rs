@@ -298,6 +298,15 @@ CREATE TABLE IF NOT EXISTS comparisons (
 );
 CREATE INDEX IF NOT EXISTS comparisons_by_job ON comparisons(job_ad_version, cv_a_id);
 
+CREATE TABLE IF NOT EXISTS favs (
+  fav_id TEXT PRIMARY KEY,
+  cv_id  TEXT NOT NULL,
+  job_id TEXT NOT NULL,
+  ts     INTEGER NOT NULL,
+  UNIQUE (cv_id, job_id)
+);
+CREATE INDEX IF NOT EXISTS idx_favs_job ON favs(job_id);
+
 ";
 
 /// The Tauri app identifier — the GUI's app-data dir is `<data_root>/<identifier>`.

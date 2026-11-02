@@ -148,6 +148,25 @@ impl ServeState {
                         },
                     );
                 }
+                libcv_state::Event::RankCancelled { job_id } => {
+                    self.events.emit(
+                        "rank-cancelled",
+                        &libtriqui_client::types::RankCancelledEvent {
+                            job_id: job_id.clone(),
+                        },
+                    );
+                }
+                libcv_state::Event::FavToggled { fav_id, cv_id, workspace_id, ts } => {
+                    self.events.emit(
+                        "fav-toggled",
+                        &libtriqui_client::types::FavToggledEvent {
+                            fav_id: fav_id.clone(),
+                            cv_id: cv_id.clone(),
+                            workspace_id: workspace_id.clone(),
+                            ts: *ts,
+                        },
+                    );
+                }
                 _ => {}
             }
         }

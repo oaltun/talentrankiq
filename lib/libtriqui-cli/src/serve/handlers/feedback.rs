@@ -21,6 +21,17 @@ pub fn apply_feedback(
     ordered_candidate_ids: Vec<String>,
     liked_candidate_ids: Vec<String>,
 ) -> Result<Value, ProtocolError> {
+    use std::collections::HashSet;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let before: HashSet<String> = {
+        let conn = state.db.0.lock().map_err(lock_err)?;
+        feedback::list_liked_candidate_ids(&conn, job_id)
+            .map_err(|e| domain(&e))?
+            .into_iter()
+            .collect()
+    };
+
     let emit = embedding_progress_emitter(state, job_id);
     let triqui = feedback::apply_feedback_blocking(
         &state.runtime,
@@ -30,6 +41,28 @@ pub fn apply_feedback(
         &emit,
     )
     .map_err(|e| domain(&e))?;
+
+    let after: HashSet<String> = {
+        let conn = state.db.0.lock().map_err(lock_err)?;
+        feedback::list_liked_candidate_ids(&conn, job_id)
+            .map_err(|e| domain(&e))?
+            .into_iter()
+            .collect()
+    };
+
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    for cv_id in before.symmetric_difference(&after) {
+        state.shadow_dispatch(libcv_state::Event::FavToggled {
+            fav_id: format!("{job_id}_{cv_id}"),
+            cv_id: cv_id.clone(),
+            workspace_id: job_id.to_string(),
+            ts,
+        });
+    }
+
     ok_json(triqui)
 }
 

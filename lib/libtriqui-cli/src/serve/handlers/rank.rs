@@ -677,6 +677,10 @@ pub fn start_rank(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Protoc
 pub fn cancel_rank(state: &Arc<ServeState>, job_id: &str) -> Result<Value, ProtocolError> {
     let mut conn = state.db.0.lock().map_err(|e| string_err(format!("db lock: {}", e)))?;
     let _ = set_rank_state(&mut conn, job_id, "sort", "[]", true, true);
+    drop(conn);
+    state.shadow_dispatch(libcv_state::Event::RankCancelled {
+        job_id: job_id.to_string(),
+    });
     ok_json(Value::Null)
 }
 

@@ -519,3 +519,40 @@ mod tests {
         assert!(liked_ids(&conn, "j1").is_empty());
     }
 }
+
+/// Persist a fav row keyed by `fav_id` (upsert).
+pub fn persist_fav(
+    conn: &Connection,
+    fav_id: &str,
+    cv_id: &str,
+    job_id: &str,
+    ts: i64,
+) -> Result<(), DomainError> {
+    conn.execute(
+        "INSERT INTO favs (fav_id, cv_id, job_id, ts) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(fav_id) DO UPDATE SET cv_id = excluded.cv_id, job_id = excluded.job_id, ts = excluded.ts",
+        rusqlite::params![fav_id, cv_id, job_id, ts],
+    )
+    .map_err(db_err)?;
+    Ok(())
+}
+
+/// Remove a fav row by `fav_id`.
+pub fn remove_fav(conn: &Connection, fav_id: &str) -> Result<(), DomainError> {
+    conn.execute("DELETE FROM favs WHERE fav_id = ?1", rusqlite::params![fav_id])
+        .map_err(db_err)?;
+    Ok(())
+}
+
+/// List fav ids for a job.
+pub fn list_favs(conn: &Connection, job_id: &str) -> Result<Vec<String>, DomainError> {
+    let mut stmt = conn
+        .prepare("SELECT fav_id FROM favs WHERE job_id = ?1")
+        .map_err(db_err)?;
+    let ids: Vec<String> = stmt
+        .query_map(rusqlite::params![job_id], |r| r.get::<_, String>(0))
+        .map_err(db_err)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(db_err)?;
+    Ok(ids)
+}

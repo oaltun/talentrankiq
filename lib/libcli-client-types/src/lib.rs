@@ -996,6 +996,21 @@ pub struct EntitlementsUpdatedEvent {
     pub head_to_head: bool,
 }
 
+/// Payload for the `rank-cancelled` event.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct RankCancelledEvent {
+    pub job_id: String,
+}
+
+/// Payload for the `fav-toggled` event.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct FavToggledEvent {
+    pub fav_id: String,
+    pub cv_id: String,
+    pub workspace_id: String,
+    pub ts: i64,
+}
+
 // ============================================================================
 // Results CSV export
 // ============================================================================
