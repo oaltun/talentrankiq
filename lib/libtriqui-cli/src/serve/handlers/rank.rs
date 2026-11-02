@@ -12,7 +12,7 @@ use std::thread;
 use serde_json::Value;
 
 use libtriqui_client::protocol::ProtocolError;
-use libtriqui_client::types::{RankProgress, RankState, SortReport, SystemBudget, SystemLoad};
+use libtriqui_client::types::{RankProgress, RankState, SystemBudget, SystemLoad};
 use libtriqui_core::cascade::{freeze_pool, project, run_scout_stage, run_wave, CascadeBudget};
 use libtriqui_core::config::CascadeConfig;
 use libtriqui_core::db::{rank_state_for_job, set_rank_state};
@@ -694,6 +694,7 @@ pub fn cancel_rank(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Proto
 /// terminal), then a live run paused by the system budget reports
 /// `holding` (libsyscap design §4 — the ONLY budget state the gui must
 /// surface); quiet adaptation (Polite/Backoff) stays `None`.
+#[allow(dead_code)]
 fn state_reason(cancelled: bool, budget: &libsyscap::Budget) -> Option<String> {
     if cancelled {
         Some("cancelled".into())

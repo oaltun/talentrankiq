@@ -11,12 +11,10 @@ use uuid::Uuid;
 use chrono;
 use libtriqui_client::protocol::ProtocolError;
 use libtriqui_client::types::{
-    Criterion, DomainError, ExtractionStatus, FileType, Job, JobDetail, JobSummary, JobUiState,
-    QuestionKind, RankState, RubricQuestion, TriqiItem, SortReport,
+    DomainError, ExtractionStatus, FileType, Job, JobUiState, RankState, TriqiItem,
 };
 use libtriqui_core::app_config;
 
-use crate::serve::handlers::criteria::criterion_from_row;
 use crate::serve::handlers::{domain, lock_err, ok_json};
 use crate::serve::{watch, ServeState};
 

@@ -59,6 +59,7 @@ impl InProcessServe {
         app_version: String,
         config_override: Option<PathBuf>,
     ) -> Result<Self, String> {
+        let _ = config_override;
         // Side a = the host (client), side b = the serve loop: a_write →
         // b_read carries requests, b_write → a_read carries responses/events.
         let (a_write, a_read, b_write, b_read) = transport::duplex();

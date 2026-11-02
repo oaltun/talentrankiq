@@ -935,12 +935,6 @@ pub mod event_log {
     pub use super::{append_event, replay_from};
 }
 
-
-pub mod shadow {
-    pub use super::reduce;
-    pub use super::State;
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1139,5 +1133,80 @@ mod more_tests {
         assert_eq!(summaries[0].id, "j1");
         assert_eq!(summaries[0].cv_imported, 1);
         assert!(summaries[0].importing);
+    }
+
+    #[test]
+    fn compute_entitlements_no_license() {
+        let s = State::default();
+        let ent = compute_entitlements(&s);
+        assert!(!ent.head_to_head);
+    }
+
+    #[test]
+    fn compute_entitlements_with_license() {
+        let mut s = State::default();
+        s.license = Some("test-license".to_string());
+        let ent = compute_entitlements(&s);
+        assert!(ent.head_to_head);
+    }
+
+    #[test]
+    fn compute_progress_empty() {
+        let s = State::default();
+        let p = compute_progress(&s, "j1");
+        assert_eq!(p.total, 0);
+        assert_eq!(p.done, 0);
+    }
+
+    #[test]
+    fn compute_progress_with_cvs() {
+        let mut s = State::default();
+        s.cvs.insert("c1".into(), CvRecord {
+            id: "c1".into(),
+            job_id: "j1".into(),
+            heavy_vector: None,
+            ..Default::default()
+        });
+        s.cvs.insert("c2".into(), CvRecord {
+            id: "c2".into(),
+            job_id: "j1".into(),
+            heavy_vector: Some(vec![0.1, 0.2]),
+            ..Default::default()
+        });
+        s.cvs.insert("c3".into(), CvRecord {
+            id: "c3".into(),
+            job_id: "j2".into(),
+            heavy_vector: Some(vec![0.3, 0.4]),
+            ..Default::default()
+        });
+        let p = compute_progress(&s, "j1");
+        assert_eq!(p.total, 2);
+        assert_eq!(p.done, 1);
+    }
+
+    #[test]
+    fn compute_ranking_scout_fallback() {
+        let mut s = State::default();
+        s.cvs.insert("c1".into(), CvRecord {
+            id: "c1".into(),
+            job_id: "j1".into(),
+            heavy_similarity: None,
+            scout_similarity: Some(0.7),
+            ..Default::default()
+        });
+        s.cvs.insert("c2".into(), CvRecord {
+            id: "c2".into(),
+            job_id: "j1".into(),
+            heavy_similarity: Some(0.5),
+            scout_similarity: None,
+            ..Default::default()
+        });
+        let r = compute_ranking(&s, "j1");
+        assert_eq!(r.len(), 2);
+        // c1 has scout 0.7 > c2 heavy 0.5, so c1 ranks first
+        assert_eq!(r[0].cv_id, "c1");
+        assert_eq!(r[0].scout_similarity, Some(0.7));
+        assert_eq!(r[1].cv_id, "c2");
+        assert_eq!(r[1].heavy_similarity, Some(0.5));
     }
 }
