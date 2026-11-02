@@ -39,6 +39,7 @@ use libtriqui_core::runtime::{EngineRuntime, RuntimeConfig};
 use libconfigreader::Config;
 use libtriqui_core::config::CascadeConfig;
 use libcv_state::State as CvState;
+use libcv_pipeline::PipelineRunner;
 
 use crate::serve::watch::WatchHandle;
 
@@ -107,6 +108,8 @@ pub struct ServeState {
     pub download_progress: Arc<Mutex<HashMap<String, DownloadProgressState>>>,
     /// Shadow cv_state reducer for drift detection.
     pub cv_state: Arc<Mutex<CvState>>,
+    /// In-process pipeline runner (worker execution + event dispatch).
+    pub pipeline: Arc<PipelineRunner>,
 }
 
 impl ServeState {
@@ -283,6 +286,8 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
     let (jobs_tx, jobs_rx) = std::sync::mpsc::channel::<String>();
     let (ad_tx, ad_rx) = std::sync::mpsc::channel::<String>();
 
+    let pipeline = Arc::new(PipelineRunner::new());
+
     let state = Arc::new(ServeState {
         app_dir,
         app_version,
@@ -296,7 +301,20 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
         cascade_gens: Arc::new(crate::serve::handlers::rank::CascadeGens::new()),
         download_progress: Arc::new(Mutex::new(HashMap::new())),
         cv_state: Arc::new(Mutex::new(CvState::default())),
+        pipeline: Arc::clone(&pipeline),
     });
+
+    pipeline.configure(
+        Arc::new({
+            let state = Arc::clone(&state);
+            move |ev| state.shadow_dispatch(ev)
+        }),
+        Some(Arc::clone(&state.cv_state)),
+        libcv_pipeline::RunnerContext {
+            runtime: Some(Arc::clone(&state.runtime)),
+            scout_model: libconfigreader::Config::load().cascade.scout().map(str::to_string),
+        },
+    );
 
     {
         let state = Arc::clone(&state);

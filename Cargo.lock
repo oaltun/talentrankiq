@@ -2231,6 +2231,7 @@ dependencies = [
  "dirs 6.0.0",
  "env_logger",
  "libconfigreader",
+ "libcv-pipeline",
  "libcv-state",
  "libembedrank",
  "libmodelcallerclient",

@@ -8,6 +8,7 @@ rust-version = "1.82"
 
 [dependencies]
 libtriqui-core = { path = "../libtriqui-core" }
+libcv-pipeline = { path = "../libcv-pipeline" }
 libcv-state = { path = "../libcv-state" }
 libtriqui-client = { path = "../libtriqui-client" }
 libmodelcallerclient = { path = "../libmodelcallerclient" }

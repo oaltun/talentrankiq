@@ -199,7 +199,7 @@ fn dispatch_cv_added(state: &Arc<ServeState>, job_id: &str) {
         }
     };
     for (cv_id, file_path, file_name, file_type) in rows {
-        state.shadow_dispatch(libcv_state::Event::CvAdded {
+        state.pipeline.dispatch_event(libcv_state::Event::CvAdded {
             cv_id,
             job_id: job_id.to_string(),
             file_path,

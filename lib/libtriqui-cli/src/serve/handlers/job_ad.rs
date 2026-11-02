@@ -144,7 +144,7 @@ pub fn set_job_ad_path(
         .map_err(libtriqui_core::db::db_err)?;
     }
     // Shadow reducer dispatch (drift detection).
-    state.shadow_dispatch(libcv_state::Event::JobAdUpdated {
+    state.pipeline.dispatch_event(libcv_state::Event::JobAdUpdated {
         job_id: job_id.to_string(),
         version: 0,
         text: String::new(),
@@ -183,7 +183,7 @@ fn adopt_text(state: &Arc<ServeState>, job_id: &str, path: &Path) -> Result<bool
     .map_err(|e| e.to_string())?;
     drop(conn);
     // Shadow reducer dispatch.
-    state.shadow_dispatch(libcv_state::Event::JobAdUpdated {
+    state.pipeline.dispatch_event(libcv_state::Event::JobAdUpdated {
         job_id: job_id.to_string(),
         version: 0,
         text: text.clone(),

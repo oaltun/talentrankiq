@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 use std::env;
+use libtriqui_core::embed::Embedder;
+use std::sync::{Arc, Mutex};
 
 use libcv_state::{Event, State};
 
@@ -141,6 +143,25 @@ impl EffectRunner {
 }
 
 pub struct TextWorker;
+impl Worker for TextWorker {
+    type In = String;
+    type Out = Event;
+    fn process(&mut self, item: Self::In) -> Result<Self::Out, WorkerError> {
+        match libcvparser::extract_text(std::path::Path::new(&item)) {
+            Ok(text) => Ok(Event::TextExtracted {
+                cv_id: item,
+                text,
+                status: libcv_state::ExtractionStatus::Extracted,
+            }),
+            Err(_) => Ok(Event::TextExtracted {
+                cv_id: item,
+                text: String::new(),
+                status: libcv_state::ExtractionStatus::Failed,
+            }),
+        }
+    }
+}
+
 pub struct ScoutWorker;
 pub struct HeavyWorker;
 pub struct MatchWorker;
@@ -177,21 +198,19 @@ impl Default for JudgeWorker {
     fn default() -> Self { Self }
 }
 
-impl Worker for TextWorker {
-    type In = String;
-    type Out = Event;
-    fn process(&mut self, item: Self::In) -> Result<Self::Out, WorkerError> {
-        match libcvparser::extract_text(std::path::Path::new(&item)) {
-            Ok(text) => Ok(Event::TextExtracted {
-                cv_id: item,
+impl TextWorker {
+    pub fn extract(&self, cv_id: String, path: &str) -> Event {
+        match libcvparser::extract_text(std::path::Path::new(path)) {
+            Ok(text) => Event::TextExtracted {
+                cv_id,
                 text,
                 status: libcv_state::ExtractionStatus::Extracted,
-            }),
-            Err(_) => Ok(Event::TextExtracted {
-                cv_id: item,
+            },
+            Err(_) => Event::TextExtracted {
+                cv_id,
                 text: String::new(),
                 status: libcv_state::ExtractionStatus::Failed,
-            }),
+            },
         }
     }
 }
@@ -290,14 +309,58 @@ impl Default for JudgeContext {
 }
 
 impl ScoutWorker {
-    pub fn embed(&self, _ctx: &ScoutContext, _text: &str) -> Vec<f32> {
+    pub fn embed(&self, ctx: &ScoutContext, text: &str) -> Vec<f32> {
+        if let Some(embedder) = &ctx.embedder {
+                        if let Ok(mut v) = embedder.embed(&[text]) {
+                if let Some(vec) = v.pop() {
+                    return vec;
+                }
+            }
+        }
         Vec::new()
+    }
+
+    pub fn process_with_context(
+        &mut self,
+        cv_id: String,
+        text: &str,
+        ctx: &ScoutContext,
+        model_bundle_version: u32,
+    ) -> Result<Event, WorkerError> {
+        let vector = self.embed(ctx, text);
+        Ok(Event::ScoutCompleted {
+            cv_id,
+            vector,
+            model_bundle_version,
+        })
     }
 }
 
 impl HeavyWorker {
-    pub fn embed(&self, _ctx: &HeavyContext, _text: &str) -> Vec<f32> {
+    pub fn embed(&self, ctx: &HeavyContext, text: &str) -> Vec<f32> {
+        if let Some(embedder) = &ctx.embedder {
+                        if let Ok(mut v) = embedder.embed(&[text]) {
+                if let Some(vec) = v.pop() {
+                    return vec;
+                }
+            }
+        }
         Vec::new()
+    }
+
+    pub fn process_with_context(
+        &mut self,
+        cv_id: String,
+        text: &str,
+        ctx: &HeavyContext,
+        model_bundle_version: u32,
+    ) -> Result<Event, WorkerError> {
+        let vector = self.embed(ctx, text);
+        Ok(Event::HeavyCompleted {
+            cv_id,
+            vector,
+            model_bundle_version,
+        })
     }
 }
 
@@ -421,6 +484,171 @@ pub mod match_worker {
 }
 pub mod judge_worker {
     pub use super::{JudgeWorker, JudgeContext};
+}
+
+#[derive(Clone, Default)]
+pub struct RunnerContext {
+    pub runtime: Option<Arc<libtriqui_core::runtime::EngineRuntime>>,
+    pub scout_model: Option<String>,
+}
+
+pub struct PipelineRunner {
+    _workers: usize,
+    dispatch: Arc<Mutex<Option<Arc<dyn Fn(Event) + Send + Sync>>>>,
+    state: Arc<Mutex<Option<Arc<Mutex<State>>>>>,
+    context: Arc<Mutex<RunnerContext>>,
+    effect_runner: EffectRunner,
+}
+
+impl PipelineRunner {
+    pub fn new() -> Self {
+        Self::with_workers(1)
+    }
+
+    pub fn with_workers(workers: usize) -> Self {
+        Self {
+            _workers: workers.max(1),
+            dispatch: Arc::new(Mutex::new(None)),
+            state: Arc::new(Mutex::new(None)),
+            context: Arc::new(Mutex::new(RunnerContext::default())),
+            effect_runner: EffectRunner::with_workers(workers),
+        }
+    }
+
+    pub fn configure(
+        &self,
+        dispatch: Arc<dyn Fn(Event) + Send + Sync>,
+        state: Option<Arc<Mutex<State>>>,
+        context: RunnerContext,
+    ) {
+        *self.dispatch.lock().expect("pipeline dispatch lock") = Some(dispatch);
+        *self.state.lock().expect("pipeline state lock") = state;
+        *self.context.lock().expect("pipeline context lock") = context;
+    }
+
+    pub fn dispatch_event(&self, event: Event) {
+        if let Some(dispatch) = self.dispatch.lock().expect("pipeline dispatch lock").clone() {
+            dispatch(event.clone());
+        }
+        let state_clone = self
+            .state
+            .lock()
+            .expect("pipeline state lock")
+            .as_ref()
+            .and_then(|s| s.lock().ok().map(|g| g.clone()));
+        if let Some(st) = state_clone {
+            let work = self.effect_runner.effects(&st, &event);
+            for w in work {
+                self.process_item(w);
+            }
+            match &event {
+                Event::HeavyMatched { .. } | Event::ComparisonCompleted { .. } => {
+                    if let Some(j) = self.effect_runner.next_judge_work(&st) {
+                        self.process_item(j);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    pub fn enqueue(&self, item: WorkItem) {
+        self.process_item(item);
+    }
+
+    fn process_item(&self, item: WorkItem) {
+        let ctx = self.context.lock().expect("pipeline context lock").clone();
+        let state_handle = self.state.lock().expect("pipeline state lock").clone();
+        let event = match item {
+            WorkItem::TextExtract { cv_id } => {
+                let path = state_handle
+                    .as_ref()
+                    .and_then(|s| s.lock().ok())
+                    .and_then(|st| st.cvs.get(&cv_id).map(|c| c.file_path.clone()))
+                    .unwrap_or_else(|| cv_id.clone());
+                Some(TextWorker::new().extract(cv_id, &path))
+            }
+            WorkItem::Scout { cv_id } => {
+                let text = state_handle
+                    .as_ref()
+                    .and_then(|s| s.lock().ok())
+                    .and_then(|st| st.cvs.get(&cv_id).and_then(|c| c.text.clone()))
+                    .unwrap_or_default();
+                let embedder = ctx.runtime.as_ref().and_then(|rt| {
+                    let model = ctx
+                        .scout_model
+                        .clone()
+                        .or_else(|| Some("static-similarity-mrl-multilingual-v1".to_string()))?;
+                    rt.embedder_for(&model).ok()
+                });
+                let sctx = ScoutContext { embedder };
+                ScoutWorker::new()
+                    .process_with_context(cv_id, &text, &sctx, 0)
+                    .ok()
+            }
+            WorkItem::Heavy { cv_id } => {
+                let text = state_handle
+                    .as_ref()
+                    .and_then(|s| s.lock().ok())
+                    .and_then(|st| st.cvs.get(&cv_id).and_then(|c| c.text.clone()))
+                    .unwrap_or_default();
+                let embedder = ctx
+                    .runtime
+                    .as_ref()
+                    .and_then(|rt| rt.embedder().ok().map(|e| e as Arc<dyn libtriqui_core::embed::Embedder>));
+                let hctx = HeavyContext { embedder };
+                HeavyWorker::new()
+                    .process_with_context(cv_id, &text, &hctx, 0)
+                    .ok()
+            }
+            WorkItem::Match { cv_id, job_id } => {
+                let (cv_vec, job_text, job_version) = if let Some(s) = state_handle.as_ref() {
+                    if let Ok(st) = s.lock() {
+                        let cv_vec = st
+                            .cvs
+                            .get(&cv_id)
+                            .and_then(|c| c.heavy_vector.clone())
+                            .map(|v| v.into_iter().map(|x| x as f64).collect());
+                        let job_text = st.jobs.get(&job_id).map(|j| j.text.clone()).unwrap_or_default();
+                        let job_version = st.jobs.get(&job_id).map(|j| j.version).unwrap_or(0);
+                        (cv_vec, job_text, job_version)
+                    } else {
+                        (None, String::new(), 0)
+                    }
+                } else {
+                    (None, String::new(), 0)
+                };
+                let target_vec = ctx.runtime.as_ref().and_then(|rt| {
+                                        let embedder = rt.embedder().ok()?;
+                    embedder
+                        .embed(&[&job_text])
+                        .ok()
+                        .and_then(|mut v| v.pop())
+                        .map(|vec| vec.into_iter().map(|x| x as f64).collect())
+                });
+                MatchWorker::new()
+                    .process_with_vectors(cv_id, job_version, cv_vec, target_vec)
+                    .ok()
+            }
+            WorkItem::Judge { pair } => {
+                let job_version = state_handle
+                    .as_ref()
+                    .and_then(|s| s.lock().ok())
+                    .and_then(|st| st.jobs.values().next().map(|j| j.version))
+                    .unwrap_or(0);
+                JudgeWorker::new()
+                    .process_with_model(pair, job_version, 0, None, None)
+                    .ok()
+            }
+        };
+        if let Some(ev) = event {
+            self.dispatch_event(ev);
+        }
+    }
+}
+
+pub mod pipeline_runner {
+    pub use super::{PipelineRunner, RunnerContext};
 }
 
 #[cfg(test)]
