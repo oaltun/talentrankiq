@@ -54,9 +54,20 @@ pub fn apply_feedback(
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
+
     for cv_id in before.symmetric_difference(&after) {
+        let fav_id = format!("{job_id}_{cv_id}");
+        if after.contains(cv_id) {
+            let conn = state.db.0.lock().map_err(lock_err)?;
+            feedback::persist_fav(&conn, &fav_id, cv_id, job_id, ts).map_err(|e| domain(&e))?;
+            drop(conn);
+        } else {
+            let conn = state.db.0.lock().map_err(lock_err)?;
+            feedback::remove_fav(&conn, &fav_id).map_err(|e| domain(&e))?;
+            drop(conn);
+        }
         state.shadow_dispatch(libcv_state::Event::FavToggled {
-            fav_id: format!("{job_id}_{cv_id}"),
+            fav_id,
             cv_id: cv_id.clone(),
             workspace_id: job_id.to_string(),
             ts,

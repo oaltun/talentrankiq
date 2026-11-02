@@ -6,6 +6,7 @@
 
 use std::sync::Arc;
 
+use chrono;
 use libtriqui_client::protocol::ProtocolError;
 use libtriqui_client::types::{DomainError, EmbeddingProgress, ImportProgress};
 use libtriqui_core::import;
@@ -205,6 +206,7 @@ fn dispatch_cv_added(state: &Arc<ServeState>, job_id: &str) {
             file_path,
             file_name,
             file_type,
+            imported_at: chrono::Utc::now().to_rfc3339(),
         });
     }
 }

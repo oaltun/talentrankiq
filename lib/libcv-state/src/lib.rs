@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use chrono;
 use serde::{Deserialize, Serialize};
 
 pub use libcv_core::{CvId, JobId, CriterionId, FavId, PairKey};
@@ -15,9 +16,9 @@ pub enum ExtractionStatus {
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "type")]
 pub enum Event {
-    CvAdded { cv_id: CvId, job_id: JobId, file_path: String, file_name: String, file_type: String },
-    JobCreated { job_id: JobId, title: String },
-    JobUpdated { job_id: JobId, title: String, triqui_size: i32 },
+    CvAdded { cv_id: CvId, job_id: JobId, file_path: String, file_name: String, file_type: String, imported_at: String },
+    JobCreated { job_id: JobId, title: String, triqui_size: i32, ad_weight: f64, fb_job_weight: f64, fb_profile_weight: f64, import_directory_path: Option<String>, created_at: String },
+    JobUpdated { job_id: JobId, title: String, triqui_size: i32, job_ad_text: String, archived: bool, inputs_updated_at: String, ad_weight: f64, fb_job_weight: f64, fb_profile_weight: f64 },
     JobArchived { job_id: JobId, archived: bool },
     JobDeleted { job_id: JobId },
     CandidatesEmptied { job_id: JobId },
@@ -39,6 +40,11 @@ pub enum Event {
     LicenseExpired { license: String },
     CvSoftDeleted { cv_id: CvId },
     CvForgotten { cv_id: CvId },
+    CandidateRanked { cv_id: CvId, rank: i32, points: f32, points_max: f32 },
+    CandidateLiked { cv_id: CvId, liked: bool },
+    CandidateViewed { cv_id: CvId, viewed_at: String },
+    SortReportWritten { job_id: JobId, report: String },
+    RankStateUpdated { job_id: JobId, state: String },
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, specta::Type)]
@@ -56,13 +62,34 @@ pub struct CvRecord {
     pub heavy_similarity: Option<f64>,
     pub deleted: bool,
     pub model_bundle_version: u32,
+    pub rank: Option<i32>,
+    pub points: Option<f32>,
+    pub points_max: Option<f32>,
+    pub liked: bool,
+    pub viewed_at: Option<String>,
+    pub imported_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct JobRecord {
     pub id: JobId,
+    pub title: String,
     pub text: String,
     pub version: u32,
+    pub triqui_size: i32,
+    pub archived: bool,
+    pub created_at: String,
+    pub last_ranked_at: Option<String>,
+    pub inputs_updated_at: Option<String>,
+    pub ad_weight: f64,
+    pub fb_job_weight: f64,
+    pub fb_profile_weight: f64,
+    pub job_ad_path: Option<String>,
+    pub cv_imported: i32,
+    pub cv_failed: i32,
+    pub want_count: i32,
+    pub avoid_count: i32,
+    pub importing: bool,
     pub criteria: Vec<CriterionId>,
     pub weights: Vec<f64>,
 }
@@ -99,27 +126,44 @@ pub struct State {
 
 pub fn reduce(mut state: State, event: &Event) -> State {
     match event {
-        Event::CvAdded { cv_id, job_id, file_path, file_name, file_type } => {
+        Event::CvAdded { cv_id, job_id, file_path, file_name, file_type, imported_at } => {
             state.cvs.insert(cv_id.clone(), CvRecord {
                 id: cv_id.clone(),
                 job_id: job_id.clone(),
                 file_path: file_path.clone(),
                 file_name: file_name.clone(),
                 file_type: file_type.clone(),
+                imported_at: Some(imported_at.clone()),
                 ..Default::default()
-             });
+            });
         }
-        Event::JobCreated { job_id, title: _ } => {
+        Event::JobCreated { job_id, title, triqui_size, ad_weight, fb_job_weight, fb_profile_weight, import_directory_path, created_at } => {
             let job = state.jobs.entry(job_id.clone()).or_default();
             job.id = job_id.clone();
+            job.title = title.clone();
+            job.triqui_size = *triqui_size;
+            job.ad_weight = *ad_weight;
+            job.fb_job_weight = *fb_job_weight;
+            job.fb_profile_weight = *fb_profile_weight;
+            job.job_ad_path = import_directory_path.clone();
+            job.created_at = created_at.clone();
         }
-        Event::JobUpdated { job_id, title: _, triqui_size: _ } => {
+        Event::JobUpdated { job_id, title, triqui_size, job_ad_text, archived, inputs_updated_at, ad_weight, fb_job_weight, fb_profile_weight } => {
             let job = state.jobs.entry(job_id.clone()).or_default();
             job.id = job_id.clone();
+            job.title = title.clone();
+            job.triqui_size = *triqui_size;
+            job.text = job_ad_text.clone();
+            job.archived = *archived;
+            job.inputs_updated_at = Some(inputs_updated_at.clone());
+            job.ad_weight = *ad_weight;
+            job.fb_job_weight = *fb_job_weight;
+            job.fb_profile_weight = *fb_profile_weight;
         }
-        Event::JobArchived { job_id, archived: _ } => {
-            let job = state.jobs.entry(job_id.clone()).or_default();
-            job.id = job_id.clone();
+        Event::JobArchived { job_id, archived } => {
+            if let Some(job) = state.jobs.get_mut(job_id) {
+                job.archived = *archived;
+            }
         }
         Event::JobDeleted { job_id } => {
             state.jobs.remove(job_id);
@@ -235,6 +279,9 @@ pub fn reduce(mut state: State, event: &Event) -> State {
                     ts: *ts,
                 });
             }
+            if let Some(cv) = state.cvs.get_mut(cv_id) {
+                cv.liked = !cv.liked;
+            }
         }
         Event::RubricWeightChanged { job_id, weights } => {
             if let Some(job) = state.jobs.get_mut(job_id) {
@@ -254,6 +301,33 @@ pub fn reduce(mut state: State, event: &Event) -> State {
         }
         Event::CvForgotten { cv_id } => {
             state.cvs.remove(cv_id);
+        }
+        Event::CandidateRanked { cv_id, rank, points, points_max } => {
+            if let Some(cv) = state.cvs.get_mut(cv_id) {
+                cv.rank = Some(*rank);
+                cv.points = Some(*points);
+                cv.points_max = Some(*points_max);
+            }
+        }
+        Event::CandidateLiked { cv_id, liked } => {
+            if let Some(cv) = state.cvs.get_mut(cv_id) {
+                cv.liked = *liked;
+            }
+        }
+        Event::CandidateViewed { cv_id, viewed_at } => {
+            if let Some(cv) = state.cvs.get_mut(cv_id) {
+                cv.viewed_at = Some(viewed_at.clone());
+            }
+        }
+        Event::SortReportWritten { job_id, report: _ } => {
+            if let Some(job) = state.jobs.get_mut(job_id) {
+                job.last_ranked_at = Some(chrono::Utc::now().to_rfc3339());
+            }
+        }
+        Event::RankStateUpdated { job_id, state: _ } => {
+            if let Some(job) = state.jobs.get_mut(job_id) {
+                job.last_ranked_at = Some(chrono::Utc::now().to_rfc3339());
+            }
         }
     }
     state
@@ -486,6 +560,7 @@ mod tests {
             file_path: "/tmp/c1.pdf".into(),
             file_name: "c1.pdf".into(),
             file_type: "Pdf".into(),
+            imported_at: "2024-01-01T00:00:00Z".into(),
         };
         let a = reduce(s.clone(), &e);
         let b = reduce(s, &e);
@@ -501,6 +576,7 @@ mod tests {
             file_path: "/tmp/c1.pdf".into(),
             file_name: "c1.pdf".into(),
             file_type: "Pdf".into(),
+            imported_at: "2024-01-01T00:00:00Z".into(),
         };
         let once = reduce(s.clone(), &e);
         let twice = reduce(once.clone(), &e);
@@ -515,6 +591,7 @@ mod tests {
             file_path: "/tmp/c1.pdf".into(),
             file_name: "c1.pdf".into(),
             file_type: "Pdf".into(),
+            imported_at: "2024-01-01T00:00:00Z".into(),
         };
         let e2 = Event::TextExtracted {
             cv_id: "c1".into(),
@@ -562,7 +639,16 @@ mod more_tests {
     #[test]
     fn reducer_handles_job_created_idempotently() {
         let s = State::default();
-        let e = Event::JobCreated { job_id: "j1".into(), title: "job-1".into() };
+        let e = Event::JobCreated {
+            job_id: "j1".into(),
+            title: "job-1".into(),
+            triqui_size: 10,
+            ad_weight: 1.0,
+            fb_job_weight: 1.0,
+            fb_profile_weight: 1.0,
+            import_directory_path: None,
+            created_at: "2024-01-01T00:00:00Z".into(),
+        };
         let once = reduce(s.clone(), &e);
         let twice = reduce(once.clone(), &e);
         assert_eq!(once, twice);
@@ -572,13 +658,23 @@ mod more_tests {
     #[test]
     fn reducer_job_deleted_removes_job_and_cvs() {
         let mut s = State::default();
-        s = reduce(s, &Event::JobCreated { job_id: "j1".into(), title: "job-1".into() });
+        s = reduce(s, &Event::JobCreated {
+            job_id: "j1".into(),
+            title: "job-1".into(),
+            triqui_size: 10,
+            ad_weight: 1.0,
+            fb_job_weight: 1.0,
+            fb_profile_weight: 1.0,
+            import_directory_path: None,
+            created_at: "2024-01-01T00:00:00Z".into(),
+        });
         s = reduce(s, &Event::CvAdded {
             cv_id: "c1".into(),
             job_id: "j1".into(),
             file_path: "/tmp/c1.pdf".into(),
             file_name: "c1.pdf".into(),
             file_type: "Pdf".into(),
+            imported_at: "2024-01-01T00:00:00Z".into(),
         });
         let s = reduce(s, &Event::JobDeleted { job_id: "j1".into() });
         assert!(!s.jobs.contains_key("j1"));
@@ -594,6 +690,7 @@ mod more_tests {
             file_path: "/tmp/c1.pdf".into(),
             file_name: "c1.pdf".into(),
             file_type: "Pdf".into(),
+            imported_at: "2024-01-01T00:00:00Z".into(),
         });
         let s = reduce(s, &Event::CandidatesEmptied { job_id: "j1".into() });
         assert!(!s.cvs.contains_key("c1"));

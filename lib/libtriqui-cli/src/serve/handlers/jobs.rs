@@ -8,6 +8,7 @@ use std::path::Path;
 use std::sync::Arc;
 use uuid::Uuid;
 
+use chrono;
 use libtriqui_client::protocol::ProtocolError;
 use libtriqui_client::types::{
     Criterion, DomainError, ExtractionStatus, FileType, Job, JobDetail, JobSummary, JobUiState,
@@ -238,7 +239,13 @@ pub fn create_job(state: &Arc<ServeState>) -> Result<Value, ProtocolError> {
     watch::watch_job(state, &id);
     state.shadow_dispatch(libcv_state::Event::JobCreated {
         job_id: id.clone(),
-        title: title.clone(),
+        title: job.title.clone(),
+        triqui_size: job.triqui_size,
+        ad_weight: job.ad_weight,
+        fb_job_weight: job.fb_job_weight,
+        fb_profile_weight: job.fb_profile_weight,
+        import_directory_path: job.import_directory_path.clone(),
+        created_at: job.created_at.clone(),
     });
     log::info!("created job {id} with cv dir {cv_dir}");
     ok_json(job)
@@ -470,8 +477,14 @@ pub fn update_job(
     }
     state.shadow_dispatch(libcv_state::Event::JobUpdated {
         job_id: job_id.to_string(),
-        title: title.to_string(),
-        triqui_size,
+        title: job.title.clone(),
+        triqui_size: job.triqui_size,
+        job_ad_text: job.job_ad_text.clone().unwrap_or_default(),
+        archived: job.archived,
+        inputs_updated_at: job.inputs_updated_at.clone().unwrap_or_else(|| chrono::Utc::now().to_rfc3339()),
+        ad_weight: job.ad_weight,
+        fb_job_weight: job.fb_job_weight,
+        fb_profile_weight: job.fb_profile_weight,
     });
     ok_json(job)
 }

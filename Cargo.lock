@@ -2010,6 +2010,7 @@ dependencies = [
 name = "libcv-pipeline"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "libcv-judge-order",
  "libcv-match",
  "libcv-state",
@@ -2033,6 +2034,7 @@ dependencies = [
 name = "libcv-state"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "libcv-core",
  "libjudge",
  "rusqlite",
@@ -2231,6 +2233,7 @@ dependencies = [
 name = "libtriqui-cli"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "dirs 6.0.0",
  "env_logger",
  "libconfigreader",

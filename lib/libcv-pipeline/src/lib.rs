@@ -518,6 +518,7 @@ impl ScanWorker {
                 file_path: file_path.to_string_lossy().to_string(),
                 file_name,
                 file_type,
+                imported_at: chrono::Utc::now().to_rfc3339(),
             });
         }
     }
@@ -799,6 +800,7 @@ mod tests {
             file_path: "/tmp/c1.pdf".into(),
             file_name: "c1.pdf".into(),
             file_type: "Pdf".into(),
+            imported_at: "2024-01-01T00:00:00Z".into(),
         };
         s = libcv_state::reduce(s, &e);
         let r = EffectRunner::new();

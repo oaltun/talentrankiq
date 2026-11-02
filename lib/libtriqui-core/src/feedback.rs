@@ -518,6 +518,54 @@ mod tests {
 
         assert!(liked_ids(&conn, "j1").is_empty());
     }
+
+    #[test]
+    fn fav_id_scheme_unique_per_job_cv() {
+        let conn = test_conn();
+        insert_job(&conn, "j1");
+        insert_job(&conn, "j2");
+        insert_candidate(&conn, "j1", "c1", false);
+        insert_candidate(&conn, "j1", "c2", false);
+        insert_candidate(&conn, "j2", "c3", false);
+
+        let ts = 1000;
+        persist_fav(&conn, "j1_c1", "c1", "j1", ts).unwrap();
+        persist_fav(&conn, "j1_c2", "c2", "j1", ts).unwrap();
+        persist_fav(&conn, "j2_c3", "c3", "j2", ts).unwrap();
+
+        let favs_j1 = list_favs(&conn, "j1").unwrap();
+        let favs_j2 = list_favs(&conn, "j2").unwrap();
+        assert_eq!(favs_j1.len(), 2);
+        assert_eq!(favs_j2.len(), 1);
+        assert!(favs_j1.contains(&"j1_c1".to_string()));
+        assert!(favs_j1.contains(&"j1_c2".to_string()));
+        assert!(favs_j2.contains(&"j2_c3".to_string()));
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM favs WHERE cv_id = 'c1' AND job_id = 'j1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn fav_toggle_twice_returns_to_original() {
+        let conn = test_conn();
+        insert_job(&conn, "j1");
+        insert_candidate(&conn, "j1", "c1", false);
+
+        let ts = 1000;
+        persist_fav(&conn, "j1_c1", "c1", "j1", ts).unwrap();
+        let count1: i64 = conn.query_row("SELECT COUNT(*) FROM favs WHERE fav_id = 'j1_c1'", [], |r| r.get(0)).unwrap();
+        assert_eq!(count1, 1);
+
+        remove_fav(&conn, "j1_c1").unwrap();
+        let count2: i64 = conn.query_row("SELECT COUNT(*) FROM favs WHERE fav_id = 'j1_c1'", [], |r| r.get(0)).unwrap();
+        assert_eq!(count2, 0);
+
+        persist_fav(&conn, "j1_c1", "c1", "j1", ts + 1).unwrap();
+        let count3: i64 = conn.query_row("SELECT COUNT(*) FROM favs WHERE fav_id = 'j1_c1'", [], |r| r.get(0)).unwrap();
+        assert_eq!(count3, 1);
+    }
 }
 
 /// Persist a fav row keyed by `fav_id` (upsert).
