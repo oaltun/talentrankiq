@@ -112,6 +112,7 @@ pub struct ServeState {
 impl ServeState {
     /// Dispatch an event to the shadow cv_state reducer (drift detection).
     pub fn shadow_dispatch(&self, event: libcv_state::Event) {
+        let db_guard = self.db.0.lock().ok();
         if let Ok(mut s) = self.cv_state.lock() {
             *s = libcv_state::reduce(s.clone(), &event);
             match &event {
@@ -168,6 +169,12 @@ impl ServeState {
                     );
                 }
                 _ => {}
+            }
+            if let Some(conn) = db_guard.as_ref() {
+                let msgs = libcv_state::drift_check(&*s, conn);
+                for m in msgs {
+                    log::warn!("shadow drift: {m}");
+                }
             }
         }
     }

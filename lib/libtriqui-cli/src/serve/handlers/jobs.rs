@@ -236,6 +236,10 @@ pub fn create_job(state: &Arc<ServeState>) -> Result<Value, ProtocolError> {
     // The new job is (about to be) the viewed one: point the single watcher
     // at it. This also creates the fresh CV folder on disk.
     watch::watch_job(state, &id);
+    state.shadow_dispatch(libcv_state::Event::JobCreated {
+        job_id: id.clone(),
+        title: title.clone(),
+    });
     log::info!("created job {id} with cv dir {cv_dir}");
     ok_json(job)
 }
@@ -464,6 +468,11 @@ pub fn update_job(
             Err(e) => log::warn!("rank: could not start cascade for {job_id}: {e}"),
         }
     }
+    state.shadow_dispatch(libcv_state::Event::JobUpdated {
+        job_id: job_id.to_string(),
+        title: title.to_string(),
+        triqui_size,
+    });
     ok_json(job)
 }
 
@@ -503,6 +512,10 @@ pub fn update_job_weights(
         )
         .map_err(db_err)?;
     drop(conn);
+    state.shadow_dispatch(libcv_state::Event::RubricWeightChanged {
+        job_id: job_id.to_string(),
+        weights: vec![ad_weight, fb_job_weight, fb_profile_weight],
+    });
     // Weights are rubric too, so they go down the same path as text: re-project,
     // nothing cancelled. The judge never read a weight — its grade is a win-rate
     // and `ad_weight` only scales it — so every memoized verdict still holds.
@@ -533,6 +546,11 @@ pub fn archive_job(
             id: job_id.to_string(),
         }));
     }
+    drop(conn);
+    state.shadow_dispatch(libcv_state::Event::JobArchived {
+        job_id: job_id.to_string(),
+        archived,
+    });
     Ok(())
 }
 
@@ -553,6 +571,10 @@ pub fn empty_candidates(state: &Arc<ServeState>, job_id: &str) -> Result<Value, 
     )
     .map_err(db_err)?;
     log::info!("emptied {deleted} candidates for job {job_id}");
+    drop(conn);
+    state.shadow_dispatch(libcv_state::Event::CandidatesEmptied {
+        job_id: job_id.to_string(),
+    });
     ok_json(deleted as i32)
 }
 
@@ -564,6 +586,9 @@ pub fn delete_job(state: &Arc<ServeState>, job_id: &str) -> Result<(), ProtocolE
             .map_err(db_err)?;
     }
     watch::stop_watching(state, job_id);
+    state.shadow_dispatch(libcv_state::Event::JobDeleted {
+        job_id: job_id.to_string(),
+    });
     Ok(())
 }
 

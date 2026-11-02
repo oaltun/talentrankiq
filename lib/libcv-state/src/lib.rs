@@ -16,6 +16,11 @@ pub enum ExtractionStatus {
 #[serde(tag = "type")]
 pub enum Event {
     CvAdded { cv_id: CvId, job_id: JobId, file_path: String, file_name: String, file_type: String },
+    JobCreated { job_id: JobId, title: String },
+    JobUpdated { job_id: JobId, title: String, triqui_size: i32 },
+    JobArchived { job_id: JobId, archived: bool },
+    JobDeleted { job_id: JobId },
+    CandidatesEmptied { job_id: JobId },
     TextExtracted { cv_id: CvId, text: String, status: ExtractionStatus },
     ScoutCompleted { cv_id: CvId, vector: Vec<f32>, model_bundle_version: u32 },
     HeavyCompleted { cv_id: CvId, vector: Vec<f32>, model_bundle_version: u32 },
@@ -102,7 +107,26 @@ pub fn reduce(mut state: State, event: &Event) -> State {
                 file_name: file_name.clone(),
                 file_type: file_type.clone(),
                 ..Default::default()
-            });
+             });
+        }
+        Event::JobCreated { job_id, title: _ } => {
+            let job = state.jobs.entry(job_id.clone()).or_default();
+            job.id = job_id.clone();
+        }
+        Event::JobUpdated { job_id, title: _, triqui_size: _ } => {
+            let job = state.jobs.entry(job_id.clone()).or_default();
+            job.id = job_id.clone();
+        }
+        Event::JobArchived { job_id, archived: _ } => {
+            let job = state.jobs.entry(job_id.clone()).or_default();
+            job.id = job_id.clone();
+        }
+        Event::JobDeleted { job_id } => {
+            state.jobs.remove(job_id);
+            state.cvs.retain(|_, cv| cv.job_id != *job_id);
+        }
+        Event::CandidatesEmptied { job_id } => {
+            state.cvs.retain(|_, cv| cv.job_id != *job_id);
         }
         Event::TextExtracted { cv_id, text, status } => {
             if let Some(cv) = state.cvs.get_mut(cv_id) {
@@ -312,6 +336,80 @@ pub fn compute_ranking(state: &State, job_id: &str) -> Vec<RankedCandidate> {
     out
 }
 
+pub fn drift_check(state: &State, conn: &rusqlite::Connection) -> Vec<String> {
+    let mut out = Vec::new();
+
+    let db_jobs: i64 = match conn.query_row("SELECT COUNT(*) FROM jobs", [], |r| r.get(0)) {
+        Ok(v) => v,
+        Err(e) => {
+            out.push(format!("drift_check: jobs count query failed: {e}"));
+            return out;
+        }
+    };
+    if db_jobs as usize != state.jobs.len() {
+        out.push(format!(
+            "job count drift: reducer={} db={}",
+            state.jobs.len(),
+            db_jobs
+        ));
+    }
+
+    let db_deleted: i64 =
+        match conn.query_row("SELECT COUNT(*) FROM candidates WHERE deleted = 1", [], |r| r.get(0)) {
+            Ok(v) => v,
+            Err(e) => {
+                out.push(format!("drift_check: deleted cv count query failed: {e}"));
+                return out;
+            }
+        };
+    let reducer_deleted = state.cvs.values().filter(|c| c.deleted).count();
+    if db_deleted as usize != reducer_deleted {
+        out.push(format!(
+            "deleted cv count drift: reducer={} db={}",
+            reducer_deleted, db_deleted
+        ));
+    }
+
+    let mut db_counts: HashMap<String, i64> = HashMap::new();
+    match conn.prepare("SELECT job_id, COUNT(*) FROM candidates WHERE deleted = 0 GROUP BY job_id") {
+        Ok(mut stmt) => {
+            if let Ok(rows) = stmt.query_map([], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+            }) {
+                for row in rows.flatten() {
+                    db_counts.insert(row.0, row.1);
+                }
+            }
+        }
+        Err(e) => {
+            out.push(format!("drift_check: cv count query failed: {e}"));
+            return out;
+        }
+    }
+
+    let mut reducer_counts: HashMap<String, usize> = HashMap::new();
+    for cv in state.cvs.values() {
+        if !cv.deleted {
+            *reducer_counts.entry(cv.job_id.clone()).or_default() += 1;
+        }
+    }
+
+    let mut jobs: HashSet<String> = db_counts.keys().cloned().collect();
+    jobs.extend(reducer_counts.keys().cloned());
+    for job in jobs {
+        let d = db_counts.get(&job).copied().unwrap_or(0) as usize;
+        let r = reducer_counts.get(&job).copied().unwrap_or(0);
+        if d != r {
+            out.push(format!(
+                "non-deleted cv count drift for job {}: reducer={} db={}",
+                job, r, d
+            ));
+        }
+    }
+
+    out
+}
+
 pub fn append_event(conn: &rusqlite::Connection, event: &Event) -> Result<(), String> {
     let payload = serde_json::to_string(event).map_err(|e| e.to_string())?;
     conn.execute(
@@ -454,5 +552,79 @@ mod tests {
         let r = compute_ranking(&s, "j1");
         assert_eq!(r.len(), 1);
         assert_eq!(r[0].cv_id, "c1");
+    }
+}
+
+#[cfg(test)]
+mod more_tests {
+    use super::*;
+
+    #[test]
+    fn reducer_handles_job_created_idempotently() {
+        let s = State::default();
+        let e = Event::JobCreated { job_id: "j1".into(), title: "job-1".into() };
+        let once = reduce(s.clone(), &e);
+        let twice = reduce(once.clone(), &e);
+        assert_eq!(once, twice);
+        assert!(once.jobs.contains_key("j1"));
+    }
+
+    #[test]
+    fn reducer_job_deleted_removes_job_and_cvs() {
+        let mut s = State::default();
+        s = reduce(s, &Event::JobCreated { job_id: "j1".into(), title: "job-1".into() });
+        s = reduce(s, &Event::CvAdded {
+            cv_id: "c1".into(),
+            job_id: "j1".into(),
+            file_path: "/tmp/c1.pdf".into(),
+            file_name: "c1.pdf".into(),
+            file_type: "Pdf".into(),
+        });
+        let s = reduce(s, &Event::JobDeleted { job_id: "j1".into() });
+        assert!(!s.jobs.contains_key("j1"));
+        assert!(!s.cvs.contains_key("c1"));
+    }
+
+    #[test]
+    fn reducer_candidates_emptied_removes_cvs() {
+        let mut s = State::default();
+        s = reduce(s, &Event::CvAdded {
+            cv_id: "c1".into(),
+            job_id: "j1".into(),
+            file_path: "/tmp/c1.pdf".into(),
+            file_name: "c1.pdf".into(),
+            file_type: "Pdf".into(),
+        });
+        let s = reduce(s, &Event::CandidatesEmptied { job_id: "j1".into() });
+        assert!(!s.cvs.contains_key("c1"));
+    }
+
+    #[test]
+    fn drift_check_matching_state() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute("CREATE TABLE jobs (id TEXT PRIMARY KEY)", []).unwrap();
+        conn.execute("CREATE TABLE candidates (id TEXT PRIMARY KEY, job_id TEXT, deleted INTEGER NOT NULL DEFAULT 0)", []).unwrap();
+        conn.execute("INSERT INTO jobs (id) VALUES ('j1')", []).unwrap();
+        conn.execute("INSERT INTO candidates (id, job_id, deleted) VALUES ('c1','j1',0)", []).unwrap();
+
+        let mut s = State::default();
+        s.jobs.insert("j1".into(), JobRecord { id: "j1".into(), ..Default::default() });
+        s.cvs.insert("c1".into(), CvRecord { id: "c1".into(), job_id: "j1".into(), deleted: false, ..Default::default() });
+        let msgs = drift_check(&s, &conn);
+        assert!(msgs.is_empty(), "{:?}", msgs);
+    }
+
+    #[test]
+    fn drift_check_mismatched_state() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute("CREATE TABLE jobs (id TEXT PRIMARY KEY)", []).unwrap();
+        conn.execute("CREATE TABLE candidates (id TEXT PRIMARY KEY, job_id TEXT, deleted INTEGER NOT NULL DEFAULT 0)", []).unwrap();
+        conn.execute("INSERT INTO jobs (id) VALUES ('j1')", []).unwrap();
+
+        let mut s = State::default();
+        s.jobs.insert("j1".into(), JobRecord { id: "j1".into(), ..Default::default() });
+        s.cvs.insert("c1".into(), CvRecord { id: "c1".into(), job_id: "j1".into(), deleted: false, ..Default::default() });
+        let msgs = drift_check(&s, &conn);
+        assert!(!msgs.is_empty());
     }
 }
