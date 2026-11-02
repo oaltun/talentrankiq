@@ -384,6 +384,11 @@ pub fn soft_delete_candidate(conn: &Connection, cv_id: &str) -> Result<(), Strin
     Ok(())
 }
 
+/// Alias used by the pipeline/store layer.
+pub fn soft_delete_cv(conn: &Connection, cv_id: &str) -> Result<(), String> {
+    soft_delete_candidate(conn, cv_id)
+}
+
 /// Hard-delete (GDPR): removes all traces of a candidate.
 pub fn forget_candidate(conn: &Connection, cv_id: &str) -> Result<(), String> {
     conn.execute("DELETE FROM candidate_scores WHERE candidate_id = ?1", rusqlite::params![cv_id])
@@ -395,6 +400,11 @@ pub fn forget_candidate(conn: &Connection, cv_id: &str) -> Result<(), String> {
     conn.execute("DELETE FROM candidates WHERE id = ?1", rusqlite::params![cv_id])
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Alias used by the pipeline/store layer.
+pub fn forget_cv(conn: &Connection, cv_id: &str) -> Result<(), String> {
+    forget_candidate(conn, cv_id)
 }
 
 /// Retrieve a candidate's heavy vector regardless of deleted status.
@@ -415,6 +425,18 @@ pub fn get_heavy(conn: &Connection, cv_id: &str) -> Result<Option<Vec<f32>>, Str
 }
 
 /// Canonical comparison helpers.
+pub fn canonical_pair(a: &str, b: &str) -> (String, String) {
+    if a <= b {
+        (a.to_string(), b.to_string())
+    } else {
+        (b.to_string(), a.to_string())
+    }
+}
+
+pub fn pair_key(a: &str, b: &str) -> (String, String) {
+    canonical_pair(a, b)
+}
+
 pub fn insert_comparison(
     conn: &Connection,
     a: &str,

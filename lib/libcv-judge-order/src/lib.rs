@@ -1,9 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
+pub use libcv_core::{CvId, PairKey};
 use libjudge::tournament::GlickoState;
-
-pub type CvId = String;
-pub type PairKey = (CvId, CvId);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum H2HStatus {
@@ -223,6 +221,9 @@ mod tests {
 
 pub mod types {
     pub use super::*;
+}
+pub mod ids {
+    pub use libcv_core::ids::*;
 }
 pub mod confidence {
     pub use super::{H2HStatus, h2h_status};

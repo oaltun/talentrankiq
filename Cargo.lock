@@ -1994,6 +1994,7 @@ dependencies = [
 name = "libcv-judge-order"
 version = "0.1.0"
 dependencies = [
+ "libcv-core",
  "libjudge",
  "serde",
 ]

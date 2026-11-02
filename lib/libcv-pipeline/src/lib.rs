@@ -146,6 +146,37 @@ pub struct HeavyWorker;
 pub struct MatchWorker;
 pub struct JudgeWorker;
 
+impl TextWorker {
+    pub fn new() -> Self { Self }
+}
+impl Default for TextWorker {
+    fn default() -> Self { Self }
+}
+impl ScoutWorker {
+    pub fn new() -> Self { Self }
+}
+impl Default for ScoutWorker {
+    fn default() -> Self { Self }
+}
+impl HeavyWorker {
+    pub fn new() -> Self { Self }
+}
+impl Default for HeavyWorker {
+    fn default() -> Self { Self }
+}
+impl MatchWorker {
+    pub fn new() -> Self { Self }
+}
+impl Default for MatchWorker {
+    fn default() -> Self { Self }
+}
+impl JudgeWorker {
+    pub fn new() -> Self { Self }
+}
+impl Default for JudgeWorker {
+    fn default() -> Self { Self }
+}
+
 impl Worker for TextWorker {
     type In = String;
     type Out = Event;
