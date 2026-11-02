@@ -12,7 +12,7 @@ pub mod cascade;
 pub mod chunk_match;
 pub mod config;
 pub mod db;
-pub mod embed;
+pub use libcv_heavy::embed;
 pub mod embeddings;
 pub mod feedback;
 pub mod favs;
@@ -33,4 +33,4 @@ pub mod results_csv;
  /// (libsyscap design §7.3).
  pub mod syscap;
  pub mod sort;
- pub mod types;
+ pub use libcv_core::types;

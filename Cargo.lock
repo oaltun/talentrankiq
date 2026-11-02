@@ -1987,7 +1987,9 @@ dependencies = [
 name = "libcv-heavy"
 version = "0.1.0"
 dependencies = [
- "libtriqui-core",
+ "libcv-core",
+ "libmodelcallerclient",
+ "sha2 0.10.9",
 ]
 
 [[package]]
@@ -2275,6 +2277,8 @@ dependencies = [
  "chrono",
  "env_logger",
  "libconfigreader",
+ "libcv-core",
+ "libcv-heavy",
  "libcvparser",
  "libembedrank",
  "libjudge",

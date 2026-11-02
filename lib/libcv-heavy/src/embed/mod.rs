@@ -11,7 +11,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use crate::types::DomainError;
+use libcv_core::types::DomainError;
 use libmodelcallerclient::ModelCallerClient;
 
 /// Error from an embedding backend.
@@ -204,13 +204,11 @@ impl Embedder for ModelCallerEmbedder {
 /// Deterministic embedding backend for tests: a stable hash of the text mapped to a
 /// fixed-dimension unit vector. Not semantically meaningful — only for exercising the
 /// ranking pipeline without a network or model.
-#[cfg(test)]
 pub struct MockEmbedder {
     model: String,
     dim: usize,
 }
 
-#[cfg(test)]
 impl MockEmbedder {
     pub fn new(dim: usize) -> Self {
         Self {
@@ -230,7 +228,6 @@ impl MockEmbedder {
     }
 }
 
-#[cfg(test)]
 impl Embedder for MockEmbedder {
     fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, EmbedError> {
         Ok(texts.iter().map(|t| self.hash_vec(t)).collect())

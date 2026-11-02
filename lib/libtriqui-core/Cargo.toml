@@ -50,6 +50,10 @@ libjudge = { path = "../libjudge" }
 libmodelcaller = { path = "../libmodelcaller", features = ["mlx"] }
 libtriqui-license = { path = "../libtriqui-license" }
 
+# Strangler-fig split: re-exported from the cv-* crates
+libcv-core = { path = "../libcv-core" }
+libcv-heavy = { path = "../libcv-heavy" }
+
 [dev-dependencies]
 # RUST_LOG visibility for the in-process engine probe test
 env_logger = "0.11"

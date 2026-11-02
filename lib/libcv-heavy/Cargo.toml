@@ -10,4 +10,6 @@ rust-version = "1.82"
 name = "libcv_heavy"
 
 [dependencies]
-libtriqui-core = { path = "../libtriqui-core" }
+libcv-core = { path = "../libcv-core" }
+libmodelcallerclient = { path = "../libmodelcallerclient" }
+sha2 = "0.10"
