@@ -2011,9 +2011,12 @@ name = "libcv-pipeline"
 version = "0.1.0"
 dependencies = [
  "libcv-judge-order",
+ "libcv-match",
  "libcv-state",
+ "libcvparser",
  "libjudge",
  "libsyscap",
+ "libtriqui-core",
 ]
 
 [[package]]

@@ -181,11 +181,18 @@ impl Worker for TextWorker {
     type In = String;
     type Out = Event;
     fn process(&mut self, item: Self::In) -> Result<Self::Out, WorkerError> {
-        Ok(Event::TextExtracted {
-            cv_id: item,
-            text: String::new(),
-            status: libcv_state::ExtractionStatus::Extracted,
-        })
+        match libcvparser::extract_text(std::path::Path::new(&item)) {
+            Ok(text) => Ok(Event::TextExtracted {
+                cv_id: item,
+                text,
+                status: libcv_state::ExtractionStatus::Extracted,
+            }),
+            Err(_) => Ok(Event::TextExtracted {
+                cv_id: item,
+                text: String::new(),
+                status: libcv_state::ExtractionStatus::Failed,
+            }),
+        }
     }
 }
 
@@ -234,6 +241,116 @@ impl Worker for JudgeWorker {
             job_version: 0,
             model_bundle_version: 0,
             result: 0.5,
+        })
+    }
+}
+
+pub struct ScoutContext {
+    pub embedder: Option<std::sync::Arc<dyn libtriqui_core::embed::Embedder>>,
+}
+
+impl Default for ScoutContext {
+    fn default() -> Self {
+        Self { embedder: None }
+    }
+}
+
+pub struct HeavyContext {
+    pub embedder: Option<std::sync::Arc<dyn libtriqui_core::embed::Embedder>>,
+}
+
+impl Default for HeavyContext {
+    fn default() -> Self {
+        Self { embedder: None }
+    }
+}
+
+pub struct MatchContext {
+    pub cv_vector: Option<Vec<f32>>,
+    pub target_vector: Option<Vec<f32>>,
+}
+
+impl Default for MatchContext {
+    fn default() -> Self {
+        Self {
+            cv_vector: None,
+            target_vector: None,
+        }
+    }
+}
+
+pub struct JudgeContext {
+    pub model: Option<libjudge::JudgeModel>,
+}
+
+impl Default for JudgeContext {
+    fn default() -> Self {
+        Self { model: None }
+    }
+}
+
+impl ScoutWorker {
+    pub fn embed(&self, _ctx: &ScoutContext, _text: &str) -> Vec<f32> {
+        Vec::new()
+    }
+}
+
+impl HeavyWorker {
+    pub fn embed(&self, _ctx: &HeavyContext, _text: &str) -> Vec<f32> {
+        Vec::new()
+    }
+}
+
+impl MatchWorker {
+    pub fn cosine_similarity(&self, a: &[f64], b: &[f64]) -> f64 {
+        libcv_match::cosine(a, b)
+    }
+
+    pub fn cosine(&self, a: &[f64], b: &[f64]) -> f64 {
+        libcv_match::cosine(a, b)
+    }
+
+    pub fn process_with_vectors(
+        &mut self,
+        cv_id: String,
+        job_version: u32,
+        cv_vector: Option<Vec<f64>>,
+        target_vector: Option<Vec<f64>>,
+    ) -> Result<Event, WorkerError> {
+        let similarity = match (cv_vector, target_vector) {
+            (Some(a), Some(b)) => libcv_match::cosine(&a, &b),
+            _ => 0.0,
+        };
+        Ok(Event::HeavyMatched {
+            cv_id,
+            job_version,
+            similarity,
+        })
+    }
+}
+
+impl JudgeWorker {
+    pub fn pair_prob(&self, model: &libjudge::JudgeModel, x: Vec<f32>) -> f64 {
+        model.pair_prob(x)
+    }
+
+    pub fn process_with_model(
+        &mut self,
+        pair: (String, String),
+        job_version: u32,
+        model_bundle_version: u32,
+        model: Option<&libjudge::JudgeModel>,
+        features: Option<Vec<f32>>,
+    ) -> Result<Event, WorkerError> {
+        let result = match (model, features) {
+            (Some(m), Some(x)) => m.pair_prob(x),
+            _ => 0.5,
+        };
+        Ok(Event::ComparisonCompleted {
+            pair,
+            job_version,
+            model_bundle_version,
+            result,
         })
     }
 }
@@ -294,16 +411,16 @@ pub mod text_worker {
     pub use super::TextWorker;
 }
 pub mod scout_worker {
-    pub use super::ScoutWorker;
+    pub use super::{ScoutWorker, ScoutContext};
 }
 pub mod heavy_worker {
-    pub use super::HeavyWorker;
+    pub use super::{HeavyWorker, HeavyContext};
 }
 pub mod match_worker {
-    pub use super::MatchWorker;
+    pub use super::{MatchWorker, MatchContext};
 }
 pub mod judge_worker {
-    pub use super::JudgeWorker;
+    pub use super::{JudgeWorker, JudgeContext};
 }
 
 #[cfg(test)]

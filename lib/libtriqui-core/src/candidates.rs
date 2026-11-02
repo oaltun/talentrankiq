@@ -391,6 +391,8 @@ pub fn soft_delete_cv(conn: &Connection, cv_id: &str) -> Result<(), String> {
 
 /// Hard-delete (GDPR): removes all traces of a candidate.
 pub fn forget_candidate(conn: &Connection, cv_id: &str) -> Result<(), String> {
+    conn.execute("DELETE FROM favs WHERE cv_id = ?1", rusqlite::params![cv_id])
+        .map_err(|e| e.to_string())?;
     conn.execute("DELETE FROM candidate_scores WHERE candidate_id = ?1", rusqlite::params![cv_id])
         .map_err(|e| e.to_string())?;
     conn.execute("DELETE FROM candidate_chunks WHERE candidate_id = ?1", rusqlite::params![cv_id])
@@ -582,6 +584,17 @@ mod extra_cv_tests {
         conn.execute("INSERT INTO candidates (id, job_id, source_file_path, file_name, file_type, extraction_status) VALUES ('c1','j1','/tmp/c1.pdf','c1.pdf','Pdf','Extracted')", []).unwrap();
         forget_candidate(&conn, "c1").unwrap();
         let count: i64 = conn.query_row("SELECT COUNT(*) FROM candidates WHERE id='c1'", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn forget_candidate_removes_favs() {
+        let conn = test_conn();
+        conn.execute("INSERT INTO jobs (id, title, triqui_size) VALUES ('j1','Job',1)", []).unwrap();
+        conn.execute("INSERT INTO candidates (id, job_id, source_file_path, file_name, file_type, extraction_status) VALUES ('c1','j1','/tmp/c1.pdf','c1.pdf','Pdf','Extracted')", []).unwrap();
+        conn.execute("INSERT INTO favs (fav_id, cv_id, job_id, ts) VALUES ('f1','c1','j1',1)", []).unwrap();
+        forget_candidate(&conn, "c1").unwrap();
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM favs WHERE cv_id='c1'", [], |r| r.get(0)).unwrap();
         assert_eq!(count, 0);
     }
 

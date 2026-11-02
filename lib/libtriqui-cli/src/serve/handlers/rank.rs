@@ -652,7 +652,23 @@ pub fn start_rank(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Protoc
     }
     match spawn_cascade(state, job_id) {
         Ok(true) => {}
-        Ok(false) => return Err(string_err("cascade already running for this job")),
+        Ok(false) => {
+            // Idempotent hint: a cascade is already running for this job, so
+            // ensure (don't restart) one is in flight and report running.
+            let initial = RankState {
+                running: true,
+                ranking: true,
+                stage: Some("lex".into()),
+                wave: None,
+                embedded_total: 0,
+                embedded_done: 0,
+                judged: 0,
+                candidates: 0,
+                converged: false,
+                reason: None,
+            };
+            return ok_json(initial);
+        }
         Err(e) => return Err(string_err(e)),
     }
 
