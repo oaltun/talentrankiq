@@ -66,7 +66,7 @@ pub fn apply_feedback(
             feedback::remove_fav(&conn, &fav_id).map_err(|e| domain(&e))?;
             drop(conn);
         }
-        state.shadow_dispatch(libcv_state::Event::FavToggled {
+        state.dispatch_event(libcv_state::Event::FavToggled {
             fav_id,
             cv_id: cv_id.clone(),
             workspace_id: job_id.to_string(),

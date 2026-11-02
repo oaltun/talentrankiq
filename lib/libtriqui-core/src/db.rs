@@ -531,7 +531,7 @@ fn migrate_scoring_v3(conn: &Connection) -> Result<(), String> {
 /// Ranking vectors are stored as raw little-endian f32 byte arrays; NULL means
 /// "not embedded yet" (candidate) or "zero" (eprofile/b). `vector_model`/`ead_model`
 /// stamp which embedding model produced a vector so a model swap is detectable.
-pub(crate) fn migrate(conn: &Connection) -> Result<(), String> {
+pub fn migrate(conn: &Connection) -> Result<(), String> {
     add_column_if_missing(conn, "candidates", "vector", "BLOB")?;
     add_column_if_missing(conn, "candidates", "vector_model", "TEXT")?;
     add_column_if_missing(conn, "candidates", "match_score", "REAL")?;
@@ -674,6 +674,18 @@ pub(crate) fn migrate(conn: &Connection) -> Result<(), String> {
         [],
     )
     .map_err(|e| e.to_string())?;
+
+    // Canonicalize legacy comparison rows into the `comparisons` table.
+    let _ = conn.execute(
+        "INSERT OR IGNORE INTO comparisons (cv_a_id, cv_b_id, job_ad_version, model_bundle_version, result, judged_at) \
+         SELECT CASE WHEN doc_a <= doc_b THEN doc_a ELSE doc_b END, \
+                CASE WHEN doc_a <= doc_b THEN doc_b ELSE doc_a END, \
+                0, 0, \
+                CASE WHEN doc_a <= doc_b THEN prob ELSE 1.0 - prob END, \
+                strftime('%s','now') \
+         FROM judge_pair_verdicts",
+        [],
+    );
 
     Ok(())
 }

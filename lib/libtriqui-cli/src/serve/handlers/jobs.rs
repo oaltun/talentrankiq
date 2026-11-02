@@ -157,7 +157,7 @@ pub fn create_job(state: &Arc<ServeState>) -> Result<Value, ProtocolError> {
     // The new job is (about to be) the viewed one: point the single watcher
     // at it. This also creates the fresh CV folder on disk.
     watch::watch_job(state, &id);
-    state.shadow_dispatch(libcv_state::Event::JobCreated {
+    state.dispatch_event(libcv_state::Event::JobCreated {
         job_id: id.clone(),
         title: job.title.clone(),
         triqui_size: job.triqui_size,
@@ -310,7 +310,7 @@ pub fn update_job(
             Err(e) => log::warn!("rank: could not start cascade for {job_id}: {e}"),
         }
     }
-    state.shadow_dispatch(libcv_state::Event::JobUpdated {
+    state.dispatch_event(libcv_state::Event::JobUpdated {
         job_id: job_id.to_string(),
         title: job.title.clone(),
         triqui_size: job.triqui_size,
@@ -360,7 +360,7 @@ pub fn update_job_weights(
         )
         .map_err(db_err)?;
     drop(conn);
-    state.shadow_dispatch(libcv_state::Event::RubricWeightChanged {
+    state.dispatch_event(libcv_state::Event::RubricWeightChanged {
         job_id: job_id.to_string(),
         weights: vec![ad_weight, fb_job_weight, fb_profile_weight],
     });
@@ -395,7 +395,7 @@ pub fn archive_job(
         }));
     }
     drop(conn);
-    state.shadow_dispatch(libcv_state::Event::JobArchived {
+    state.dispatch_event(libcv_state::Event::JobArchived {
         job_id: job_id.to_string(),
         archived,
     });
@@ -420,7 +420,7 @@ pub fn empty_candidates(state: &Arc<ServeState>, job_id: &str) -> Result<Value, 
     .map_err(db_err)?;
     log::info!("emptied {deleted} candidates for job {job_id}");
     drop(conn);
-    state.shadow_dispatch(libcv_state::Event::CandidatesEmptied {
+    state.dispatch_event(libcv_state::Event::CandidatesEmptied {
         job_id: job_id.to_string(),
     });
     ok_json(deleted as i32)
@@ -434,7 +434,7 @@ pub fn delete_job(state: &Arc<ServeState>, job_id: &str) -> Result<(), ProtocolE
             .map_err(db_err)?;
     }
     watch::stop_watching(state, job_id);
-    state.shadow_dispatch(libcv_state::Event::JobDeleted {
+    state.dispatch_event(libcv_state::Event::JobDeleted {
         job_id: job_id.to_string(),
     });
     Ok(())

@@ -35,7 +35,7 @@ pub fn license_activate(state: &ServeState, params: LicenseActivateParams) -> Re
 
     match rt().block_on(activate_license(&params.license_key)) {
         Ok(license) => {
-            state.shadow_dispatch(libcv_state::Event::LicenseActivated {
+            state.dispatch_event(libcv_state::Event::LicenseActivated {
                 license: params.license_key.clone(),
             });
             let status = convert_status(license.status());

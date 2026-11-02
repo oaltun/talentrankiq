@@ -232,11 +232,7 @@ impl Worker for ScoutWorker {
     type In = String;
     type Out = Event;
     fn process(&mut self, item: Self::In) -> Result<Self::Out, WorkerError> {
-        Ok(Event::ScoutCompleted {
-            cv_id: item,
-            vector: Vec::new(),
-            model_bundle_version: 0,
-        })
+        self.process_with_context(item, "", &ScoutContext::default(), 0)
     }
 }
 
@@ -244,11 +240,7 @@ impl Worker for HeavyWorker {
     type In = String;
     type Out = Event;
     fn process(&mut self, item: Self::In) -> Result<Self::Out, WorkerError> {
-        Ok(Event::HeavyCompleted {
-            cv_id: item,
-            vector: Vec::new(),
-            model_bundle_version: 0,
-        })
+        self.process_with_context(item, "", &HeavyContext::default(), 0)
     }
 }
 
@@ -256,11 +248,7 @@ impl Worker for MatchWorker {
     type In = (String, String);
     type Out = Event;
     fn process(&mut self, item: Self::In) -> Result<Self::Out, WorkerError> {
-        Ok(Event::HeavyMatched {
-            cv_id: item.0,
-            job_version: 0,
-            similarity: 0.0,
-        })
+        self.process_with_vectors(item.0, 0, None, None)
     }
 }
 
@@ -268,12 +256,7 @@ impl Worker for JudgeWorker {
     type In = (String, String);
     type Out = Event;
     fn process(&mut self, item: Self::In) -> Result<Self::Out, WorkerError> {
-        Ok(Event::ComparisonCompleted {
-            pair: item,
-            job_version: 0,
-            model_bundle_version: 0,
-            result: 0.5,
-        })
+        self.process_with_model(item, 0, 0, None, None)
     }
 }
 

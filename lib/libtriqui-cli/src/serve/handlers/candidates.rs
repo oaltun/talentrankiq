@@ -15,7 +15,7 @@ pub fn soft_delete_cv(state: &Arc<ServeState>, cv_id: &str) -> Result<Value, Pro
     let conn = state.db.0.lock().map_err(lock_err)?;
     libtriqui_core::candidates::soft_delete_candidate(&conn, cv_id).map_err(string_err)?;
     drop(conn);
-    state.shadow_dispatch(libcv_state::Event::CvSoftDeleted { cv_id: cv_id.to_string() });
+    state.dispatch_event(libcv_state::Event::CvSoftDeleted { cv_id: cv_id.to_string() });
     Ok(serde_json::Value::Null)
 }
 
@@ -23,7 +23,7 @@ pub fn forget_cv(state: &Arc<ServeState>, cv_id: &str) -> Result<Value, Protocol
     let conn = state.db.0.lock().map_err(lock_err)?;
     libtriqui_core::candidates::forget_candidate(&conn, cv_id).map_err(string_err)?;
     drop(conn);
-    state.shadow_dispatch(libcv_state::Event::CvForgotten { cv_id: cv_id.to_string() });
+    state.dispatch_event(libcv_state::Event::CvForgotten { cv_id: cv_id.to_string() });
     Ok(serde_json::Value::Null)
 }
 

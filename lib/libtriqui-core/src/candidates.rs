@@ -599,6 +599,23 @@ mod extra_cv_tests {
     }
 
     #[test]
+    fn migrate_legacy_pair_verdicts_to_comparisons() {
+        let conn = test_conn();
+        conn.execute(
+            "INSERT INTO judge_pair_verdicts (model, artifact_hash, ad_hash, doc_a, doc_b, prob) VALUES ('m','art','ad','b','a',0.7)",
+            [],
+        )
+        .unwrap();
+        crate::db::migrate(&conn).unwrap();
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM comparisons", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 1);
+        let (a, b): (String, String) = conn
+            .query_row("SELECT cv_a_id, cv_b_id FROM comparisons", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap();
+        assert_eq!((a, b), ("a".to_string(), "b".to_string()));
+    }
+
+    #[test]
     fn insert_comparison_canonicalizes() {
         let conn = test_conn();
         conn.execute("INSERT INTO jobs (id, title, triqui_size) VALUES ('j1','Job',1)", []).unwrap();

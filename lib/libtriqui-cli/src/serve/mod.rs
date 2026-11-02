@@ -114,7 +114,7 @@ pub struct ServeState {
 
 impl ServeState {
     /// Dispatch an event to the shadow cv_state reducer (drift detection).
-    pub fn shadow_dispatch(&self, event: libcv_state::Event) {
+    pub fn dispatch_event(&self, event: libcv_state::Event) {
         if let Ok(mut s) = self.cv_state.lock() {
             *s = libcv_state::reduce(s.clone(), &event);
             match &event {
@@ -295,7 +295,7 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
     pipeline.configure(
         Arc::new({
             let state = Arc::clone(&state);
-            move |ev| state.shadow_dispatch(ev)
+            move |ev| state.dispatch_event(ev)
         }),
         Some(Arc::clone(&state.cv_state)),
         libcv_pipeline::RunnerContext {

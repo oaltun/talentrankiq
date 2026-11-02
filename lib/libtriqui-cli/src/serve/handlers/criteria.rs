@@ -72,7 +72,7 @@ pub fn add_criterion(
         )
         .map_err(libtriqui_core::db::db_err)?;
     drop(conn);
-    state.shadow_dispatch(libcv_state::Event::CriterionAdded {
+    state.dispatch_event(libcv_state::Event::CriterionAdded {
         criterion_id: id.clone(),
         job_id: job_id.to_string(),
         text: text.to_string(),
@@ -136,7 +136,7 @@ pub fn update_criterion(
         )
         .map_err(libtriqui_core::db::db_err)?;
     drop(conn);
-    state.shadow_dispatch(libcv_state::Event::CriterionUpdated {
+    state.dispatch_event(libcv_state::Event::CriterionUpdated {
         criterion_id: id.to_string(),
         text: text.to_string(),
         weight,
@@ -153,7 +153,7 @@ pub fn delete_criterion(state: &Arc<ServeState>, id: &str) -> Result<(), Protoco
     conn.execute("DELETE FROM criteria WHERE id = ?1", rusqlite::params![id])
         .map_err(libtriqui_core::db::db_err)?;
     drop(conn);
-    state.shadow_dispatch(libcv_state::Event::CriterionRemoved {
+    state.dispatch_event(libcv_state::Event::CriterionRemoved {
         criterion_id: id.to_string(),
     });
     if let Some(jid) = jid {
