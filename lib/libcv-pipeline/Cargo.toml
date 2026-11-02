@@ -17,3 +17,6 @@ libcvparser = { path = "../libcvparser" }
 libjudge = { path = "../libjudge" }
 libsyscap = { path = "../libsyscap" }
 libtriqui-core = { path = "../libtriqui-core" }
+uuid = { version = "1", features = ["v4", "serde"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+log = "0.4"

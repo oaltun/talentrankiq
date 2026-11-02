@@ -279,12 +279,7 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
     // Watch for engine inactivity and free the model memory when idle.
     runtime.spawn_idle_monitor();
 
-    // CV-dir watching is demand-driven (single-watcher policy): the gui sends
-    // the `watch_job` rpc whenever the viewed job changes, so only the job on
-    // screen is watched and auto-imported. The coordinator gets the Arc only
-    // after the state is fully built (see below).
-    let (jobs_tx, jobs_rx) = std::sync::mpsc::channel::<String>();
-    let (ad_tx, ad_rx) = std::sync::mpsc::channel::<String>();
+    let (ad_tx, _ad_rx) = std::sync::mpsc::channel::<String>();
 
     let pipeline = Arc::new(PipelineRunner::new());
 
@@ -296,7 +291,7 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
         import_state: ImportState::new(),
         runtime,
         events: events.clone(),
-        watch: WatchHandle::new(jobs_tx, ad_tx),
+        watch: WatchHandle::new(ad_tx),
         config: libtriqui_core::app_config::cascade_config(),
         cascade_gens: Arc::new(crate::serve::handlers::rank::CascadeGens::new()),
         download_progress: Arc::new(Mutex::new(HashMap::new())),
@@ -313,32 +308,9 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
         libcv_pipeline::RunnerContext {
             runtime: Some(Arc::clone(&state.runtime)),
             scout_model: libconfigreader::Config::load().cascade.scout().map(str::to_string),
+            db_path: Some(state.db_path.clone()),
         },
     );
-
-    {
-        let state = Arc::clone(&state);
-        let user_ovr = user_ovr_opt.clone();
-        std::thread::Builder::new()
-            .name("cv-watch-coordinator".into())
-            .spawn(move || {
-                libtriqui_core::app_config::set_user_overrides(user_ovr);
-                watch::coordinate(state, jobs_rx)
-            })
-            .map_err(|e| format!("spawn watch coordinator: {e}"))?;
-    }
-
-    {
-        let state = Arc::clone(&state);
-        let user_ovr = user_ovr_opt.clone();
-        std::thread::Builder::new()
-            .name("ad-watch-coordinator".into())
-            .spawn(move || {
-                libtriqui_core::app_config::set_user_overrides(user_ovr);
-                watch::coordinate_ad(state, ad_rx)
-            })
-            .map_err(|e| format!("spawn ad watch coordinator: {e}"))?;
-    }
 
     log::info!("serve: ready");
 

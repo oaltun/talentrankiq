@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::env;
+use std::path::PathBuf;
 use libtriqui_core::embed::Embedder;
 use std::sync::{Arc, Mutex};
 
@@ -23,6 +24,7 @@ pub enum WorkItem {
     Heavy { cv_id: String },
     Match { cv_id: String, job_id: String },
     Judge { pair: (String, String) },
+    ScanDirectory { job_id: String },
 }
 
 pub struct EffectRunner {
@@ -195,6 +197,16 @@ impl JudgeWorker {
     pub fn new() -> Self { Self }
 }
 impl Default for JudgeWorker {
+    fn default() -> Self { Self }
+}
+
+pub struct ScanWorker;
+
+impl ScanWorker {
+    pub fn new() -> Self { Self }
+}
+
+impl Default for ScanWorker {
     fn default() -> Self { Self }
 }
 
@@ -418,6 +430,99 @@ impl JudgeWorker {
     }
 }
 
+impl ScanWorker {
+    pub fn scan(
+        &self,
+        job_id: String,
+        db_path: &PathBuf,
+        dispatch: &Arc<dyn Fn(Event) + Send + Sync>,
+    ) {
+        use libtriqui_core::db::open_connection_at;
+        use libtriqui_core::import::collect_supported_files;
+        use rusqlite::params;
+
+        let conn = match open_connection_at(db_path) {
+            Ok(c) => c,
+            Err(e) => {
+                log::warn!("scan: failed to open db for {}: {}", job_id, e);
+                return;
+            }
+        };
+
+        let dir: Option<String> = conn
+            .query_row(
+                "SELECT import_directory_path FROM jobs WHERE id = ?1",
+                params![job_id],
+                |r| r.get(0),
+            )
+            .ok()
+            .flatten();
+
+        let Some(dir) = dir.filter(|d| !d.is_empty()) else {
+            return;
+        };
+
+        let files = match collect_supported_files(&dir) {
+            Ok(files) => files,
+            Err(e) => {
+                log::warn!("scan {}: scan of {} failed: {}", job_id, dir, e);
+                return;
+            }
+        };
+        if files.is_empty() {
+            return;
+        }
+
+        let new_files: Vec<PathBuf> = {
+            files
+                .into_iter()
+                .filter(|p| {
+                    let path_str = p.to_string_lossy().to_string();
+                    !conn
+                        .query_row(
+                            "SELECT 1 FROM candidates WHERE job_id = ?1 AND source_file_path = ?2 AND extraction_status = 'Extracted'",
+                            params![job_id, &path_str],
+                            |_| Ok(true),
+                        )
+                        .unwrap_or(false)
+                })
+                .collect()
+        };
+        if new_files.is_empty() {
+            return;
+        }
+
+        log::info!("scan {}: {} new file(s) in {}", job_id, new_files.len(), dir);
+
+        for file_path in new_files {
+            let file_name = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("unknown").to_string();
+            let file_type = match file_path.extension().and_then(|e| e.to_str()) {
+                Some("pdf") => "Pdf",
+                Some("docx") => "Docx",
+                Some("doc") => "Doc",
+                Some("txt") => "Txt",
+                _ => "Other",
+            }.to_string();
+
+            let cv_id = format!("cv_{}", uuid::Uuid::new_v4());
+
+            conn.execute(
+                "INSERT INTO candidates (id, job_id, source_file_path, file_name, file_type, extraction_status, imported_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 'Pending', datetime('now'))",
+                params![cv_id, job_id, file_path.to_string_lossy().to_string(), file_name, file_type],
+            ).ok();
+
+            dispatch(Event::CvAdded {
+                cv_id: cv_id.clone(),
+                job_id: job_id.clone(),
+                file_path: file_path.to_string_lossy().to_string(),
+                file_name,
+                file_type,
+            });
+        }
+    }
+}
+
 pub struct Orchestrator {
     workers: usize,
 }
@@ -490,6 +595,7 @@ pub mod judge_worker {
 pub struct RunnerContext {
     pub runtime: Option<Arc<libtriqui_core::runtime::EngineRuntime>>,
     pub scout_model: Option<String>,
+    pub db_path: Option<PathBuf>,
 }
 
 pub struct PipelineRunner {
@@ -640,6 +746,24 @@ impl PipelineRunner {
                     .process_with_model(pair, job_version, 0, None, None)
                     .ok()
             }
+            WorkItem::ScanDirectory { job_id } => {
+                let db_path = match ctx.db_path.clone() {
+                    Some(p) => p,
+                    None => {
+                        log::warn!("scan {}: no db_path configured", job_id);
+                        return;
+                    }
+                };
+                let dispatch = match self.dispatch.lock().expect("pipeline dispatch lock").clone() {
+                    Some(d) => d,
+                    None => {
+                        log::warn!("scan {}: no dispatch configured", job_id);
+                        return;
+                    }
+                };
+                ScanWorker::new().scan(job_id, &db_path, &dispatch);
+                None
+            }
         };
         if let Some(ev) = event {
             self.dispatch_event(ev);
@@ -654,9 +778,14 @@ pub mod pipeline_runner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
     #[test]
     fn effect_runner_default_one_worker() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        std::env::remove_var("CV_PIPELINE_WORKERS");
         let r = EffectRunner::new();
         assert_eq!(r.workers(), 1);
     }
@@ -693,6 +822,7 @@ mod tests {
 
     #[test]
     fn orchestrator_reads_env() {
+        let _guard = ENV_MUTEX.lock().unwrap();
         std::env::set_var("CV_PIPELINE_WORKERS", "4");
         let o = Orchestrator::new();
         assert_eq!(o.worker_count(), 4);

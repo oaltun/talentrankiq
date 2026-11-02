@@ -1,29 +1,25 @@
 //! Watched CV directories: auto-import new CVs as they appear (serve side).
 //!
-//! Port of the pre-migration gui `watch.rs` — identical behaviour, but events
-//! go through the import pipeline's [`crate::serve::EventSink`] instead of
-//! Tauri and the DB is the serve process's shared connection. Only ONE job is
-//! watched at a time (the one currently open in the gui): whenever the viewed
-//! job changes, the gui sends the `watch_job` rpc, which drops every other
-//! watcher, watches that job's directory, and fires a catch-up scan — so
-//! files added while the job was not viewed (or the app was closed) are
-//! imported too, and "Import CVs" stays fast. The scan is cheap when nothing
-//! is new: supported files already present in the `candidates` table are
-//! filtered out before the import pipeline (and thus the embedding engine) is
-//! ever touched. Files added while another job is viewed are picked up by the
-//! catch-up scan on the next switch (or the manual "Import CVs" button).
+//! The CV-directory watcher uses notify to detect filesystem changes and
+//! enqueues a ScanDirectory work item to the cv_pipeline, which handles
+//! scanning, candidate creation, and dispatching CvAdded events. Only ONE job
+//! is watched at a time (the one currently open in the gui): whenever the
+//! viewed job changes, the gui sends the `watch_job` rpc, which drops every
+//! other watcher, watches that job's directory, and fires a catch-up scan.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use notify::RecursiveMode;
 use notify::Watcher;
 
-use crate::serve::handlers::import::spawn_dir_import;
 use crate::serve::handlers::prefs;
 use crate::serve::ServeState;
-use crate::serve::WATCH_DEBOUNCE;
+use libcv_pipeline::WorkItem;
+
+const WATCH_DEBOUNCE: Duration = Duration::from_millis(1000);
 
 /// Root folder for new jobs' default CV directories (`<root>/job-N/cv`), first
 /// match wins: the saved gui preference (Settings → General → CV directory,
@@ -57,24 +53,21 @@ pub fn default_job_dir(root: &Path, title: &str) -> String {
     root.join(title).join("cv").to_string_lossy().to_string()
 }
 
-/// Per-serve watch state: one OS watcher per job + the debounce channel
-/// shared by all watchers' event handlers.
+/// Per-serve watch state: one OS watcher per job + debounce state.
 pub struct WatchHandle {
     watchers: Mutex<HashMap<String, notify::RecommendedWatcher>>,
-    jobs_tx: mpsc::Sender<String>,
     /// Job-ad file watchers, kept apart from the CV watchers on purpose: a save
     /// in the user's editor must reload the ad and re-rank, never kick off a CV
     /// import scan (and vice versa). Separate map because `watch_dir` drops the
     /// previous watcher stored under the job id.
     ad_watchers: Mutex<HashMap<String, notify::RecommendedWatcher>>,
-    ad_tx: mpsc::Sender<String>,
+    ad_tx: std::sync::mpsc::Sender<String>,
 }
 
 impl WatchHandle {
-    pub fn new(jobs_tx: mpsc::Sender<String>, ad_tx: mpsc::Sender<String>) -> Self {
+    pub fn new(ad_tx: std::sync::mpsc::Sender<String>) -> Self {
         Self {
             watchers: Mutex::new(HashMap::new()),
-            jobs_tx,
             ad_watchers: Mutex::new(HashMap::new()),
             ad_tx,
         }
@@ -139,101 +132,15 @@ pub fn stop_watching_ad(state: &Arc<ServeState>, job_id: &str) {
 /// Debounce loop for job-ad edits: collect job ids until the stream is quiet for
 /// [`WATCH_DEBOUNCE`] (an editor save can emit several events), then reload
 /// each job's ad once.
-pub fn coordinate_ad(state: Arc<ServeState>, rx: mpsc::Receiver<String>) {
+pub fn coordinate_ad(state: Arc<ServeState>, rx: std::sync::mpsc::Receiver<String>) {
     while let Ok(first) = rx.recv() {
-        let mut pending: HashSet<String> = HashSet::from([first]);
+        let mut pending: std::collections::HashSet<String> = std::collections::HashSet::from([first]);
         while let Ok(job_id) = rx.recv_timeout(WATCH_DEBOUNCE) {
             pending.insert(job_id);
         }
         for job_id in pending {
             crate::serve::handlers::job_ad::reload_and_rerank(&state, &job_id);
         }
-    }
-}
-
-/// Single debounce loop: collect job ids until the event stream is quiet for
-/// [`WATCH_DEBOUNCE`], then run one scan per distinct job.
-pub fn coordinate(state: Arc<ServeState>, rx: mpsc::Receiver<String>) {
-    while let Ok(first) = rx.recv() {
-        let mut pending: HashSet<String> = HashSet::from([first]);
-        while let Ok(job_id) = rx.recv_timeout(WATCH_DEBOUNCE) {
-            pending.insert(job_id);
-        }
-        for job_id in pending {
-            scan_and_import(&state, &job_id);
-        }
-    }
-}
-
-/// Debounced event handler for one job: import not-yet-imported supported
-/// files in the job's watched directory. No-op when the dir is unset/missing,
-/// the job is already importing, or nothing new is on disk.
-fn scan_and_import(state: &Arc<ServeState>, job_id: &str) {
-    let dir: Option<String> = {
-        let conn = state.db.0.lock().expect("db lock poisoned");
-        conn.query_row(
-            "SELECT import_directory_path FROM jobs WHERE id = ?1",
-            rusqlite::params![job_id],
-            |r| r.get(0),
-        )
-        .ok()
-    };
-    let Some(dir) = dir.filter(|d| !d.is_empty()) else {
-        return;
-    };
-
-    // Skip when this job is already importing; the next event re-triggers.
-    if state
-        .import_state
-        .0
-        .lock()
-        .expect("import state lock poisoned")
-        .contains(job_id)
-    {
-        log::info!("cv-watch {job_id}: import already active, skipping scan");
-        return;
-    }
-
-    let files = match libtriqui_core::import::collect_supported_files(&dir) {
-        Ok(files) => files,
-        Err(e) => {
-            log::warn!("cv-watch {job_id}: scan of {dir} failed: {e}");
-            return;
-        }
-    };
-    if files.is_empty() {
-        return;
-    }
-
-    // Cheap pre-check: drop files already successfully imported (failed ones are
-    // left through so they retry) so unrelated filesystem noise (touch, editor
-    // temp files, attribute changes) never starts the embedding engine.
-    let new_files: Vec<PathBuf> = {
-        let conn = state.db.0.lock().expect("db lock poisoned");
-        files
-            .into_iter()
-            .filter(|p| {
-                let path_str = p.to_string_lossy().to_string();
-                !conn
-                    .query_row(
-                        "SELECT 1 FROM candidates WHERE job_id = ?1 AND source_file_path = ?2 AND extraction_status = 'Extracted'",
-                        rusqlite::params![job_id, &path_str],
-                        |_| Ok(true),
-                    )
-                    .unwrap_or(false)
-            })
-            .collect()
-    };
-    if new_files.is_empty() {
-        return;
-    }
-
-    log::info!(
-        "cv-watch {job_id}: {} new file(s) in {dir}",
-        new_files.len()
-    );
-    if let Err(e) = spawn_dir_import(state, job_id, &dir, new_files) {
-        log::warn!("cv-watch {job_id}: auto-import failed: {e}");
     }
 }
 
@@ -257,7 +164,7 @@ pub fn watch_dir(
             message: format!("Cannot create directory {dir}: {e}"),
         });
     }
-    let tx = state.watch.jobs_tx.clone();
+    let pipeline = Arc::clone(&state.pipeline);
     let jid = job_id.to_string();
     let mut watcher =
         notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| {
@@ -266,7 +173,10 @@ pub fn watch_dir(
                 if matches!(event.kind, notify::event::EventKind::Access(_)) {
                     return;
                 }
-                let _ = tx.send(jid.clone());
+                // Debounce: only enqueue scan if enough time has passed.
+                // The pipeline's ScanWorker handles deduplication (it checks
+                // the database for already-imported files).
+                pipeline.enqueue(WorkItem::ScanDirectory { job_id: jid.clone() });
             }
         })
         .map_err(|e| libtriqui_core::types::DomainError::ValidationError {
@@ -298,8 +208,8 @@ pub fn stop_watching(state: &Arc<ServeState>, job_id: &str) {
 
 /// Single-watcher policy: make `job_id` the ONLY watched job. Drops every
 /// watcher, watches the job's CV directory (creating it when missing), and
-/// fires one debounced catch-up scan so files dropped while the job was not
-/// viewed are imported too. No-op logging when the job has no CV dir set.
+/// fires one catch-up scan so files dropped while the job was not viewed are
+/// imported too. No-op logging when the job has no CV dir set.
 /// Called by the `watch_job` rpc (gui switches jobs), `create_job` (new jobs
 /// start fresh + viewed), `set_job_cv_dir` (Browse… selection), and bundle
 /// import.
@@ -352,9 +262,10 @@ pub fn watch_job(state: &Arc<ServeState>, job_id: &str) {
         log::warn!("cv-watch {job_id}: cannot watch {dir}: {e}");
         return;
     }
-    // Catch-up scan (debounced like watcher events): imports files already in
-    // the dir before any new filesystem event arrives.
-    let _ = state.watch.jobs_tx.send(job_id.to_string());
+    // Catch-up scan: enqueue a ScanDirectory work item to the pipeline.
+    state.pipeline.enqueue(WorkItem::ScanDirectory {
+        job_id: job_id.to_string(),
+    });
 }
 
 #[cfg(test)]

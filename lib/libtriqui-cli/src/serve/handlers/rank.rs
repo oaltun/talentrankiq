@@ -620,24 +620,19 @@ pub fn spawn_cascade(state: &Arc<ServeState>, job_id: &str) -> Result<bool, Stri
 /// the initial RankState (running=true). The actual work runs on a background
 /// thread and emits `rank-progress` events.
 ///
-/// The explicit rank command requires a rubric query: this is the gui's
-/// Re-rank button, and ranking without a job ad produces all-zero totals
-/// (`job_ui_state` reports the same `no-jobad` blocker for the button). The
-/// auto-starts bypass this check deliberately — [`spawn_cascade`] runs an
-/// ad-less job as an embed-only cascade (scout + waves embed the corpus,
-/// scoring defers to when the ad lands), which is the import auto-start's
-/// contract (design §9).
+/// This is a priority hint: if a cascade is already running, this is a no-op
+/// that returns the current state. If not, it starts one. Ad-less jobs are
+/// allowed — the cascade embeds the corpus (scout + heavy waves) and defers
+/// scoring until an ad lands (matching the import auto-start behavior).
 pub fn start_rank(state: &Arc<ServeState>, job_id: &str) -> Result<Value, ProtocolError> {
     {
         let conn = state.db.0.lock().map_err(|e| string_err(format!("db lock: {e}")))?;
-        let (cvs, ad_set): (i64, bool) = conn
+        let cvs: i64 = conn
             .query_row(
-                "SELECT (SELECT COUNT(*) FROM candidates
-                          WHERE job_id = ?1 AND extraction_status = 'Extracted'),
-                        COALESCE(job_ad_text <> '' AND job_ad_text IS NOT NULL, 0)
-                 FROM jobs WHERE id = ?1",
+                "SELECT COUNT(*) FROM candidates
+                          WHERE job_id = ?1 AND extraction_status = 'Extracted'",
                 rusqlite::params![job_id],
-                |r| Ok((r.get(0)?, r.get::<_, i64>(1)? != 0)),
+                |r| r.get(0),
             )
             .map_err(|e| match e {
                 rusqlite::Error::QueryReturnedNoRows => string_err(format!("job {job_id} not found")),
@@ -645,9 +640,6 @@ pub fn start_rank(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Protoc
             })?;
         if cvs < 1 {
             return Err(string_err("cannot rank: no extracted CVs for this job"));
-        }
-        if !ad_set {
-            return Err(string_err("cannot rank: job has no job ad text"));
         }
     }
     match spawn_cascade(state, job_id) {
@@ -672,8 +664,6 @@ pub fn start_rank(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Protoc
         Err(e) => return Err(string_err(e)),
     }
 
-    // Return initial state — start_rank refused an ad-less job above, so the
-    // run it starts is always a real ranking.
     let initial = RankState {
         running: true,
         ranking: true,
