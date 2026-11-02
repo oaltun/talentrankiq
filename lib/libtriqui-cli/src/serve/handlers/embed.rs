@@ -8,12 +8,11 @@ use std::sync::Arc;
 use libtriqui_client::params::*;
 use libtriqui_client::protocol::ProtocolError;
 use libtriqui_client::types::DomainError;
-use libtriqui_core::chunk_match;
 use libtriqui_core::db;
 use libtriqui_core::embeddings;
 
 use crate::serve::handlers::import::embedding_progress_emitter;
-use crate::serve::handlers::{domain, ok_json};
+use crate::serve::handlers::{domain, lock_err, ok_json};
 use crate::serve::ServeState;
 
 /// Kick off the embedding engine (connect-or-spawn) if it hasn't already started.
@@ -88,13 +87,8 @@ pub fn chunk_match(state: &Arc<ServeState>, p: &ChunkMatchParams) -> Result<Valu
             message: format!("failed to open db: {e}"),
         })
     })?;
-    chunk_match::chunk_match(
-        &state.runtime,
-        &conn,
-        &p.candidate_id,
-        &p.target,
-        p.chunk_size,
-    )
-    .map_err(|e| domain(&e))
-    .and_then(ok_json)
+    let cv_state = state.cv_state.lock().map_err(lock_err)?.clone();
+    libcv_state::projections::compute_chunk_match(&cv_state, &state.runtime, &conn, &p.candidate_id, p.target.clone(), p.chunk_size)
+        .map_err(|e| domain(&e))
+        .and_then(ok_json)
 }

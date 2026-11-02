@@ -725,95 +725,9 @@ fn sample_budget_for_state() -> (libsyscap::Budget, libsyscap::LoadSnapshot) {
 /// ad-less embed-prefill run); `ranking` = in flight **and** the job has an
 /// ad — the flag the gui's rank buttons spin on.
 pub fn get_rank_state(state: &Arc<ServeState>, job_id: &str) -> Result<Value, ProtocolError> {
-    let conn = state.db.0.lock().map_err(|e| string_err(format!("db lock: {}", e)))?;
-    // A job the cascade has not touched yet has no `rank_state` row. That is a
-    // normal state a poll lands in routinely — between an import-done event
-    // and the auto-started run's first write, or on an ad-less job whose
-    // embed-only run has not been spawned — so report a coherent not-started
-    // snapshot instead of erroring.
-    let rs = match rank_state_for_job(&conn, job_id) {
-        Ok(rs) => Some(rs),
-        Err(_) => None,
-    };
-    let model = state.runtime.model();
-
-    let count = |sql: &str, params: Vec<Box<dyn rusqlite::ToSql>>| -> i64 {
-        conn.query_row(
-            sql,
-            rusqlite::params_from_iter(params.iter().map(|b| b.as_ref())),
-            |r| r.get::<_, i64>(0),
-        )
-        .unwrap_or(0)
-    };
-    let candidates = count(
-        "SELECT COUNT(*) FROM candidates
-         WHERE job_id = ?1 AND extraction_status = 'Extracted' AND extracted_text IS NOT NULL",
-        vec![Box::new(job_id.to_string())],
-    );
-    let embedded_done = count(
-        "SELECT COUNT(*) FROM candidates c
-         WHERE c.job_id = ?1 AND c.extraction_status = 'Extracted' AND c.extracted_text IS NOT NULL
-           AND EXISTS (SELECT 1 FROM candidate_chunks cc
-                       WHERE cc.candidate_id = c.id AND cc.vector_model = ?2)",
-        vec![
-            Box::new(job_id.to_string()) as Box<dyn rusqlite::ToSql>,
-            Box::new(model.clone()),
-        ],
-    );
-
-    // The latest report is the most recent wave, and it is the one that says
-    // whether the run converged.
-    let (running, converged, cancelled, stage, reports) = match &rs {
-        Some(rs) => {
-            let reports: Vec<SortReport> =
-                serde_json::from_str(&rs.sort_reports_json).unwrap_or_default();
-            (
-                !rs.complete && !rs.cancelled,
-                rs.complete && !rs.cancelled,
-                rs.cancelled,
-                Some(rs.sort.clone()),
-                reports,
-            )
-        }
-        None => (false, false, false, None, Vec::new()),
-    };
-    // The import auto-start deliberately runs ad-less jobs as an embed-prefill
-    // cascade (spawn_cascade's doc), which is status-bar activity — not a
-    // ranking in progress. `ranking` is the button-facing flag: in flight AND
-    // scoreable. It re-evaluates every poll, so an ad landing mid-run flips
-    // the buttons on without any new state write.
-    let ad_set: bool = conn
-        .query_row(
-            "SELECT COALESCE(job_ad_text <> '' AND job_ad_text IS NOT NULL, 0)
-             FROM jobs WHERE id = ?1",
-            rusqlite::params![job_id],
-            |r| r.get::<_, i64>(0),
-        )
-        .map(|v| v != 0)
-        .unwrap_or(false);
-    let ranking = running && ad_set;
-    let last = reports.last();
-    // Sampled fresh per poll: a run that is being held reports `holding`
-    // until the machine frees up, then silently goes back to `None`.
-    let budget = sample_budget_for_state().0;
-    // A job with no row has nothing in flight, so it never reports a budget
-    // reason — only a live or finished run can be held.
-    let reason = match &rs {
-        Some(_) => state_reason(cancelled, &budget),
-        None => None,
-    };
-    let out = RankState {
-        running,
-        ranking,
-        stage,
-        wave: last.filter(|r| r.waves > 0).map(|r| r.waves),
-        embedded_total: candidates as u32,
-        embedded_done: embedded_done as u32,
-        judged: last.map(|r| r.judge_pairs_fresh).unwrap_or(0),
-        candidates: candidates as u32,
-        converged,
-        reason,
-    };
+    let cv_state = state.cv_state.lock().map_err(|e| string_err(format!("db lock: {e}")))?.clone();
+    let conn = state.db.0.lock().map_err(|e| string_err(format!("db lock: {e}")))?;
+    let out = libcv_state::projections::compute_rank_state(&cv_state, &conn, job_id);
     ok_json(out)
 }
 

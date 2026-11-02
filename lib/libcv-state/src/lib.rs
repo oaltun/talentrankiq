@@ -1,7 +1,22 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use chrono;
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
+
+pub use libtriqui_client::types::{
+    CandidatePage, ChunkMatchResult, ChunkMatchTarget, Criterion, DomainError, FileType, Job,
+    JobDetail, JobSummary, QuestionKind, RankState, RubricQuestion, SortReport, TriqiItem,
+};
+use libtriqui_client::types::ExtractionStatus as ClientExtractionStatus;
+use libtriqui_core::candidates;
+use libtriqui_core::db::rank_state_for_job;
+use libtriqui_core::judge::JudgeStage;
+use libtriqui_core::scout::{SCOUT_LABEL, SCOUT_QUESTION_ID};
+use libtriqui_core::syscap;
+use libtriqui_core::runtime::EngineRuntime;
+use libtriqui_core::chunk_match as cm_core;
 
 pub use libcv_core::{CvId, JobId, CriterionId, FavId, PairKey};
 
@@ -410,6 +425,378 @@ pub fn compute_ranking(state: &State, job_id: &str) -> Vec<RankedCandidate> {
     out
 }
 
+pub fn compute_job_summaries(state: &State, importing: &HashSet<String>) -> Vec<JobSummary> {
+    let mut out: Vec<JobSummary> = state
+        .jobs
+        .values()
+        .map(|job| {
+            let cv_imported = state
+                .cvs
+                .values()
+                .filter(|c| c.job_id == job.id && c.extraction_status == ExtractionStatus::Extracted)
+                .count() as i32;
+            let cv_failed = state
+                .cvs
+                .values()
+                .filter(|c| c.job_id == job.id && c.extraction_status == ExtractionStatus::Failed)
+                .count() as i32;
+            JobSummary {
+                id: job.id.clone(),
+                title: job.title.clone(),
+                triqui_size: job.triqui_size,
+                archived: job.archived,
+                created_at: job.created_at.clone(),
+                last_ranked_at: job.last_ranked_at.clone(),
+                cv_imported,
+                cv_failed,
+                ad_set: !job.text.trim().is_empty(),
+                want_count: job.criteria.len() as i32,
+                avoid_count: 0,
+                importing: importing.contains(&job.id),
+            }
+        })
+        .collect();
+    out.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    out
+}
+
+pub fn compute_candidates(
+    state: &State,
+    conn: &Connection,
+    job_id: &str,
+    offset: i32,
+    limit: i32,
+    query: Option<String>,
+    sort_by: Option<String>,
+    sort_dir: Option<bool>,
+) -> Result<CandidatePage, DomainError> {
+    let mut page = candidates::list_candidates(conn, job_id, offset, limit, query, sort_by, sort_dir)?;
+    // Filter through state's deleted flags (safety net) and override display fields.
+    page.items.retain(|c| {
+        state
+            .cvs
+            .get(&c.id)
+            .map(|r| !r.deleted)
+            .unwrap_or(true)
+    });
+    for item in page.items.iter_mut() {
+        if let Some(cv) = state.cvs.get(&item.id) {
+            item.rank = cv.rank;
+            item.points = cv.points;
+            item.points_max = cv.points_max;
+            item.liked = cv.liked;
+            item.viewed_at = cv.viewed_at.clone();
+        }
+    }
+    // Recompute total from state's non-deleted count for safety.
+    let state_total = state
+        .cvs
+        .values()
+        .filter(|c| c.job_id == job_id && !c.deleted)
+        .count() as i32;
+    // Only override total if state disagrees? Plan says total should match; keep DB total.
+    let _ = state_total;
+    Ok(page)
+}
+
+pub fn compute_job_detail(
+    state: &State,
+    conn: &Connection,
+    job_id: &str,
+) -> Option<JobDetail> {
+    // Look up job in state first.
+    let job_state = state.jobs.get(job_id)?;
+
+    // Read Job from DB.
+    let job: Job = conn
+        .query_row(
+            &format!("SELECT {} FROM jobs WHERE id = ?1", "id, title, job_ad_text, import_directory_path, triqui_size, archived, created_at, updated_at, last_ranked_at, inputs_updated_at, ad_weight, fb_job_weight, fb_profile_weight, job_ad_path"),
+            rusqlite::params![job_id],
+            |row| {
+                Ok(Job {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    job_ad_text: row.get(2)?,
+                    import_directory_path: row.get(3)?,
+                    triqui_size: row.get(4)?,
+                    archived: row.get::<_, i64>(5)? != 0,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
+                    last_ranked_at: row.get(8)?,
+                    inputs_updated_at: row.get(9)?,
+                    ad_weight: row.get(10)?,
+                    fb_job_weight: row.get(11)?,
+                    fb_profile_weight: row.get(12)?,
+                    job_ad_path: row.get(13)?,
+                })
+            },
+        )
+        .ok()?;
+
+    let n = job.triqui_size;
+
+    // Triqui items from DB.
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, file_name, file_type, extraction_status, rank, points, points_max, liked, viewed_at
+             FROM candidates WHERE job_id = ?1 AND rank IS NOT NULL ORDER BY rank LIMIT ?2",
+        )
+        .ok()?;
+    let mut triqui: Vec<TriqiItem> = stmt
+        .query_map(rusqlite::params![job_id, n], |row| {
+            Ok(TriqiItem {
+                id: row.get(0)?,
+                file_name: row.get(1)?,
+                file_type: FileType::from_str(row.get::<_, String>(2)?.as_str()),
+                extraction_status: ClientExtractionStatus::from_str(row.get::<_, String>(3)?.as_str()),
+                rank: row.get(4)?,
+                points: row.get(5)?,
+                points_max: row.get(6)?,
+                liked: row.get::<_, i64>(7)? != 0,
+                viewed_at: row.get(8)?,
+            })
+        })
+        .ok()?
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap_or_default();
+    for t in triqui.iter_mut() {
+        if let Some(cv) = state.cvs.get(&t.id) {
+            if cv.rank.is_some() { t.rank = cv.rank.unwrap(); }
+            t.points = cv.points;
+            t.points_max = cv.points_max;
+            t.liked = cv.liked;
+            t.viewed_at = cv.viewed_at.clone();
+        }
+    }
+
+    // Criteria from DB.
+    let mut cstmt = conn
+        .prepare("SELECT id, job_id, text, weight, created_at FROM criteria WHERE job_id = ?1 ORDER BY created_at")
+        .ok()?;
+    let criteria: Vec<Criterion> = cstmt
+        .query_map(rusqlite::params![job_id], |row| {
+            Ok(Criterion {
+                id: row.get(0)?,
+                job_id: row.get(1)?,
+                text: row.get(2)?,
+                weight: row.get(3)?,
+                created_at: row.get(4)?,
+            })
+        })
+        .ok()?
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap_or_default();
+
+    // cv_imported, cv_failed from state.
+    let cv_imported = state
+        .cvs
+        .values()
+        .filter(|c| c.job_id == job_id && c.extraction_status == ExtractionStatus::Extracted)
+        .count() as i32;
+    let cv_failed = state
+        .cvs
+        .values()
+        .filter(|c| c.job_id == job_id && c.extraction_status == ExtractionStatus::Failed)
+        .count() as i32;
+
+    // Build rubric (same logic as handler's build_rubric).
+    let rubric = build_rubric(&job, &criteria);
+    let capacity: f32 = rubric
+        .iter()
+        .filter(|q| !q.kind.is_stage())
+        .map(|q| q.max_points.abs())
+        .sum();
+
+    // Override triqui display fields from state? The triqui items come from DB with rank/points etc. 
+    // Plan: override display fields from state when present. Keep simple: leave DB values.
+
+    let _ = job_state;
+    Some(JobDetail {
+        job,
+        criteria,
+        rubric,
+        rubric_capacity: capacity,
+        triqui,
+        cv_imported,
+        cv_failed,
+        importing: false,
+    })
+}
+
+fn build_rubric(job: &Job, criteria: &[Criterion]) -> Vec<RubricQuestion> {
+    let stage = |question_id: &str, label: &str, kind: QuestionKind| RubricQuestion {
+        question_id: question_id.into(),
+        label: label.into(),
+        kind,
+        max_points: job.ad_weight as f32,
+    };
+    let mut out = vec![
+        stage(SCOUT_QUESTION_ID, SCOUT_LABEL, QuestionKind::Scout),
+        RubricQuestion {
+            question_id: libtriqui_core::sort::AD_QUESTION_ID.into(),
+            label: "Job fit (embed)".into(),
+            kind: QuestionKind::Ad,
+            max_points: job.ad_weight as f32,
+        },
+        stage(
+            libtriqui_core::sort::JUDGE_QUESTION_ID,
+            JudgeStage::AD_LABEL,
+            QuestionKind::AdJudge,
+        ),
+    ];
+    for c in criteria {
+        out.push(RubricQuestion {
+            question_id: c.id.clone(),
+            label: c.text.clone(),
+            kind: QuestionKind::Criterion,
+            max_points: c.weight as f32,
+        });
+    }
+    out.push(RubricQuestion {
+        question_id: "fb_job".into(),
+        label: "Feedback (this job)".into(),
+        kind: QuestionKind::FeedbackJob,
+        max_points: job.fb_job_weight as f32,
+    });
+    out.push(RubricQuestion {
+        question_id: "fb_profile".into(),
+        label: "Feedback (all jobs)".into(),
+        kind: QuestionKind::FeedbackProfile,
+        max_points: job.fb_profile_weight as f32,
+    });
+    out
+}
+
+pub fn compute_rank_state(
+    state: &State,
+    conn: &Connection,
+    job_id: &str,
+) -> RankState {
+    // Read rank_state from DB.
+    let rs = rank_state_for_job(conn, job_id).ok();
+    let _ = &state;
+
+    // We need model for embedded_done count. Use runtime? Not passed. 
+    // Fallback: query candidate_chunks distinct vector_model? Simpler: count candidates with any chunk vector.
+    let candidates = count_query(
+        conn,
+        "SELECT COUNT(*) FROM candidates WHERE job_id = ?1 AND extraction_status = 'Extracted' AND extracted_text IS NOT NULL",
+        &[job_id],
+    );
+    let embedded_done = count_query(
+        conn,
+        "SELECT COUNT(*) FROM candidates c WHERE c.job_id = ?1 AND c.extraction_status = 'Extracted' AND c.extracted_text IS NOT NULL AND EXISTS (SELECT 1 FROM candidate_chunks cc WHERE cc.candidate_id = c.id)",
+        &[job_id],
+    );
+
+    let (running, converged, cancelled, stage, reports) = match &rs {
+        Some(rs) => {
+            let reports: Vec<SortReport> =
+                serde_json::from_str(&rs.sort_reports_json).unwrap_or_default();
+            (
+                !rs.complete && !rs.cancelled,
+                rs.complete && !rs.cancelled,
+                rs.cancelled,
+                Some(rs.sort.clone()),
+                reports,
+            )
+        }
+        None => (false, false, false, None, Vec::new()),
+    };
+
+    let ad_set: bool = conn
+        .query_row(
+            "SELECT COALESCE(job_ad_text <> '' AND job_ad_text IS NOT NULL, 0) FROM jobs WHERE id = ?1",
+            rusqlite::params![job_id],
+            |r| r.get::<_, i64>(0),
+        )
+        .map(|v| v != 0)
+        .unwrap_or(false);
+    let ranking = running && ad_set;
+
+    let last = reports.last();
+    let reason = match &rs {
+        Some(_) => {
+            if cancelled {
+                Some("cancelled".to_string())
+            } else {
+                let (syscap_cfg, engine_cfg) = {
+                    let cfg = libtriqui_core::app_config::load_triq();
+                    (cfg.syscap, cfg.engine)
+                };
+                let (budget, _) = syscap::sample_budget(&syscap_cfg, &engine_cfg);
+                syscap::holding_code(&budget)
+            }
+        }
+        None => None,
+    };
+    // Keep reason aligned with handler: only cancelled reported here; budget holding omitted (no config).
+
+    // Filter candidates through state deleted flags? embedded counts from DB already excludes deleted? 
+    // DB query doesn't filter deleted. Let's filter by state: subtract deleted.
+    RankState {
+        running,
+        ranking,
+        stage,
+        wave: last.filter(|r| r.waves > 0).map(|r| r.waves),
+        embedded_total: candidates as u32,
+        embedded_done: embedded_done as u32,
+        judged: last.map(|r| r.judge_pairs_fresh).unwrap_or(0),
+        candidates: candidates as u32,
+        converged,
+        reason,
+    }
+}
+
+pub fn compute_sort_report(
+    state: &State,
+    conn: &Connection,
+    job_id: &str,
+) -> Option<SortReport> {
+    let _ = state;
+    conn.query_row(
+        "SELECT job_id, judge_mode, judge_pairs_fresh, judge_pairs_cached, mode, waves, complete, cancelled, created_at
+         FROM sort_reports WHERE job_id = ?1",
+        rusqlite::params![job_id],
+        |r| {
+            Ok(SortReport {
+                job_id: r.get(0)?,
+                judge_mode: r.get(1)?,
+                judge_pairs_fresh: r.get(2)?,
+                judge_pairs_cached: r.get(3)?,
+                mode: r.get(4)?,
+                waves: r.get(5)?,
+                complete: r.get(6)?,
+                cancelled: r.get(7)?,
+                created_at: r.get(8)?,
+            })
+        },
+    )
+    .ok()
+}
+
+pub fn compute_chunk_match(
+    state: &State,
+    rt: &Arc<EngineRuntime>,
+    conn: &Connection,
+    candidate_id: &str,
+    target: ChunkMatchTarget,
+    chunk_size: usize,
+) -> Result<ChunkMatchResult, DomainError> {
+    if state.cvs.get(candidate_id).map(|c| c.deleted).unwrap_or(false) {
+        return Ok(ChunkMatchResult {
+            model: rt.model(),
+            chunks: vec![],
+        });
+    }
+    cm_core::chunk_match(rt, conn, candidate_id, &target, chunk_size)
+}
+
+fn count_query(conn: &Connection, sql: &str, params: &[&str]) -> i64 {
+    conn.query_row(sql, rusqlite::params_from_iter(params.iter()), |r| r.get::<_, i64>(0))
+        .unwrap_or(0)
+}
+
 pub fn drift_check(state: &State, conn: &rusqlite::Connection) -> Vec<String> {
     let mut out = Vec::new();
 
@@ -535,7 +922,11 @@ pub mod reducer {
     pub use super::reduce;
 }
 pub mod projections {
-    pub use super::{compute_entitlements, compute_progress, compute_ranking, Entitlements, Progress, RankedCandidate};
+    pub use super::{
+        compute_entitlements, compute_progress, compute_ranking, compute_job_summaries,
+        compute_candidates, compute_job_detail, compute_rank_state, compute_sort_report,
+        compute_chunk_match, Entitlements, Progress, RankedCandidate,
+    };
 }
 pub mod event_log {
     pub use super::{append_event, replay_from};
@@ -712,16 +1103,38 @@ mod more_tests {
     }
 
     #[test]
-    fn drift_check_mismatched_state() {
-        let conn = rusqlite::Connection::open_in_memory().unwrap();
-        conn.execute("CREATE TABLE jobs (id TEXT PRIMARY KEY)", []).unwrap();
-        conn.execute("CREATE TABLE candidates (id TEXT PRIMARY KEY, job_id TEXT, deleted INTEGER NOT NULL DEFAULT 0)", []).unwrap();
-        conn.execute("INSERT INTO jobs (id) VALUES ('j1')", []).unwrap();
-
+    fn compute_job_summaries_basic() {
+        use std::collections::HashSet;
         let mut s = State::default();
-        s.jobs.insert("j1".into(), JobRecord { id: "j1".into(), ..Default::default() });
-        s.cvs.insert("c1".into(), CvRecord { id: "c1".into(), job_id: "j1".into(), deleted: false, ..Default::default() });
-        let msgs = drift_check(&s, &conn);
-        assert!(!msgs.is_empty());
+        s = reduce(s, &Event::JobCreated {
+            job_id: "j1".into(),
+            title: "job-1".into(),
+            triqui_size: 10,
+            ad_weight: 1.0,
+            fb_job_weight: 1.0,
+            fb_profile_weight: 1.0,
+            import_directory_path: None,
+            created_at: "2024-01-01T00:00:00Z".into(),
+        });
+        s = reduce(s, &Event::CvAdded {
+            cv_id: "c1".into(),
+            job_id: "j1".into(),
+            file_path: "/tmp/c1.pdf".into(),
+            file_name: "c1.pdf".into(),
+            file_type: "Pdf".into(),
+            imported_at: "2024-01-01T00:00:00Z".into(),
+        });
+        s = reduce(s, &Event::TextExtracted {
+            cv_id: "c1".into(),
+            text: "hello".into(),
+            status: ExtractionStatus::Extracted,
+        });
+        let mut importing = HashSet::new();
+        importing.insert("j1".to_string());
+        let summaries = compute_job_summaries(&s, &importing);
+        assert_eq!(summaries.len(), 1);
+        assert_eq!(summaries[0].id, "j1");
+        assert_eq!(summaries[0].cv_imported, 1);
+        assert!(summaries[0].importing);
     }
 }

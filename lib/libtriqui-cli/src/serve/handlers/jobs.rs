@@ -58,83 +58,6 @@ pub fn triqui_from_row(row: &rusqlite::Row) -> rusqlite::Result<TriqiItem> {
         viewed_at: row.get(8)?,
     })
 }
-
-/// Build the results-table column list: the cascade's stage grades first, in the
-/// order the pipeline produces them (scout → embed → judge), then the
-/// rubric the total is made of (job ad, criteria, the two feedback rows).
-///
-/// The stage columns are always present, whether or not the stage has produced a
-/// grade yet — the sheet shows `–` for a stage a candidate has not reached, and
-/// columns that appear mid-cascade would make the row jump under the reader.
-/// Pure config: nothing here depends on what has been computed yet.
-fn build_rubric(job: &Job, criteria: &[Criterion]) -> Vec<RubricQuestion> {
-    let stage = |question_id: &str, label: &str, kind: QuestionKind| RubricQuestion {
-        question_id: question_id.into(),
-        label: label.into(),
-        kind,
-        // Every stage is scored in the job ad's currency, so its points read on
-        // the same scale as the ad column they sit next to.
-        max_points: job.ad_weight as f32,
-    };
-    let mut out = vec![
-        stage(
-            libtriqui_core::scout::SCOUT_QUESTION_ID,
-            libtriqui_core::scout::SCOUT_LABEL,
-            QuestionKind::Scout,
-        ),
-        RubricQuestion {
-            question_id: libtriqui_core::sort::AD_QUESTION_ID.into(),
-            label: "Job fit (embed)".into(),
-            kind: QuestionKind::Ad,
-            max_points: job.ad_weight as f32,
-        },
-        stage(
-            libtriqui_core::sort::JUDGE_QUESTION_ID,
-            libtriqui_core::judge::JudgeStage::AD_LABEL,
-            QuestionKind::AdJudge,
-        ),
-    ];
-    for c in criteria {
-        out.push(RubricQuestion {
-            question_id: c.id.clone(),
-            label: c.text.clone(),
-            kind: QuestionKind::Criterion,
-            max_points: c.weight as f32,
-        });
-    }
-    out.push(RubricQuestion {
-        question_id: "fb_job".into(),
-        label: "Feedback (this job)".into(),
-        kind: QuestionKind::FeedbackJob,
-        max_points: job.fb_job_weight as f32,
-    });
-    out.push(RubricQuestion {
-        question_id: "fb_profile".into(),
-        label: "Feedback (all jobs)".into(),
-        kind: QuestionKind::FeedbackProfile,
-        max_points: job.fb_profile_weight as f32,
-    });
-    out
-}
-
-/// Σ |max_points| over the questions that count towards `points` — the "Total /N"
-/// caption. Stage columns are excluded: they report what a stage thought of a
-/// CV, not a slice of the rubric the rank is made of.
-fn rubric_capacity(rubric: &[RubricQuestion]) -> f32 {
-    rubric
-        .iter()
-        .filter(|q| !q.kind.is_stage())
-        .map(|q| q.max_points.abs())
-        .sum()
-}
-
-/// Whether a candidate CV directory still holds CVs. Only a *non-empty*
-/// folder blocks: an empty leftover is safe to hand to a new job, and reusing
-/// it is what keeps the numbering from creeping upward across sessions.
-///
-/// Fails safe — an unreadable path (or a non-directory in its place) counts as
-/// holding data, so a number is never handed to a job while something unknown
-/// sits in its folder.
 fn folder_still_holds_cvs(dir: &str) -> bool {
     if dir.is_empty() {
         return false;
@@ -158,7 +81,6 @@ fn folder_still_holds_cvs(dir: &str) -> bool {
 ///
 /// Fails safe — an unreadable path (or a non-directory in its place) counts as
 /// holding data, so a number is never handed to a job while something unknown
-/// sits in its folder.
 fn job_folder_holds_cvs(job_dir: &Path) -> bool {
     match std::fs::read_dir(job_dir) {
         Ok(entries) => {
@@ -252,116 +174,31 @@ pub fn create_job(state: &Arc<ServeState>) -> Result<Value, ProtocolError> {
 }
 
 pub fn list_job_summaries(state: &Arc<ServeState>) -> Result<Value, ProtocolError> {
-    let conn = state.db.0.lock().map_err(lock_err)?;
-    let active = state.import_state.0.lock().map_err(lock_err)?;
-    let mut stmt = conn
-        .prepare(
-            "SELECT j.id, j.title, j.triqui_size, j.archived, j.created_at, j.last_ranked_at,
-                    COALESCE(SUM(CASE WHEN c.extraction_status = 'Extracted' THEN 1 ELSE 0 END), 0) AS cv_imported,
-                    COALESCE(SUM(CASE WHEN c.extraction_status = 'Failed'   THEN 1 ELSE 0 END), 0) AS cv_failed,
-                    CASE WHEN j.job_ad_text IS NOT NULL AND j.job_ad_text <> '' THEN 1 ELSE 0 END AS ad_set,
-                    (SELECT COUNT(*) FROM criteria cr WHERE cr.job_id = j.id) AS want_count,
-                    0 AS avoid_count
-             FROM jobs j
-             LEFT JOIN candidates c ON c.job_id = j.id
-             GROUP BY j.id
-             ORDER BY j.created_at DESC",
-        )
-        .map_err(db_err)?;
-    let rows = stmt.query_map([], |row| {
-        let id: String = row.get(0)?;
-        Ok(JobSummary {
-            id,
-            title: row.get(1)?,
-            triqui_size: row.get(2)?,
-            archived: row.get::<_, i64>(3)? != 0,
-            created_at: row.get(4)?,
-            last_ranked_at: row.get(5)?,
-            cv_imported: row.get(6)?,
-            cv_failed: row.get(7)?,
-            ad_set: row.get::<_, i64>(8)? != 0,
-            want_count: row.get(9)?,
-            avoid_count: row.get(10)?,
-            importing: false,
-        })
-    });
-    let mut out = Vec::new();
-    for r in rows.map_err(db_err)? {
-        let mut s = r.map_err(db_err)?;
-        s.importing = active.contains(&s.id);
-        out.push(s);
-    }
-    ok_json(out)
+    let importing = state.import_state.0.lock().map_err(lock_err)?.clone();
+    let cv_state = state.cv_state.lock().map_err(lock_err)?.clone();
+    let summaries = libcv_state::projections::compute_job_summaries(&cv_state, &importing);
+    ok_json(summaries)
 }
 
 pub fn get_job_detail(state: &Arc<ServeState>, job_id: &str) -> Result<Value, ProtocolError> {
-    let conn = state.db.0.lock().map_err(lock_err)?;
-    let job = match conn.query_row(
-        &format!("SELECT {JOB_COLS} FROM jobs WHERE id = ?1"),
-        rusqlite::params![job_id],
-        job_from_row,
-    ) {
-        Ok(j) => j,
-        Err(rusqlite::Error::QueryReturnedNoRows) => {
-            return Err(domain(&DomainError::NotFound {
-                entity: "Job".into(),
-                id: job_id.to_string(),
-            }));
-        }
-        Err(e) => return Err(domain(&db_err(e))),
-    };
-    let n = job.triqui_size;
-
-    let mut stmt = conn
-        .prepare(
-            "SELECT id, file_name, file_type, extraction_status, rank, points, points_max, liked, viewed_at
-             FROM candidates WHERE job_id = ?1 AND rank IS NOT NULL ORDER BY rank LIMIT ?2",
-        )
-        .map_err(db_err)?;
-    let triqui: Vec<TriqiItem> = stmt
-        .query_map(rusqlite::params![job_id, n], triqui_from_row)
-        .map_err(db_err)?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(db_err)?;
-
-    let mut stmt = conn
-        .prepare("SELECT id, job_id, text, weight, created_at FROM criteria WHERE job_id = ?1 ORDER BY created_at")
-        .map_err(db_err)?;
-    let criteria: Vec<Criterion> = stmt
-        .query_map(rusqlite::params![job_id], criterion_from_row)
-        .map_err(db_err)?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(db_err)?;
-
-    let (cv_imported, cv_failed) = conn
-        .query_row(
-            "SELECT COALESCE(SUM(CASE WHEN extraction_status = 'Extracted' THEN 1 ELSE 0 END), 0),
-                    COALESCE(SUM(CASE WHEN extraction_status = 'Failed'   THEN 1 ELSE 0 END), 0)
-             FROM candidates WHERE job_id = ?1",
-            rusqlite::params![job_id],
-            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)),
-        )
-        .map_err(db_err)?;
-
     let importing = state
         .import_state
         .0
         .lock()
         .map_err(lock_err)?
         .contains(job_id);
-
-    let rubric = build_rubric(&job, &criteria);
-    let capacity = rubric_capacity(&rubric);
-    ok_json(JobDetail {
-        job,
-        criteria,
-        rubric,
-        rubric_capacity: capacity,
-        triqui,
-        cv_imported: cv_imported as i32,
-        cv_failed: cv_failed as i32,
-        importing,
-    })
+    let cv_state = state.cv_state.lock().map_err(lock_err)?.clone();
+    let conn = state.db.0.lock().map_err(lock_err)?;
+    match libcv_state::projections::compute_job_detail(&cv_state, &conn, job_id) {
+        Some(mut detail) => {
+            detail.importing = importing;
+            ok_json(detail)
+        }
+        None => Err(domain(&DomainError::NotFound {
+            entity: "Job".into(),
+            id: job_id.to_string(),
+        })),
+    }
 }
 
 pub fn update_job(
@@ -745,36 +582,16 @@ pub fn job_ui_state(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Prot
     })
 }
 
-/// The report of the job's last rank (what ran, what was memoized).
 pub fn get_sort_report(state: &Arc<ServeState>, job_id: &str) -> Result<Value, ProtocolError> {
+    let cv_state = state.cv_state.lock().map_err(lock_err)?.clone();
     let conn = state.db.0.lock().map_err(lock_err)?;
-    let report = conn
-        .query_row(
-            "SELECT job_id, judge_mode, judge_pairs_fresh, judge_pairs_cached, mode, waves, complete, cancelled, created_at
-             FROM sort_reports WHERE job_id = ?1",
-            rusqlite::params![job_id],
-            |r| {
-                Ok(SortReport {
-                    job_id: r.get(0)?,
-                    judge_mode: r.get(1)?,
-                    judge_pairs_fresh: r.get(2)?,
-                    judge_pairs_cached: r.get(3)?,
-                    mode: r.get(4)?,
-                    waves: r.get(5)?,
-                    complete: r.get(6)?,
-                    cancelled: r.get(7)?,
-                    created_at: r.get(8)?,
-                })
-            },
-        )
-        .map_err(|e| match e {
-            rusqlite::Error::QueryReturnedNoRows => domain(&DomainError::NotFound {
-                entity: "Job".into(),
-                id: job_id.to_string(),
-            }),
-            e => domain(&db_err(e)),
-        })?;
-    ok_json(report)
+    match libcv_state::projections::compute_sort_report(&cv_state, &conn, job_id) {
+        Some(report) => ok_json(report),
+        None => Err(domain(&DomainError::NotFound {
+            entity: "Job".into(),
+            id: job_id.to_string(),
+        })),
+    }
 }
 
 #[cfg(test)]

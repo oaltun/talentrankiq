@@ -53,8 +53,9 @@ pub fn list_candidates(
     sort_by: Option<String>,
     sort_dir: Option<bool>,
 ) -> Result<Value, ProtocolError> {
+    let cv_state = state.cv_state.lock().map_err(lock_err)?.clone();
     let conn = state.db.0.lock().map_err(lock_err)?;
-    candidates::list_candidates(&conn, job_id, offset, limit, query, sort_by, sort_dir)
+    libcv_state::projections::compute_candidates(&cv_state, &conn, job_id, offset, limit, query, sort_by, sort_dir)
         .map_err(as_domain)
         .and_then(ok_json)
 }

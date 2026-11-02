@@ -2037,6 +2037,8 @@ dependencies = [
  "chrono",
  "libcv-core",
  "libjudge",
+ "libtriqui-client",
+ "libtriqui-core",
  "rusqlite",
  "serde",
  "serde_json",
