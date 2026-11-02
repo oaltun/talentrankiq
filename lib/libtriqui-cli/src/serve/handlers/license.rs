@@ -10,7 +10,7 @@ use libtriqui_license::{
 use serde_json::Value;
 use tokio::runtime::Runtime;
 
-use crate::serve::handlers::{ok_json, string_err};
+use crate::serve::handlers::ok_json;
 use crate::serve::ServeState;
 
 fn rt() -> Runtime {

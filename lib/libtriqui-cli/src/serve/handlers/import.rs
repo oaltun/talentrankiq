@@ -150,7 +150,7 @@ pub fn spawn_dir_import(
 /// scoring-only cascade (`jobs::update_job`).
 fn auto_start_cascade(state: &Arc<ServeState>, job_id: &str) {
     let extracted: i64 = {
-    let mut conn = match state.db.0.lock() {
+    let conn = match state.db.0.lock() {
             Ok(c) => c,
             Err(e) => {
                 log::error!("import: db lock failed, cascade not started: {e}");
