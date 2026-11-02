@@ -11,12 +11,13 @@ pub enum H2HStatus {
     Off,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct JudgeOrderState {
     pub glicko: HashMap<(CvId, u32), GlickoState>,
     pub comparisons: HashSet<PairKey>,
     pub provisional_sim_rank: Vec<(CvId, f64)>,
     pub job_version: u32,
+    pub entitled: bool,
 }
 
 pub fn first_opponent(
@@ -150,7 +151,7 @@ pub fn next_pair(state: &JudgeOrderState) -> Option<PairKey> {
 
 pub fn h2h_status(cv: CvId, state: &JudgeOrderState) -> H2HStatus {
     let has_comparison = state.comparisons.iter().any(|(a, b)| a == &cv || b == &cv);
-    let entitled = true;
+    let entitled = state.entitled;
     if entitled && has_comparison {
         H2HStatus::Live
     } else if entitled {
@@ -200,6 +201,7 @@ mod tests {
             comparisons: HashSet::new(),
             provisional_sim_rank: vec![("a".to_string(), 0.9), ("b".to_string(), 0.8)],
             job_version: 1,
+            entitled: true,
         };
         let p = next_pair(&state).unwrap();
         assert_eq!(p, ("a".to_string(), "b".to_string()));
@@ -212,10 +214,22 @@ mod tests {
             comparisons: HashSet::new(),
             provisional_sim_rank: vec![],
             job_version: 1,
+            entitled: true,
         };
         assert_eq!(h2h_status("a".into(), &state), H2HStatus::Pending);
         state.comparisons.insert(("a".to_string(), "b".to_string()));
         assert_eq!(h2h_status("a".into(), &state), H2HStatus::Live);
+
+        let mut state2 = JudgeOrderState {
+            glicko: HashMap::new(),
+            comparisons: HashSet::new(),
+            provisional_sim_rank: vec![],
+            job_version: 1,
+            entitled: false,
+        };
+        assert_eq!(h2h_status("a".into(), &state2), H2HStatus::Off);
+        state2.comparisons.insert(("a".to_string(), "b".to_string()));
+        assert_eq!(h2h_status("a".into(), &state2), H2HStatus::Frozen);
     }
 }
 

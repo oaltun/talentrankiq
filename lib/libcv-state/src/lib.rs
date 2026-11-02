@@ -373,6 +373,7 @@ pub fn compute_progress(state: &State, job_id: &str) -> Progress {
 pub struct RankedCandidate {
     pub cv_id: CvId,
     pub heavy_similarity: Option<f64>,
+    pub scout_similarity: Option<f64>,
     pub glicko_rating: Option<f64>,
 }
 
@@ -390,6 +391,7 @@ pub fn compute_ranking(state: &State, job_id: &str) -> Vec<RankedCandidate> {
             RankedCandidate {
                 cv_id: c.id.clone(),
                 heavy_similarity: c.heavy_similarity,
+                scout_similarity: c.scout_similarity,
                 glicko_rating,
             }
         })
@@ -413,9 +415,10 @@ pub fn compute_ranking(state: &State, job_id: &str) -> Vec<RankedCandidate> {
                 })
             })
             .unwrap_or(0.5);
-        match b
-            .heavy_similarity
-            .partial_cmp(&a.heavy_similarity)
+        let a_sim = a.heavy_similarity.or(a.scout_similarity);
+        let b_sim = b.heavy_similarity.or(b.scout_similarity);
+        match b_sim
+            .partial_cmp(&a_sim)
             .unwrap_or(std::cmp::Ordering::Equal)
         {
             std::cmp::Ordering::Equal => gb.partial_cmp(&ga).unwrap_or(std::cmp::Ordering::Equal),

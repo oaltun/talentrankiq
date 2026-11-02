@@ -139,6 +139,7 @@ impl EffectRunner {
             comparisons,
             provisional_sim_rank: provisional,
             job_version,
+            entitled: state.license.is_some(),
         };
         next_pair(&order_state).map(|p| WorkItem::Judge { pair: p })
     }
