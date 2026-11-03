@@ -44,6 +44,10 @@ pub struct RuntimeConfig {
     pub judge_artifacts: libconfigreader::GuiJudgeArtifact,
     /// Idle-unload timeout for the embedding engine in seconds (0 = disable idle unload).
     pub gui_idle_unload_secs: u64,
+    /// Whether to automatically download missing models via modelcaller.
+    /// The GUI manages downloads explicitly via `download_embedder`, so this
+    /// should be `false` for GUI usage. The CLI may set it to `true`.
+    pub auto_download_models: bool,
 }
 
 impl RuntimeConfig {
@@ -64,11 +68,17 @@ impl RuntimeConfig {
                     .unwrap_or_default()
             });
         let gui_idle_unload_secs = base_cfg.gui_idle_unload_secs;
+        // GUI manages downloads explicitly via `download_embedder`; CLI can opt in
+        /// via `TRIQ_AUTO_DOWNLOAD_MODELS=1`.
+        let auto_download_models = std::env::var("TRIQ_AUTO_DOWNLOAD_MODELS")
+            .map(|v| !v.is_empty() && v != "0" && v != "false")
+            .unwrap_or(false);
         Self {
             model_dir: app_config::model_dir(),
             model,
             judge_artifacts: app_config::gui_judge_artifacts(),
             gui_idle_unload_secs,
+            auto_download_models,
         }
     }
 }
@@ -499,7 +509,7 @@ impl EngineRuntime {
                 .map(|p| p.as_str().to_string())
                 .unwrap_or_else(|| "auto".to_string()),
             precision: "fp32".to_string(),
-            auto_download_models: true,
+            auto_download_models: self.cfg.auto_download_models,
         };
         let syscap_cfg = cfg.syscap.clone();
         let verbose = app_config::verbose();
@@ -1007,5 +1017,32 @@ mod tests {
         });
         let result = rt.fake_wait_until_ready(Duration::from_secs(5));
         assert!(result.is_ok());
+    }
+
+    /// RuntimeConfig::discover respects TRIQ_AUTO_DOWNLOAD_MODELS env var.
+    /// GUI defaults to false (explicit downloads), CLI can opt in via env var.
+    #[test]
+    fn runtime_config_auto_download_models_env_var() {
+        // Default (GUI behavior): auto_download_models = false
+        std::env::remove_var("TRIQ_AUTO_DOWNLOAD_MODELS");
+        let cfg = RuntimeConfig::discover(None, None);
+        assert!(!cfg.auto_download_models, "GUI default should disable auto-download");
+
+        // CLI behavior: auto_download_models = true when env var is set
+        std::env::set_var("TRIQ_AUTO_DOWNLOAD_MODELS", "1");
+        let cfg = RuntimeConfig::discover(None, None);
+        assert!(cfg.auto_download_models, "CLI should enable auto-download via env var");
+
+        // Explicit false values should disable
+        std::env::set_var("TRIQ_AUTO_DOWNLOAD_MODELS", "0");
+        let cfg = RuntimeConfig::discover(None, None);
+        assert!(!cfg.auto_download_models, "Explicit '0' should disable auto-download");
+
+        std::env::set_var("TRIQ_AUTO_DOWNLOAD_MODELS", "false");
+        let cfg = RuntimeConfig::discover(None, None);
+        assert!(!cfg.auto_download_models, "Explicit 'false' should disable auto-download");
+
+        // Clean up
+        std::env::remove_var("TRIQ_AUTO_DOWNLOAD_MODELS");
     }
 }

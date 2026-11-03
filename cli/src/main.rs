@@ -93,6 +93,9 @@ fn main() {
             log::info!("triq CLI starting (version {})", app_version);
             log::info!("app_dir: {}", app_dir.display());
 
+            // CLI doesn't have a GUI to manage model downloads, so enable auto-download
+            std::env::set_var("TRIQ_AUTO_DOWNLOAD_MODELS", "1");
+
             if let Err(e) = serve::run_over(
                 Some(app_dir),
                 app_version,

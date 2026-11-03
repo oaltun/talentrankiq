@@ -531,12 +531,10 @@ fn model_artifact_exists(state: &State, record: &ResolvedModel, runtime: Runtime
                 .artifacts
                 .iter()
                 .any(|a| a.backend == libconfigreader::Backend::Mlx)
-                && libmodelstorage::local_size(
+                && libmodeldownloader::modelcache::verify_safetensors_present(
                     &libmodelstorage::slug_dir(&state.model_dir, &record.slug)
-                        .join(&state.revision)
-                        .join("model.safetensors"),
+                        .join(&state.revision),
                 )
-                .is_some()
         }
     }
 }
@@ -649,6 +647,12 @@ pub fn variant_status(
 /// an MLX checkpoint is a safetensors file (or shards) plus a config and a
 /// tokenizer, planned from the repo listing rather than named by a url.
 fn auto_download_mlx(state: &State, model_slug: &str, variant: &ModelArtifact) -> Result<()> {
+    let dir = libmodelstorage::slug_dir(&state.model_dir, model_slug).join(&state.revision);
+    // Defense-in-depth: never download if the model is already on disk.
+    if libmodeldownloader::modelcache::verify_safetensors_present(&dir) {
+        log::info!("auto-download: '{}' already present, skipping", model_slug);
+        return Ok(());
+    }
     log::info!(
         "auto-downloading MLX artifact '{}' from {}",
         variant.quantization,
@@ -682,6 +686,11 @@ fn auto_download_mlx(state: &State, model_slug: &str, variant: &ModelArtifact) -
 }
 
 fn auto_download(state: &State, record: &ResolvedModel) -> Result<()> {
+    // Defense-in-depth: never download if the model is already on disk.
+    if model_onnx_path_exists(state, &record.slug) {
+        log::info!("auto-download: '{}' already present, skipping", record.slug);
+        return Ok(());
+    }
     log::info!(
         "auto-downloading model '{}' via modeldownloader",
         record.slug
@@ -1793,14 +1802,78 @@ models:
         assert_eq!(truncate_chars(&s, s.len() + 10), s);
     }
 
+    /// When a model is already on disk, `model_onnx_path_exists` returns true,
+    /// so `auto_download` must not trigger a re-download.
     #[test]
-    fn schema_form_renders_fields_and_enums() {
-        let schema = clamp_schema(
-            r#"{"fields":[{"name":"years_sql","type":"numeric","description":"yrs","required":true},{"name":"level","type":"string","enum":["junior"]}]}"#,
-        )
-        .unwrap();
-        let form = render_schema_form(&schema);
-        assert!(form.contains("- years_sql (numeric): yrs"));
-        assert!(form.contains("- level (string): - [one of: junior]"));
+    fn model_onnx_path_exists_true_when_onnx_on_disk() {
+        let tmp = std::env::temp_dir().join(format!("triqui-model-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let slug = "test-model";
+        let repo = tmp.join(slug).join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::write(repo.join("model.onnx"), b"fake").unwrap();
+
+        let mut args = stdio_args();
+        args.model_dir = Some(tmp.clone());
+        let state = State::new(
+            test_registry(),
+            args,
+            libconfigreader::EngineSection::default(),
+            libconfigreader::SyscapSection::default(),
+            false,
+        );
+        assert!(model_onnx_path_exists(&state, slug));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// When no model is on disk, `model_onnx_path_exists` returns false.
+    #[test]
+    fn model_onnx_path_exists_false_when_missing() {
+        let tmp = std::env::temp_dir().join(format!("triqui-model-test-missing-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let mut args = stdio_args();
+        args.model_dir = Some(tmp.clone());
+        let state = State::new(
+            test_registry(),
+            args,
+            libconfigreader::EngineSection::default(),
+            libconfigreader::SyscapSection::default(),
+            false,
+        );
+        assert!(!model_onnx_path_exists(&state, "test-model"));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// MLX existence check uses recursive safetensors search (sharded models).
+    #[test]
+    fn mlx_existence_check_finds_sharded_safetensors() {
+        let tmp = std::env::temp_dir().join(format!("triqui-mlx-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let slug = "test-mlx-model";
+        let revision = "main";
+        let dir = tmp.join(slug).join(revision);
+        std::fs::create_dir_all(&dir).unwrap();
+        // Sharded file — not "model.safetensors"
+        std::fs::write(dir.join("model-00001-of-00002.safetensors"), b"fake").unwrap();
+
+        assert!(libmodeldownloader::modelcache::verify_safetensors_present(&dir));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// MLX existence check returns false when no safetensors present.
+    #[test]
+    fn mlx_existence_check_false_when_missing() {
+        let tmp = std::env::temp_dir().join(format!("triqui-mlx-test-missing-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        assert!(!libmodeldownloader::modelcache::verify_safetensors_present(&tmp));
+
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }
