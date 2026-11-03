@@ -45,7 +45,7 @@ pub fn export_job_bundle(
     options: &BundleExportOptions,
     out_path: &str,
 ) -> Result<Value, ProtocolError> {
-    let conn = state.db.0.lock().map_err(lock_err)?;
+    let conn = state.db.read().map_err(lock_err)?;
     let summary = export_job(
         &conn,
         job_id,
@@ -73,7 +73,7 @@ pub fn import_job_bundle(state: &Arc<ServeState>, path: &str) -> Result<Value, P
 
     // Create the job + criteria rows (new ids, weights defaulted where absent).
     let created = {
-        let conn = state.db.0.lock().map_err(lock_err)?;
+        let mut conn = state.db.writer();
         create_job_from_bundle(&conn, &meta, &stage_str).map_err(string_err)?
     };
     let job_id = created.job_id.clone();
@@ -140,7 +140,7 @@ pub fn import_job_bundle(state: &Arc<ServeState>, path: &str) -> Result<Value, P
     });
 
     // Read the fresh job back for the frontend to navigate to.
-    let conn = state.db.0.lock().map_err(lock_err)?;
+    let conn = state.db.read().map_err(lock_err)?;
     let job = conn
         .query_row(
             &format!(

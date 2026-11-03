@@ -100,7 +100,7 @@ fn job_folder_holds_cvs(job_dir: &Path) -> bool {
 }
 
 pub fn create_job(state: &Arc<ServeState>) -> Result<Value, ProtocolError> {
-    let conn = state.db.0.lock().map_err(lock_err)?;
+    let mut conn = state.db.writer();
     let id = format!("job_{}", Uuid::new_v4());
     let count: i64 = conn
         .query_row("SELECT COUNT(*) FROM jobs", [], |r| r.get(0))
@@ -186,7 +186,7 @@ pub fn get_job_detail(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Pr
         .map_err(lock_err)?
         .contains(job_id);
     let cv_state = state.cv_state.lock().map_err(lock_err)?.clone();
-    let conn = state.db.0.lock().map_err(lock_err)?;
+    let conn = state.db.read().map_err(lock_err)?;
     match libcv_state::projections::compute_job_detail(&cv_state, &conn, job_id) {
         Some(mut detail) => {
             detail.importing = importing;
@@ -216,7 +216,7 @@ pub fn update_job(
             message: "TalentRankIQ size must be a positive integer".into(),
         }));
     }
-    let conn = state.db.0.lock().map_err(lock_err)?;
+    let mut conn = state.db.writer();
 
     // Fetch current job to detect ranking-input changes.
     let current: Job = conn
@@ -338,7 +338,7 @@ pub fn update_job_weights(
             message: "Rubric weights must be non-negative".into(),
         }));
     }
-    let conn = state.db.0.lock().map_err(lock_err)?;
+    let mut conn = state.db.writer();
     let updated = conn
         .execute(
             "UPDATE jobs SET ad_weight = ?1, fb_job_weight = ?2, fb_profile_weight = ?3,
@@ -381,7 +381,7 @@ pub fn archive_job(
     job_id: &str,
     archived: bool,
 ) -> Result<(), ProtocolError> {
-    let conn = state.db.0.lock().map_err(lock_err)?;
+    let mut conn = state.db.writer();
     let updated = conn
         .execute(
             "UPDATE jobs SET archived = ?1, updated_at = datetime('now') WHERE id = ?2",
@@ -403,7 +403,7 @@ pub fn archive_job(
 }
 
 pub fn empty_candidates(state: &Arc<ServeState>, job_id: &str) -> Result<Value, ProtocolError> {
-    let conn = state.db.0.lock().map_err(lock_err)?;
+    let mut conn = state.db.writer();
     // Delete all candidates for this job. Criteria are kept. FK ON DELETE CASCADE
     // removes each candidate's criterion_matches + candidate_scores rows.
     let deleted = conn
@@ -428,7 +428,7 @@ pub fn empty_candidates(state: &Arc<ServeState>, job_id: &str) -> Result<Value, 
 
 pub fn delete_job(state: &Arc<ServeState>, job_id: &str) -> Result<(), ProtocolError> {
     {
-        let conn = state.db.0.lock().map_err(lock_err)?;
+        let mut conn = state.db.writer();
         // criteria/candidates cascade via FK ON DELETE CASCADE (PRAGMA foreign_keys = ON).
         conn.execute("DELETE FROM jobs WHERE id = ?1", rusqlite::params![job_id])
             .map_err(db_err)?;
@@ -450,7 +450,7 @@ pub fn set_job_cv_dir(
     directory: &str,
 ) -> Result<Value, ProtocolError> {
     let dir = directory.trim().to_string();
-    let conn = state.db.0.lock().map_err(lock_err)?;
+    let mut conn = state.db.writer();
     let updated = conn
         .execute(
             "UPDATE jobs SET import_directory_path = ?1, updated_at = datetime('now') WHERE id = ?2",
@@ -481,7 +481,7 @@ pub fn set_job_cv_dir(
 /// files added while the job was not viewed are imported too. Returns the job
 /// so callers can refresh state.
 pub fn watch_job(state: &Arc<ServeState>, job_id: &str) -> Result<Value, ProtocolError> {
-    let conn = state.db.0.lock().map_err(lock_err)?;
+    let conn = state.db.read().map_err(lock_err)?;
     let job = conn
         .query_row(
             &format!("SELECT {JOB_COLS} FROM jobs WHERE id = ?1"),
@@ -505,7 +505,7 @@ pub fn watch_job(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Protoco
 /// `inputs_version != ranked_version` — so an edit landing in the same second
 /// as a rank still reads as dirty.
 pub fn job_ui_state(state: &Arc<ServeState>, job_id: &str) -> Result<Value, ProtocolError> {
-    let conn = state.db.0.lock().map_err(lock_err)?;
+    let conn = state.db.read().map_err(lock_err)?;
     let (cv_imported, ad_set, inputs_version, ranked_version): (i64, bool, i64, Option<i64>) = conn
         .query_row(
             "SELECT (SELECT COUNT(*) FROM candidates
@@ -582,7 +582,7 @@ pub fn job_ui_state(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Prot
 
 pub fn get_sort_report(state: &Arc<ServeState>, job_id: &str) -> Result<Value, ProtocolError> {
     let cv_state = state.cv_state.lock().map_err(lock_err)?.clone();
-    let conn = state.db.0.lock().map_err(lock_err)?;
+    let conn = state.db.read().map_err(lock_err)?;
     match libcv_state::projections::compute_sort_report(&cv_state, &conn, job_id) {
         Some(report) => ok_json(report),
         None => Err(domain(&DomainError::NotFound {

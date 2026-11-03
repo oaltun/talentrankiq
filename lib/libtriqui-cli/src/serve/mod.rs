@@ -308,6 +308,11 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
         Err(e) => log::warn!("serve: could not recover stale cascade states: {e}"),
     }
 
+    let db = DbConnection {
+        writer: Mutex::new(conn),
+        db_path: db_path.clone(),
+    };
+
     // User preference overrides from AppPreferences.
     let user_overrides = user_overrides_from_prefs(&app_dir);
     let user_ovr_opt = if user_overrides.is_default() {
@@ -360,7 +365,7 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
     let state = Arc::new(ServeState {
         app_dir,
         app_version,
-        db: DbConnection(Mutex::new(conn)),
+        db,
         db_path,
         import_state: ImportState::new(),
         runtime,

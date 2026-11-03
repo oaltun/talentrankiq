@@ -12,7 +12,7 @@ use crate::serve::handlers::{domain, lock_err, ok_json, string_err};
 use crate::serve::ServeState;
 
 pub fn soft_delete_cv(state: &Arc<ServeState>, cv_id: &str) -> Result<Value, ProtocolError> {
-    let conn = state.db.0.lock().map_err(lock_err)?;
+    let mut conn = state.db.writer();
     libtriqui_core::candidates::soft_delete_candidate(&conn, cv_id).map_err(string_err)?;
     drop(conn);
     state.dispatch_event(libcv_state::Event::CvSoftDeleted { cv_id: cv_id.to_string() });
@@ -20,7 +20,7 @@ pub fn soft_delete_cv(state: &Arc<ServeState>, cv_id: &str) -> Result<Value, Pro
 }
 
 pub fn forget_cv(state: &Arc<ServeState>, cv_id: &str) -> Result<Value, ProtocolError> {
-    let conn = state.db.0.lock().map_err(lock_err)?;
+    let mut conn = state.db.writer();
     libtriqui_core::candidates::forget_candidate(&conn, cv_id).map_err(string_err)?;
     drop(conn);
     state.dispatch_event(libcv_state::Event::CvForgotten { cv_id: cv_id.to_string() });
@@ -32,7 +32,7 @@ fn as_domain(e: DomainError) -> ProtocolError {
 }
 
 pub fn get_candidate(state: &Arc<ServeState>, candidate_id: &str) -> Result<Value, ProtocolError> {
-    let conn = state.db.0.lock().map_err(lock_err)?;
+    let conn = state.db.read().map_err(lock_err)?;
     candidates::get_candidate(&conn, candidate_id)
         .map_err(as_domain)
         .and_then(ok_json)
@@ -54,7 +54,7 @@ pub fn list_candidates(
     sort_dir: Option<bool>,
 ) -> Result<Value, ProtocolError> {
     let cv_state = state.cv_state.lock().map_err(lock_err)?.clone();
-    let conn = state.db.0.lock().map_err(lock_err)?;
+    let conn = state.db.read().map_err(lock_err)?;
     libcv_state::projections::compute_candidates(&cv_state, &conn, job_id, offset, limit, query, sort_by, sort_dir)
         .map_err(as_domain)
         .and_then(ok_json)
@@ -72,7 +72,7 @@ pub fn candidate_neighbors(
     sort_by: Option<String>,
     sort_dir: Option<bool>,
 ) -> Result<Value, ProtocolError> {
-    let conn = state.db.0.lock().map_err(lock_err)?;
+    let conn = state.db.read().map_err(lock_err)?;
     candidates::candidate_neighbors(&conn, job_id, candidate_id, query, sort_by, sort_dir)
         .map_err(as_domain)
         .and_then(ok_json)

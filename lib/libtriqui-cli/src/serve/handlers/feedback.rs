@@ -25,7 +25,7 @@ pub fn apply_feedback(
     use std::time::{SystemTime, UNIX_EPOCH};
 
     let before: HashSet<String> = {
-        let conn = state.db.0.lock().map_err(lock_err)?;
+        let conn = state.db.read().map_err(lock_err)?;
         feedback::list_liked_candidate_ids(&conn, job_id)
             .map_err(|e| domain(&e))?
             .into_iter()
@@ -43,7 +43,7 @@ pub fn apply_feedback(
     .map_err(|e| domain(&e))?;
 
     let after: HashSet<String> = {
-        let conn = state.db.0.lock().map_err(lock_err)?;
+        let conn = state.db.read().map_err(lock_err)?;
         feedback::list_liked_candidate_ids(&conn, job_id)
             .map_err(|e| domain(&e))?
             .into_iter()
@@ -58,11 +58,11 @@ pub fn apply_feedback(
     for cv_id in before.symmetric_difference(&after) {
         let fav_id = format!("{job_id}_{cv_id}");
         if after.contains(cv_id) {
-            let conn = state.db.0.lock().map_err(lock_err)?;
+            let mut conn = state.db.writer();
             feedback::persist_fav(&conn, &fav_id, cv_id, job_id, ts).map_err(|e| domain(&e))?;
             drop(conn);
         } else {
-            let conn = state.db.0.lock().map_err(lock_err)?;
+            let mut conn = state.db.writer();
             feedback::remove_fav(&conn, &fav_id).map_err(|e| domain(&e))?;
             drop(conn);
         }
@@ -90,7 +90,7 @@ pub fn list_liked_candidate_ids(
     state: &Arc<ServeState>,
     job_id: &str,
 ) -> Result<Value, ProtocolError> {
-    let conn = state.db.0.lock().map_err(lock_err)?;
+    let conn = state.db.read().map_err(lock_err)?;
     let ids = feedback::list_liked_candidate_ids(&conn, job_id).map_err(|e| domain(&e))?;
     ok_json(ids)
 }

@@ -16,7 +16,23 @@ use std::sync::{Arc, Mutex};
 use rusqlite::{Connection, OptionalExtension};
 
 /// Shared SQLite connection for command handlers.
-pub struct DbConnection(pub Mutex<Connection>);
+pub struct DbConnection {
+    /// Single writer connection (INSERT/UPDATE/DELETE). Locked per operation.
+    pub writer: Mutex<Connection>,
+    /// Database file path, used to open fresh read connections.
+    pub db_path: PathBuf,
+}
+
+impl DbConnection {
+    /// Open a fresh read-only-ish connection (WAL allows concurrent readers).
+    pub fn read(&self) -> Result<Connection, String> {
+        open_connection_at(&self.db_path)
+    }
+    /// Lock the single writer connection.
+    pub fn writer(&self) -> std::sync::MutexGuard<'_, Connection> {
+        self.writer.lock().expect("db writer lock poisoned")
+    }
+}
 
 /// Jobs with an active background import (drives `importing`). The `Arc` lets
 /// the import thread hold onto the set while the Tauri-managed state stays put.

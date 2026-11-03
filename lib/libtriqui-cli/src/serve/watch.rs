@@ -229,7 +229,7 @@ pub fn watch_job(state: &Arc<ServeState>, job_id: &str) {
         .expect("ad watch lock poisoned")
         .clear();
     let dir: Option<String> = {
-        let conn = state.db.0.lock().expect("db lock poisoned");
+        let conn = state.db.read().expect("db read failed");
         conn.query_row(
             "SELECT import_directory_path FROM jobs WHERE id = ?1",
             rusqlite::params![job_id],
@@ -238,7 +238,7 @@ pub fn watch_job(state: &Arc<ServeState>, job_id: &str) {
         .ok()
     };
     let ad_path: Option<String> = {
-        let conn = state.db.0.lock().expect("db lock poisoned");
+        let conn = state.db.read().expect("db read failed");
         conn.query_row(
             "SELECT job_ad_path FROM jobs WHERE id = ?1",
             rusqlite::params![job_id],

@@ -162,10 +162,10 @@ pub fn spawn_dir_import(
 /// scoring-only cascade (`jobs::update_job`).
 fn auto_start_cascade(state: &Arc<ServeState>, job_id: &str) {
     let extracted: i64 = {
-    let conn = match state.db.0.lock() {
+        let conn = match state.db.read() {
             Ok(c) => c,
             Err(e) => {
-                log::error!("import: db lock failed, cascade not started: {e}");
+                log::error!("import: db read failed, cascade not started: {e}");
                 return;
             }
         };
@@ -193,14 +193,14 @@ fn auto_start_cascade(state: &Arc<ServeState>, job_id: &str) {
 /// for a CV already tracked is idempotent — re-imports and watcher catch-up
 /// scans never duplicate shadow state.
 fn dispatch_cv_added(state: &Arc<ServeState>, job_id: &str) {
-    let mut conn = match state.db.0.lock() {
+    let mut conn = match state.db.read() {
         Ok(c) => c,
         Err(e) => {
-            log::warn!("import: db lock failed, not dispatching CvAdded for {job_id}: {e}");
+            log::warn!("import: db read failed, not dispatching CvAdded for {job_id}: {e}");
             return;
         }
     };
-    let rows = query_extracted_candidates(&mut *conn, job_id);
+    let rows = query_extracted_candidates(&mut conn, job_id);
     // `conn` (the DB lock) is released here, before the reducer dispatch below.
     drop(conn);
     let rows = match rows {

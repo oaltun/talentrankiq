@@ -423,28 +423,31 @@ impl ScanWorker {
         use libtriqui_core::db::open_connection_at;
         use libtriqui_core::import::collect_supported_files;
         use rusqlite::params;
+        use std::collections::HashSet;
 
-        let conn = match open_connection_at(db_path) {
-            Ok(c) => c,
-            Err(e) => {
-                log::warn!("scan: failed to open db for {}: {}", job_id, e);
-                return Vec::new();
-            }
-        };
-
-        let dir: Option<String> = conn
-            .query_row(
+        // Phase 1: read dir (short lock)
+        let dir: String = {
+            let conn = match open_connection_at(db_path) {
+                Ok(c) => c,
+                Err(e) => {
+                    log::warn!("scan: failed to open db for {}: {}", job_id, e);
+                    return Vec::new();
+                }
+            };
+            conn.query_row(
                 "SELECT import_directory_path FROM jobs WHERE id = ?1",
                 params![job_id],
                 |r| r.get(0),
             )
             .ok()
-            .flatten();
-
-        let Some(dir) = dir.filter(|d| !d.is_empty()) else {
-            return Vec::new();
+            .flatten()
+            .unwrap_or_default()
         };
+        if dir.is_empty() {
+            return Vec::new();
+        }
 
+        // Phase 2: collect files (no DB lock)
         let files = match collect_supported_files(&dir) {
             Ok(files) => files,
             Err(e) => {
@@ -456,54 +459,92 @@ impl ScanWorker {
             return Vec::new();
         }
 
-        let new_files: Vec<PathBuf> = {
-            files
-                .into_iter()
-                .filter(|p| {
-                    let path_str = p.to_string_lossy().to_string();
-                    !conn
-                        .query_row(
-                            "SELECT 1 FROM candidates WHERE job_id = ?1 AND source_file_path = ?2 AND extraction_status = 'Extracted'",
-                            params![job_id, &path_str],
-                            |_| Ok(true),
-                        )
-                        .unwrap_or(false)
-                })
-                .collect()
+        // Phase 3: filter existing (short lock)
+        let existing: HashSet<String> = {
+            let conn = match open_connection_at(db_path) {
+                Ok(c) => c,
+                Err(e) => {
+                    log::warn!("scan: failed to open db for {}: {}", job_id, e);
+                    return Vec::new();
+                }
+            };
+            let mut stmt = match conn.prepare(
+                "SELECT source_file_path FROM candidates WHERE job_id = ?1 AND extraction_status = 'Extracted'",
+            ) {
+                Ok(s) => s,
+                Err(e) => {
+                    log::warn!("scan {}: prepare failed: {}", job_id, e);
+                    return Vec::new();
+                }
+            };
+            stmt.query_map(params![job_id], |r| r.get(0))
+                .map(|rows| rows.filter_map(Result::ok).collect())
+                .unwrap_or_default()
         };
+
+        let new_files: Vec<_> = files
+            .into_iter()
+            .filter(|p| !existing.contains(&p.to_string_lossy().to_string()))
+            .collect();
         if new_files.is_empty() {
             return Vec::new();
         }
 
         log::info!("scan {}: {} new file(s) in {}", job_id, new_files.len(), dir);
 
+        // Phase 4: insert (short lock) + collect events (dispatch later, no DB lock)
         let mut events = Vec::new();
-        for file_path in new_files {
-            let file_name = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("unknown").to_string();
-            let file_type = match file_path.extension().and_then(|e| e.to_str()) {
-                Some("pdf") => "Pdf",
-                Some("docx") => "Docx",
-                Some("doc") => "Doc",
-                Some("txt") => "Txt",
-                _ => "Other",
-            }.to_string();
+        {
+            let conn = match open_connection_at(db_path) {
+                Ok(c) => c,
+                Err(e) => {
+                    log::warn!("scan: failed to open db for {}: {}", job_id, e);
+                    return Vec::new();
+                }
+            };
+            for file_path in &new_files {
+                let file_name = file_path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                let file_type = match file_path.extension().and_then(|e| e.to_str()) {
+                    Some("pdf") => "Pdf",
+                    Some("docx") => "Docx",
+                    Some("doc") => "Doc",
+                    Some("txt") => "Txt",
+                    _ => "Other",
+                }
+                .to_string();
 
-            let cv_id = format!("cv_{}", uuid::Uuid::new_v4());
+                let cv_id = format!("cv_{}", uuid::Uuid::new_v4());
 
-            conn.execute(
-                "INSERT INTO candidates (id, job_id, source_file_path, file_name, file_type, extraction_status, imported_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, 'Pending', datetime('now'))",
-                params![cv_id, job_id, file_path.to_string_lossy().to_string(), file_name, file_type],
-            ).ok();
+                if conn
+                    .execute(
+                        "INSERT INTO candidates (id, job_id, source_file_path, file_name, file_type, extraction_status, imported_at)
+                         VALUES (?1, ?2, ?3, ?4, ?5, 'Pending', datetime('now'))",
+                        params![
+                            cv_id,
+                            job_id,
+                            file_path.to_string_lossy().to_string(),
+                            file_name,
+                            file_type,
+                        ],
+                    )
+                    .is_err()
+                {
+                    continue;
+                }
 
-            events.push(Event::CvAdded {
-                cv_id: cv_id.clone(),
-                job_id: job_id.clone(),
-                file_path: file_path.to_string_lossy().to_string(),
-                file_name,
-                file_type,
-                imported_at: chrono::Utc::now().to_rfc3339(),
-            });
+                events.push(Event::CvAdded {
+                    cv_id: cv_id.clone(),
+                    job_id: job_id.clone(),
+                    file_path: file_path.to_string_lossy().to_string(),
+                    file_name,
+                    file_type,
+                    imported_at: chrono::Utc::now().to_rfc3339(),
+                });
+            }
         }
         events
     }

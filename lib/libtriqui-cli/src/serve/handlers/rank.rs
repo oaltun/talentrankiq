@@ -590,14 +590,14 @@ pub fn spawn_cascade(state: &Arc<ServeState>, job_id: &str) -> Result<bool, Stri
     // to embed and nothing to rank.
     //
     // A job with **no job ad** is NOT refused: the embed stages are
-    // ad-independent, so its cascade embeds the corpus (scout stage 0.5 +
-    // heavy waves) and converges with scoring deferred — the scout stores no
-    // grades without a query and the waves' sorts run an empty rubric. Grades
-    // land when the ad does: the same run catches the scout up and re-sorts
-    // from the stored chunks at the next wave boundary, or `update_job`
-    // spawns a scoring-only run once this one converged.
+    // ad-independent, so the run extracts scout vectors (stage 0.5, whole corpus)
+    // and heavy chunk vectors (the waves) while the user writes the ad. Scoring
+    // needs a query and stays empty until one exists — the waves re-derive stage
+    // 0 and re-sort every pass, so grades land as soon as the ad (or positive
+    // criteria) does; if the run already converged, setting the ad spawns a
+    // scoring-only cascade (`jobs::update_job`).
     {
-        let conn = state.db.0.lock().map_err(|e| format!("db lock: {e}"))?;
+        let mut conn = state.db.writer();
         let cvs: i64 = conn
             .query_row(
                 "SELECT (SELECT COUNT(*) FROM candidates
@@ -621,7 +621,7 @@ pub fn spawn_cascade(state: &Arc<ServeState>, job_id: &str) -> Result<bool, Stri
     // waiting for it.
     if state.cascade_gens.has(job_id) {
         let cancelled = {
-            let conn = state.db.0.lock().map_err(|e| format!("db lock: {e}"))?;
+            let conn = state.db.read().map_err(|e| format!("db read: {e}"))?;
             rank_state_for_job(&conn, job_id)
                 .map(|rs| rs.cancelled)
                 .unwrap_or(false)
@@ -634,7 +634,7 @@ pub fn spawn_cascade(state: &Arc<ServeState>, job_id: &str) -> Result<bool, Stri
     // A running rank_state row with no live runner is a leftover this process
     // did not recover (kept as belt-and-braces behind the startup recovery).
     {
-        let conn = state.db.0.lock().map_err(|e| format!("db lock: {e}"))?;
+        let conn = state.db.read().map_err(|e| format!("db read: {e}"))?;
         if let Ok(rs) = rank_state_for_job(&conn, job_id) {
             if !rs.complete && !rs.cancelled {
                 return Ok(false);
@@ -649,7 +649,7 @@ pub fn spawn_cascade(state: &Arc<ServeState>, job_id: &str) -> Result<bool, Stri
 
     // Initialize rank_state as running
     {
-        let mut conn = state.db.0.lock().map_err(|e| format!("db lock: {e}"))?;
+        let mut conn = state.db.writer();
         let _ = set_rank_state(&mut conn, job_id, "lex", "[]", false, false);
     }
 
@@ -692,7 +692,7 @@ pub fn spawn_cascade(state: &Arc<ServeState>, job_id: &str) -> Result<bool, Stri
 /// scoring until an ad lands (matching the import auto-start behavior).
 pub fn start_rank(state: &Arc<ServeState>, job_id: &str) -> Result<Value, ProtocolError> {
     {
-        let conn = state.db.0.lock().map_err(|e| string_err(format!("db lock: {e}")))?;
+        let mut conn = state.db.writer();
         let cvs: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM candidates
@@ -747,7 +747,7 @@ pub fn start_rank(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Protoc
 
 /// Request cancellation of the job's running cascade.
 pub fn cancel_rank(state: &Arc<ServeState>, job_id: &str) -> Result<Value, ProtocolError> {
-    let mut conn = state.db.0.lock().map_err(|e| string_err(format!("db lock: {}", e)))?;
+    let mut conn = state.db.writer();
     let _ = set_rank_state(&mut conn, job_id, "sort", "[]", true, true);
     drop(conn);
     state.dispatch_event(libcv_state::Event::RankCancelled {
@@ -793,7 +793,7 @@ fn sample_budget_for_state() -> (libsyscap::Budget, libsyscap::LoadSnapshot) {
 /// ad — the flag the gui's rank buttons spin on.
 pub fn get_rank_state(state: &Arc<ServeState>, job_id: &str) -> Result<Value, ProtocolError> {
     let cv_state = state.cv_state.lock().map_err(|e| string_err(format!("db lock: {e}")))?.clone();
-    let conn = state.db.0.lock().map_err(|e| string_err(format!("db lock: {e}")))?;
+    let conn = state.db.read().map_err(|e| string_err(format!("db read: {e}")))?;
     let out = libcv_state::projections::compute_rank_state(&cv_state, &conn, job_id);
     ok_json(out)
 }
@@ -831,7 +831,7 @@ pub fn mark_candidate_viewed(
     state: &Arc<ServeState>,
     candidate_id: &str,
 ) -> Result<Value, ProtocolError> {
-    let conn = state.db.0.lock().map_err(|e| string_err(format!("db lock: {}", e)))?;
+    let mut conn = state.db.writer();
     conn.execute(
         "UPDATE candidates SET viewed_at = datetime('now') WHERE id = ?1",
         rusqlite::params![candidate_id],

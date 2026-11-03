@@ -58,7 +58,7 @@ pub fn add_criterion(
     let weight = weight.unwrap_or_else(|| app_config::rubric_defaults().criterion_points);
     validate(text, weight).map_err(|e| domain(&e))?;
     let id = format!("crit_{}", Uuid::new_v4());
-    let conn = state.db.0.lock().map_err(lock_err)?;
+    let mut conn = state.db.writer();
     conn.execute(
         "INSERT INTO criteria (id, job_id, text, sign, weight) VALUES (?1, ?2, ?3, 'Positive', ?4)",
         rusqlite::params![&id, job_id, text, weight],
@@ -114,7 +114,7 @@ pub fn update_criterion(
     weight: f64,
 ) -> Result<Value, ProtocolError> {
     validate(text, weight).map_err(|e| domain(&e))?;
-    let conn = state.db.0.lock().map_err(lock_err)?;
+    let mut conn = state.db.writer();
     let updated = conn
         .execute(
             "UPDATE criteria SET text = ?1, weight = ?2 WHERE id = ?3",
@@ -148,7 +148,7 @@ pub fn update_criterion(
 }
 
 pub fn delete_criterion(state: &Arc<ServeState>, id: &str) -> Result<(), ProtocolError> {
-    let conn = state.db.0.lock().map_err(lock_err)?;
+    let mut conn = state.db.writer();
     let jid = job_id_for_criterion(&conn, id);
     conn.execute("DELETE FROM criteria WHERE id = ?1", rusqlite::params![id])
         .map_err(libtriqui_core::db::db_err)?;
