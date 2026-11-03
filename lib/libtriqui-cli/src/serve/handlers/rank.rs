@@ -12,7 +12,7 @@ use std::thread;
 use serde_json::Value;
 
 use libtriqui_client::protocol::ProtocolError;
-use libtriqui_client::types::{RankProgress, RankState, SystemBudget, SystemLoad};
+use libtriqui_client::types::{EmbeddingProgress, RankProgress, RankState, SystemBudget, SystemLoad};
 use libtriqui_core::cascade::{freeze_pool, project, run_scout_stage, run_wave, CascadeBudget};
 use libtriqui_core::config::CascadeConfig;
 use libtriqui_core::db::{rank_state_for_job, set_rank_state};
@@ -202,12 +202,46 @@ impl CascadeRunner {
             reason: None,
         });
         let scout_model = libtriqui_core::cascade::scout_model(&self.runtime);
+        if scout_model.is_none() {
+            self.events.emit(
+                "job-scout-progress",
+                &EmbeddingProgress {
+                    job_id: self.job_id.clone(),
+                    done: candidate_count,
+                    total: candidate_count,
+                    failed: 0,
+                    active: false,
+                },
+            );
+        } else {
+            self.events.emit(
+                "job-scout-progress",
+                &EmbeddingProgress {
+                    job_id: self.job_id.clone(),
+                    done: 0,
+                    total: candidate_count,
+                    failed: 0,
+                    active: candidate_count > 0,
+                },
+            );
+        }
         // A scout with no job ad to score against embeds the corpus and
         // defers its grading (scout.rs). The waves below catch it up at the
         // first boundary after an ad lands — one ad embed plus maxsim over
         // the scout chunks already on disk, no further corpus model calls.
         let mut scout_deferred = false;
-        match run_scout_stage(&self.runtime, &self.job_id, &|_d, _t, _f, _a| {}) {
+        match run_scout_stage(&self.runtime, &self.job_id, &|d, t, _f, _a| {
+            self.events.emit(
+                "job-scout-progress",
+                &EmbeddingProgress {
+                    job_id: self.job_id.clone(),
+                    done: d,
+                    total: t,
+                    failed: 0,
+                    active: _a,
+                },
+            );
+        }) {
             Ok(Some(outcome)) => {
                 scout_deferred = outcome.deferred;
                 log::info!(
@@ -250,6 +284,18 @@ impl CascadeRunner {
         // Waves. Each one embeds its K1 slice, judges the top K2, re-sorts and
         // persists; the loop ends when nothing is left to embed, which makes the
         // last wave a full pass (the convergence guarantee, design §5).
+        if candidate_count > 0 {
+            self.events.emit(
+                "job-heavy-progress",
+                &EmbeddingProgress {
+                    job_id: self.job_id.clone(),
+                    done: 0,
+                    total: candidate_count,
+                    failed: 0,
+                    active: true,
+                },
+            );
+        }
         let mut wave: u32 = 0;
         let mut total_embedded: i64 = 0;
         let mut total_judged: u32 = 0;
@@ -344,6 +390,16 @@ impl CascadeRunner {
                         running: active,
                         reason: None,
                     });
+                    self.events.emit(
+                        "job-heavy-progress",
+                        &EmbeddingProgress {
+                            job_id: self.job_id.clone(),
+                            done: total_embedded + done,
+                            total: total_embedded + total,
+                            failed: _failed,
+                            active,
+                        },
+                    );
                 }
             };
             match run_wave(&self.runtime, &self.job_id, wave, budget, progress) {
@@ -363,6 +419,16 @@ impl CascadeRunner {
                         running: !outcome.converged,
                         reason: None,
                     });
+                    self.events.emit(
+                        "job-heavy-progress",
+                        &EmbeddingProgress {
+                            job_id: self.job_id.clone(),
+                            done: total_embedded,
+                            total: candidate_count,
+                            failed: 0,
+                            active: !outcome.converged,
+                        },
+                    );
                     if outcome.converged {
                         break;
                     }

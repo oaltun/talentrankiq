@@ -117,6 +117,13 @@ impl ServeState {
     pub fn dispatch_event(&self, event: libcv_state::Event) {
         if let Ok(mut s) = self.cv_state.lock() {
             *s = libcv_state::reduce(s.clone(), &event);
+            let progress_job_id = match &event {
+                libcv_state::Event::CvAdded { job_id, .. } => Some(job_id.clone()),
+                libcv_state::Event::TextExtracted { cv_id, .. } => s.cvs.get(cv_id).map(|c| c.job_id.clone()),
+                libcv_state::Event::ScoutCompleted { cv_id, .. } => s.cvs.get(cv_id).map(|c| c.job_id.clone()),
+                libcv_state::Event::HeavyCompleted { cv_id, .. } => s.cvs.get(cv_id).map(|c| c.job_id.clone()),
+                _ => None,
+            };
             match &event {
                 libcv_state::Event::ComparisonCompleted { pair, job_version, model_bundle_version, result } => {
                     self.events.emit(
@@ -172,7 +179,81 @@ impl ServeState {
                 }
                 _ => {}
             }
+            if let Some(job_id) = progress_job_id {
+                self.emit_cv_watch_progress(&job_id, &s);
+            }
         }
+    }
+
+    fn emit_cv_watch_progress(&self, job_id: &str, state: &libcv_state::State) {
+        let cvs: Vec<&libcv_state::CvRecord> = state
+            .cvs
+            .values()
+            .filter(|c| c.job_id == job_id)
+            .collect();
+        let total = cvs.len() as i64;
+        if total == 0 {
+            return;
+        }
+        // Conversion: extracted + failed.
+        let failed = cvs
+            .iter()
+            .filter(|c| c.extraction_status == libcv_state::ExtractionStatus::Failed)
+            .count() as i64;
+        let extracted = cvs
+            .iter()
+            .filter(|c| c.extraction_status == libcv_state::ExtractionStatus::Extracted)
+            .count() as i64;
+        let conv_done = extracted + failed;
+        let conv_active = conv_done < total;
+        self.events.emit(
+            "job-conversion-progress",
+            &libtriqui_client::types::EmbeddingProgress {
+                job_id: job_id.to_string(),
+                done: conv_done,
+                total,
+                failed,
+                active: conv_active,
+            },
+        );
+        // Scout.
+        let scout_configured = libtriqui_core::cascade::scout_model(&self.runtime).is_some();
+        let (scout_done, scout_active, scout_failed) = if scout_configured {
+            let d = cvs
+                .iter()
+                .filter(|c| c.scout_vector.is_some())
+                .count() as i64;
+            (d, d < total, 0)
+        } else {
+            (total, false, 0)
+        };
+        let _ = scout_failed;
+        self.events.emit(
+            "job-scout-progress",
+            &libtriqui_client::types::EmbeddingProgress {
+                job_id: job_id.to_string(),
+                done: scout_done,
+                total,
+                failed: 0,
+                active: scout_active,
+            },
+        );
+        // Heavy.
+        let heavy_done = cvs
+            .iter()
+            .filter(|c| c.heavy_vector.is_some())
+            .count() as i64;
+        let heavy_active = heavy_done < total;
+        self.events.emit(
+            "job-heavy-progress",
+            &libtriqui_client::types::EmbeddingProgress {
+                job_id: job_id.to_string(),
+                done: heavy_done,
+                total,
+                failed: 0,
+                active: heavy_active,
+            },
+        );
     }
 }
 

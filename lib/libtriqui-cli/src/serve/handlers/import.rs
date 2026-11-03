@@ -68,6 +68,17 @@ impl ImportProgressEmitter {
                     phase: phase.to_string(),
                 },
             );
+            // Mirror conversion progress for the CV-watch three-bar UI.
+            self.sink.emit(
+                "job-conversion-progress",
+                &EmbeddingProgress {
+                    job_id: self.job_id.clone(),
+                    done,
+                    total,
+                    failed,
+                    active,
+                },
+            );
         }
     }
 
