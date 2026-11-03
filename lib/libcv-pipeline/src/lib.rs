@@ -419,8 +419,7 @@ impl ScanWorker {
         &self,
         job_id: String,
         db_path: &PathBuf,
-        dispatch: &Arc<dyn Fn(Event) + Send + Sync>,
-    ) {
+    ) -> Vec<Event> {
         use libtriqui_core::db::open_connection_at;
         use libtriqui_core::import::collect_supported_files;
         use rusqlite::params;
@@ -429,7 +428,7 @@ impl ScanWorker {
             Ok(c) => c,
             Err(e) => {
                 log::warn!("scan: failed to open db for {}: {}", job_id, e);
-                return;
+                return Vec::new();
             }
         };
 
@@ -443,18 +442,18 @@ impl ScanWorker {
             .flatten();
 
         let Some(dir) = dir.filter(|d| !d.is_empty()) else {
-            return;
+            return Vec::new();
         };
 
         let files = match collect_supported_files(&dir) {
             Ok(files) => files,
             Err(e) => {
                 log::warn!("scan {}: scan of {} failed: {}", job_id, dir, e);
-                return;
+                return Vec::new();
             }
         };
         if files.is_empty() {
-            return;
+            return Vec::new();
         }
 
         let new_files: Vec<PathBuf> = {
@@ -473,11 +472,12 @@ impl ScanWorker {
                 .collect()
         };
         if new_files.is_empty() {
-            return;
+            return Vec::new();
         }
 
         log::info!("scan {}: {} new file(s) in {}", job_id, new_files.len(), dir);
 
+        let mut events = Vec::new();
         for file_path in new_files {
             let file_name = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("unknown").to_string();
             let file_type = match file_path.extension().and_then(|e| e.to_str()) {
@@ -496,7 +496,7 @@ impl ScanWorker {
                 params![cv_id, job_id, file_path.to_string_lossy().to_string(), file_name, file_type],
             ).ok();
 
-            dispatch(Event::CvAdded {
+            events.push(Event::CvAdded {
                 cv_id: cv_id.clone(),
                 job_id: job_id.clone(),
                 file_path: file_path.to_string_lossy().to_string(),
@@ -505,6 +505,7 @@ impl ScanWorker {
                 imported_at: chrono::Utc::now().to_rfc3339(),
             });
         }
+        events
     }
 }
 
@@ -739,14 +740,10 @@ impl PipelineRunner {
                         return;
                     }
                 };
-                let dispatch = match self.dispatch.lock().expect("pipeline dispatch lock").clone() {
-                    Some(d) => d,
-                    None => {
-                        log::warn!("scan {}: no dispatch configured", job_id);
-                        return;
-                    }
-                };
-                ScanWorker::new().scan(job_id, &db_path, &dispatch);
+                let events = ScanWorker::new().scan(job_id, &db_path);
+                for ev in events {
+                    self.dispatch_event(ev);
+                }
                 None
             }
         };
