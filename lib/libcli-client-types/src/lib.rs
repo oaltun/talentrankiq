@@ -857,6 +857,32 @@ pub struct ModelDownloadComplete {
     pub path: String,
 }
 
+/// Scout model info exposed to the GUI.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct ScoutModel {
+    /// Model slug (also the cache directory name).
+    pub slug: String,
+    /// Human-readable name shown in the UI.
+    pub name: String,
+    /// True when the ONNX files are present in the model cache.
+    pub downloaded: bool,
+    /// On-disk size of the cached model, in bytes (0 when not downloaded).
+    pub size_bytes: u64,
+}
+
+/// Judge artifact info exposed to the GUI.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct JudgeArtifact {
+    /// Path relative to the app data dir.
+    pub path: String,
+    /// True when the artifact file exists on disk.
+    pub exists: bool,
+    /// Active embedder slug this artifact applies to.
+    pub embedder_slug: String,
+    /// Whether the user is entitled to use the judge.
+    pub entitled: bool,
+}
+
 /// One ONNX embedder from `triq.yaml` `gui_embedders`, enriched with on-disk state.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct GuiEmbedder {

@@ -162,6 +162,8 @@ params! {
 
     struct TryModelParams { slug: String }
 
+    struct LoadJudgeArtifactParams { source_path: String }
+
     struct SaveEmergencyDataParams { filename: String, data: serde_json::Value }
 
     struct LoadEmergencyDataParams { filename: String }

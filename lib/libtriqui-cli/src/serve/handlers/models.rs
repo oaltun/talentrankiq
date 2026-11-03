@@ -18,7 +18,7 @@ use serde_json::Value;
 
 use libtriqui_client::protocol::ProtocolError;
 use libtriqui_client::types::{
-    CosinePair, GuiEmbedder, ModelDownloadProgress, ModelKind, TryModelProgress, TryModelResult,
+    CosinePair, GuiEmbedder, JudgeArtifact, ModelDownloadProgress, ModelKind, ScoutModel, TryModelProgress, TryModelResult,
 };
 use libtriqui_core::app_config;
 use libtriqui_core::embed::Embedder;
@@ -207,6 +207,98 @@ fn file_label(path: &str) -> String {
 /// Which ONNX/MLX artifacts are present for an embedder slug, and which arm
 /// `backend: auto` would resolve to. Engine-free (registry-side resolve +
 /// on-disk presence), so the gui can ask before it consents to a download.
+/// Expose scout model info to the GUI.
+pub fn get_scout_model(state: &Arc<ServeState>) -> Result<serde_json::Value, ProtocolError> {
+    let cfg = app_config::load_triq();
+    let scout_slug = match cfg.cascade.scout() {
+        Some(s) => s.to_string(),
+        None => return ok_json(Option::<ScoutModel>::None),
+    };
+    let model_dir = app_config::model_dir();
+    let revision = app_config::revision();
+
+    let model_def = cfg.find_model(&scout_slug);
+    let downloaded = if let Some(md) = model_def {
+        if let Some(artifact) = md.artifacts.first() {
+            match artifact.backend {
+                libconfigreader::BackendKind::Ort => {
+                    libmodelstorage::onnx_exists(&model_dir, &scout_slug, &revision)
+                }
+                libconfigreader::BackendKind::Mlx => {
+                    let target = libmodelstorage::slug_dir(&model_dir, &scout_slug).join(&revision);
+                    libmodeldownloader::modelcache::verify_safetensors_present(&target)
+                }
+            }
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+    let size = if downloaded {
+        dir_size(&libmodelstorage::slug_dir(&model_dir, &scout_slug))
+    } else {
+        0
+    };
+    let scout = ScoutModel {
+        slug: scout_slug.clone(),
+        name: scout_slug.clone(),
+        downloaded,
+        size_bytes: size,
+    };
+    ok_json(Some(scout))
+}
+
+/// Expose judge artifact info to the GUI.
+pub fn get_judge_artifact(state: &Arc<ServeState>) -> Result<serde_json::Value, ProtocolError> {
+    let cfg = app_config::load_triq();
+    let ja = app_config::gui_judge_artifacts();
+    if ja.is_empty() {
+        return ok_json(Option::<JudgeArtifact>::None);
+    }
+    let prefs = load_app_preferences(state).embedding_model;
+    let active_slug = prefs
+        .as_deref()
+        .or_else(|| cfg.gui_embedders.iter().find(|ge| ge.default).map(|ge| ge.slug.as_str()))
+        .unwrap_or("");
+    let rel = cfg.judge_artifact_for(active_slug);
+    if rel.is_empty() {
+        return ok_json(Option::<JudgeArtifact>::None);
+    }
+    let exists = state.app_dir.join(rel).exists();
+    let artifact = JudgeArtifact {
+        path: rel.to_string(),
+        exists,
+        embedder_slug: active_slug.to_string(),
+        entitled: true,
+    };
+    ok_json(Some(artifact))
+}
+
+/// Copy a judge artifact from disk into the expected app-dir location.
+pub fn load_judge_artifact(state: &Arc<ServeState>, source_path: &str) -> Result<(), ProtocolError> {
+    let cfg = app_config::load_triq();
+    let ja = app_config::gui_judge_artifacts();
+    if ja.is_empty() {
+        return Err(string_err("judge artifact not configured".to_string()));
+    }
+    let prefs = load_app_preferences(state).embedding_model;
+    let active_slug = prefs
+        .as_deref()
+        .or_else(|| cfg.gui_embedders.iter().find(|ge| ge.default).map(|ge| ge.slug.as_str()))
+        .unwrap_or("");
+    let rel = cfg.judge_artifact_for(active_slug);
+    if rel.is_empty() {
+        return Err(string_err("judge artifact not configured".to_string()));
+    }
+    let dest = state.app_dir.join(rel);
+    if let Some(parent) = dest.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    std::fs::copy(source_path, &dest).map_err(|e| string_err(e.to_string()))?;
+    Ok(())
+}
+
 pub fn model_variants(
     _state: &Arc<ServeState>,
     params: &libtriqui_client::params::ModelVariantsParams,

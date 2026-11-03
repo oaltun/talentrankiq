@@ -526,6 +526,27 @@ rank?: RankState }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
 
 /**
+ * Judge artifact info exposed to the GUI.
+ */
+export type JudgeArtifact = { 
+/**
+ * Path relative to the app data dir.
+ */
+path: string; 
+/**
+ * True when the artifact file exists on disk.
+ */
+exists: boolean; 
+/**
+ * Active embedder slug this artifact applies to.
+ */
+embedder_slug: string; 
+/**
+ * Whether the user is entitled to use the judge.
+ */
+entitled: boolean }
+
+/**
  * License status for the judge license.
  */
 export type LicenseStatus = { kind: "Licensed"; customer: string; expires_at: string; artifacts: string[] } | { kind: "Invalid"; reason: string } | { kind: "NotFound" } | { kind: "Revoked"; reason: string }
@@ -723,6 +744,27 @@ backend?: string | null;
  * What the engine is working on right now, when it is.
  */
 activity?: Activity | null }
+
+/**
+ * Scout model info exposed to the GUI.
+ */
+export type ScoutModel = { 
+/**
+ * Model slug (also the cache directory name).
+ */
+slug: string; 
+/**
+ * Human-readable name shown in the UI.
+ */
+name: string; 
+/**
+ * True when the ONNX files are present in the model cache.
+ */
+downloaded: boolean; 
+/**
+ * On-disk size of the cached model, in bytes (0 when not downloaded).
+ */
+size_bytes: number }
 
 /**
  * Read-model of the last rank of a job: what the judge stage actually did.

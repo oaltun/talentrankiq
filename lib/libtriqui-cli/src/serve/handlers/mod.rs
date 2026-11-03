@@ -240,6 +240,12 @@ fn dispatch(state: &Arc<ServeState>, cmd: &str, params: &Value) -> Result<Value,
 
         // Models
         "list_embedders" => models::list_embedders(state),
+        "get_scout_model" => models::get_scout_model(state),
+        "get_judge_artifact" => models::get_judge_artifact(state),
+        "load_judge_artifact" => {
+            let p: LoadJudgeArtifactParams = from_params(params)?;
+            models::load_judge_artifact(state, &p.source_path).map(|_| Value::Null)
+        }
         "model_variants" => {
             let p: ModelVariantsParams = from_params(params)?;
             models::model_variants(state, &p)
