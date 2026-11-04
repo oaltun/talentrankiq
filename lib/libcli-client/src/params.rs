@@ -162,7 +162,11 @@ params! {
 
     struct TryModelParams { slug: String }
 
-    struct LoadJudgeArtifactParams { source_path: String }
+    /// `embedder_slug`: which embedder's judge artifact to load into.
+    /// `None` = the active embedder (previous behavior).
+    struct LoadJudgeArtifactParams { source_path: String, embedder_slug: Option<String> }
+
+    struct RemoveJudgeArtifactParams { slug: String }
 
     struct SaveEmergencyDataParams { filename: String, data: serde_json::Value }
 

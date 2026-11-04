@@ -1026,6 +1026,18 @@
           "description": "True when this is the active default embedder (per saved preferences).",
           "type": "boolean"
         },
+        "judge": {
+          "description": "Judge artifact mapped to this embedder (`None` when unconfigured).",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/JudgeArtifact"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "max_context_window": {
           "description": "Max context window in tokens.",
           "type": "integer",
@@ -1390,6 +1402,34 @@
         "sort_allowed": {
           "description": "At least one extracted CV — without it ranking is meaningless.",
           "type": "boolean"
+        }
+      }
+    },
+    "JudgeArtifact": {
+      "description": "Judge artifact info exposed to the GUI.",
+      "type": "object",
+      "required": [
+        "embedder_slug",
+        "entitled",
+        "exists",
+        "path"
+      ],
+      "properties": {
+        "embedder_slug": {
+          "description": "Active embedder slug this artifact applies to.",
+          "type": "string"
+        },
+        "entitled": {
+          "description": "Whether the user is entitled to use the judge.",
+          "type": "boolean"
+        },
+        "exists": {
+          "description": "True when the artifact file exists on disk.",
+          "type": "boolean"
+        },
+        "path": {
+          "description": "Path relative to the app data dir.",
+          "type": "string"
         }
       }
     },

@@ -77,6 +77,22 @@ pub fn list_embedders(state: &Arc<ServeState>) -> Result<serde_json::Value, Prot
         } else {
             0
         };
+        // Per-embedder judge mapping: same resolution as the runtime
+        // (`Config::judge_artifact_for`), exposed so the GUI card and the
+        // runtime agree on one source of truth.
+        let judge = {
+            let rel = cfg.judge_artifact_for(&ge.slug);
+            if rel.is_empty() {
+                None
+            } else {
+                Some(JudgeArtifact {
+                    path: rel.to_string(),
+                    exists: state.app_dir.join(rel).exists(),
+                    embedder_slug: ge.slug.clone(),
+                    entitled: true,
+                })
+            }
+        };
         out.push(GuiEmbedder {
             slug: ge.slug.clone(),
             name: ge.name.clone(),
@@ -91,6 +107,7 @@ pub fn list_embedders(state: &Arc<ServeState>) -> Result<serde_json::Value, Prot
                 .map(|a| a.source.clone())
                 .unwrap_or_default(),
             size_bytes: size,
+            judge,
         });
     }
     ok_json(out)
@@ -276,26 +293,57 @@ pub fn get_judge_artifact(state: &Arc<ServeState>) -> Result<serde_json::Value, 
 }
 
 /// Copy a judge artifact from disk into the expected app-dir location.
-pub fn load_judge_artifact(state: &Arc<ServeState>, source_path: &str) -> Result<(), ProtocolError> {
+/// `embedder_slug` selects which embedder's mapped artifact is the
+/// destination; `None` = the active embedder (previous behavior).
+pub fn load_judge_artifact(
+    state: &Arc<ServeState>,
+    source_path: &str,
+    embedder_slug: Option<&str>,
+) -> Result<(), ProtocolError> {
     let cfg = app_config::load_triq();
-    let ja = app_config::gui_judge_artifacts();
-    if ja.is_empty() {
-        return Err(string_err("judge artifact not configured".to_string()));
-    }
-    let prefs = load_app_preferences(state).embedding_model;
-    let active_slug = prefs
-        .as_deref()
-        .or_else(|| cfg.gui_embedders.iter().find(|ge| ge.default).map(|ge| ge.slug.as_str()))
-        .unwrap_or("");
-    let rel = cfg.judge_artifact_for(active_slug);
+    let target_slug = match embedder_slug {
+        Some(s) => s.to_string(),
+        None => {
+            let prefs = load_app_preferences(state).embedding_model;
+            prefs
+                .as_deref()
+                .or_else(|| cfg.gui_embedders.iter().find(|ge| ge.default).map(|ge| ge.slug.as_str()))
+                .unwrap_or("")
+                .to_string()
+        }
+    };
+    let rel = cfg.judge_artifact_for(&target_slug);
     if rel.is_empty() {
-        return Err(string_err("judge artifact not configured".to_string()));
+        return Err(string_err(format!(
+            "judge artifact not configured for '{target_slug}'"
+        )));
     }
     let dest = state.app_dir.join(rel);
     if let Some(parent) = dest.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
     std::fs::copy(source_path, &dest).map_err(|e| string_err(e.to_string()))?;
+    Ok(())
+}
+
+/// Delete the app-dir copy of the judge artifact mapped to `slug`. The
+/// source file the user originally picked is untouched.
+pub fn remove_judge_artifact(state: &Arc<ServeState>, slug: &str) -> Result<(), ProtocolError> {
+    let cfg = app_config::load_triq();
+    let rel = cfg.judge_artifact_for(slug);
+    if rel.is_empty() {
+        return Err(string_err(format!(
+            "judge artifact not configured for '{slug}'"
+        )));
+    }
+    let dest = state.app_dir.join(rel);
+    if !dest.exists() {
+        return Err(string_err(format!(
+            "judge artifact not present at {}",
+            dest.display()
+        )));
+    }
+    fs::remove_file(&dest).map_err(|e| string_err(e.to_string()))?;
     Ok(())
 }
 

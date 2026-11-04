@@ -409,7 +409,11 @@ source: string;
 /**
  * On-disk size of the cached model, in bytes (0 when not downloaded).
  */
-size_bytes: number }
+size_bytes: number; 
+/**
+ * Judge artifact mapped to this embedder (`None` when unconfigured).
+ */
+judge?: JudgeArtifact | null }
 
 /**
  * Payload for the `job-import-progress` event.

@@ -443,6 +443,7 @@ impl Config {
                     memory_mb: 600,
                     default: true,
                     chunk_size: 1024,
+                    judge_artifact: Some(PathBuf::from("hth-harrier-270m-v1.json")),
                 },
                 GuiEmbedder {
                     slug: "harrier-oss-v1-270m-MLX-4bit".into(),
@@ -450,6 +451,7 @@ impl Config {
                     memory_mb: 600,
                     default: false,
                     chunk_size: 1024,
+                    judge_artifact: Some(PathBuf::from("hth-harrier-270m-v1.json")),
                 },
                 GuiEmbedder {
                     slug: "harrier-oss-v1-0.6b-ONNX-q4".into(),
@@ -457,6 +459,7 @@ impl Config {
                     memory_mb: 2200,
                     default: false,
                     chunk_size: 1024,
+                    judge_artifact: Some(PathBuf::from("hth-harrier-600m-v1.json")),
                 },
                 GuiEmbedder {
                     slug: "harrier-oss-v1-0.6b-MLX-4bit".into(),
@@ -464,16 +467,17 @@ impl Config {
                     memory_mb: 2200,
                     default: false,
                     chunk_size: 1024,
+                    judge_artifact: Some(PathBuf::from("hth-harrier-600m-v1.json")),
                 },
             ],
 
             gui_judge_artifact: GuiJudgeArtifact {
-                default: Some(PathBuf::from("gui/judges/harrier-600m-v1.json")),
+                default: Some(PathBuf::from("hth-harrier-600m-v1.json")),
                 by_embedder: {
                     let mut map = std::collections::BTreeMap::new();
                     map.insert(
                         "harrier-oss-v1-270m-ONNX-q4f16".into(),
-                        PathBuf::from("gui/judges/harrier-270m-v1.json"),
+                        PathBuf::from("hth-harrier-270m-v1.json"),
                     );
                     map
                 },
@@ -512,9 +516,15 @@ impl Config {
     }
 
     /// Resolves which judge-artifact path to use for a given embedder slug.
-    /// Falls back to `gui_judge_artifact.default` when no per-slug override
-    /// exists.
+    /// Order: the co-located `gui_embedders[slug].judge_artifact` field, then
+    /// the legacy `gui_judge_artifact.by_embedder` override, then
+    /// `gui_judge_artifact.default`. Empty string when nothing is configured.
     pub fn judge_artifact_for(&self, embedder_slug: &str) -> &str {
+        if let Some(ge) = self.gui_embedders.iter().find(|ge| ge.slug == embedder_slug) {
+            if let Some(p) = &ge.judge_artifact {
+                return p.to_str().unwrap_or("");
+            }
+        }
         self.gui_judge_artifact
             .by_embedder
             .get(embedder_slug)
@@ -977,6 +987,10 @@ pub struct GuiEmbedder {
     pub default: bool,
     /// Token chunk size used when ingesting documents.
     pub chunk_size: u32,
+    /// Judge artifact for this embedder, as an app-dir-relative bare
+    /// filename (e.g. `hth-harrier-270m-v1.json`). `None` = no judge
+    /// configured for this embedder.
+    pub judge_artifact: Option<PathBuf>,
 }
 
 // ============================================================================
@@ -1201,14 +1215,27 @@ mod tests {
     #[test]
     fn judge_artifact_resolution() {
         let cfg = Config::load();
+        // Each gui_embedders entry carries its own judge artifact.
         assert_eq!(
             cfg.judge_artifact_for("harrier-oss-v1-270m-ONNX-q4f16"),
-            "gui/judges/harrier-270m-v1.json"
+            "hth-harrier-270m-v1.json"
+        );
+        assert_eq!(
+            cfg.judge_artifact_for("harrier-oss-v1-270m-MLX-4bit"),
+            "hth-harrier-270m-v1.json"
+        );
+        assert_eq!(
+            cfg.judge_artifact_for("harrier-oss-v1-0.6b-ONNX-q4"),
+            "hth-harrier-600m-v1.json"
+        );
+        assert_eq!(
+            cfg.judge_artifact_for("harrier-oss-v1-0.6b-MLX-4bit"),
+            "hth-harrier-600m-v1.json"
         );
         // Unknown slug falls back to default.
         assert_eq!(
             cfg.judge_artifact_for("does-not-exist"),
-            "gui/judges/harrier-600m-v1.json"
+            "hth-harrier-600m-v1.json"
         );
     }
 

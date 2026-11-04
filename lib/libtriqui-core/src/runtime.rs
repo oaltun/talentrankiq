@@ -73,10 +73,19 @@ impl RuntimeConfig {
         let auto_download_models = std::env::var("TRIQ_AUTO_DOWNLOAD_MODELS")
             .map(|v| !v.is_empty() && v != "0" && v != "false")
             .unwrap_or(false);
+        // Judge resolution mirrors `Config::judge_artifact_for`: the
+        // co-located `gui_embedders[slug].judge_artifact` wins over the legacy
+        // `gui_judge_artifact.by_embedder`, which wins over the default.
+        let mut judge_artifacts = app_config::gui_judge_artifacts();
+        for ge in &base_cfg.gui_embedders {
+            if let Some(ja) = &ge.judge_artifact {
+                judge_artifacts.by_embedder.insert(ge.slug.clone(), ja.clone());
+            }
+        }
         Self {
             model_dir: app_config::model_dir(),
             model,
-            judge_artifacts: app_config::gui_judge_artifacts(),
+            judge_artifacts,
             gui_idle_unload_secs,
             auto_download_models,
         }
@@ -394,6 +403,9 @@ impl EngineRuntime {
 
     /// Judge stage artifact for embedder `model` (`None` = no artifact
     /// configured for it — the per-embedder override, else the default).
+    /// Config values are app-dir-relative bare filenames, so the returned
+    /// path is joined with the app dir (the db path's parent), matching the
+    /// serve handlers' `state.app_dir.join(rel)`.
     pub fn judge_artifact_for(&self, model: &str) -> Option<std::path::PathBuf> {
         // Gate: if no valid judge license, disable judge for all embedders
         if self.judge_license.is_none() {
@@ -401,8 +413,7 @@ impl EngineRuntime {
         }
         let artifact_path = self.cfg
             .judge_artifacts
-            .for_embedder(model)
-            .map(|p| p.to_path_buf())?;
+            .for_embedder(model)?;
         // Check if this specific artifact is authorized by the license
         let artifact_id = artifact_path.file_stem()
             .and_then(|s| s.to_str())
@@ -410,7 +421,8 @@ impl EngineRuntime {
         if !self.judge_license.as_ref().unwrap().authorizes_artifact(artifact_id) {
             return None;
         }
-        Some(artifact_path)
+        let app_dir = self.db_path.parent()?;
+        Some(app_dir.join(artifact_path))
     }
 
     /// Swap the embedding model at runtime. Refuses while the engine is starting

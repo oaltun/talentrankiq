@@ -904,6 +904,10 @@ pub struct GuiEmbedder {
     pub source: String,
     /// On-disk size of the cached model, in bytes (0 when not downloaded).
     pub size_bytes: u64,
+    /// Judge artifact mapped to this embedder (`None` when unconfigured).
+    #[serde(default)]
+    #[specta(optional)]
+    pub judge: Option<JudgeArtifact>,
 }
 
 /// Result of a single pair-wise cosine comparison.
