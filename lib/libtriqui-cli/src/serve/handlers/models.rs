@@ -312,11 +312,49 @@ pub fn load_judge_artifact(
                 .to_string()
         }
     };
+    // Gate 1: an explicitly requested slug must be a curated gui embedder —
+    // `judge_artifact_for` falls back to the default artifact for unknown
+    // slugs, which would silently accept a pick for the wrong embedder.
+    if let Some(s) = embedder_slug {
+        if !cfg.gui_embedders.iter().any(|ge| ge.slug == s) {
+            return Err(string_err(format!("unknown embedder '{s}'")));
+        }
+    }
     let rel = cfg.judge_artifact_for(&target_slug);
     if rel.is_empty() {
         return Err(string_err(format!(
             "judge artifact not configured for '{target_slug}'"
         )));
+    }
+    // Gate 2: the picked file's name must equal the configured artifact name
+    // for this embedder (e.g. the 600M weights must not land at the 270M
+    // path). The family spans both sizes, so the file name is the first
+    // discriminator.
+    let rel_name = Path::new(rel)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(rel);
+    let src_name = Path::new(source_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(source_path);
+    if src_name != rel_name {
+        return Err(string_err(format!(
+            "judge artifact for '{target_slug}' must be named '{rel_name}', picked '{src_name}'"
+        )));
+    }
+    // Gate 3: `feature_spec.dim` in the artifact must match the embedder's
+    // registry dim (dim is the reliable discriminator within a family).
+    // `JudgeStage::load` re-validates the full artifact at rank time.
+    if let Some(model_def) = cfg.find_model(&target_slug) {
+        let expected_dim = model_def.dim as usize;
+        let actual_dim =
+            probe_judge_artifact_dim(Path::new(source_path)).map_err(string_err)?;
+        if actual_dim != expected_dim {
+            return Err(string_err(format!(
+                "judge artifact dim mismatch for '{target_slug}': '{src_name}' has feature_spec.dim {actual_dim}, embedder expects dim {expected_dim}"
+            )));
+        }
     }
     let dest = state.app_dir.join(rel);
     if let Some(parent) = dest.parent() {
@@ -324,6 +362,38 @@ pub fn load_judge_artifact(
     }
     std::fs::copy(source_path, &dest).map_err(|e| string_err(e.to_string()))?;
     Ok(())
+}
+
+/// Partial view of a judge artifact JSON — just enough to read
+/// `feature_spec.dim` without fully validating the artifact (unknown fields
+/// ignored; the judge stage does full validation at rank time).
+#[derive(Deserialize)]
+struct JudgeArtifactProbe {
+    feature_spec: Option<JudgeFeatureSpecProbe>,
+}
+
+#[derive(Deserialize)]
+struct JudgeFeatureSpecProbe {
+    dim: Option<usize>,
+}
+
+/// Read `feature_spec.dim` from a judge artifact file. Every failure message
+/// mentions `dim` so a malformed artifact surfaces as a dim problem.
+fn probe_judge_artifact_dim(path: &Path) -> Result<usize, String> {
+    let content = fs::read_to_string(path)
+        .map_err(|e| format!("cannot read judge artifact {}: {e}", path.display()))?;
+    let probe: JudgeArtifactProbe = serde_json::from_str(&content).map_err(|e| {
+        format!(
+            "invalid judge artifact {}: unparseable JSON, cannot read feature_spec.dim ({e})",
+            path.display()
+        )
+    })?;
+    probe.feature_spec.and_then(|f| f.dim).ok_or_else(|| {
+        format!(
+            "invalid judge artifact {}: missing feature_spec.dim",
+            path.display()
+        )
+    })
 }
 
 /// Delete the app-dir copy of the judge artifact mapped to `slug`. The
@@ -1220,6 +1290,51 @@ mod progress_tests {
             total: Some(1000),
         });
         assert_eq!(agg.dones.get("m.onnx"), Some(&0));
+    }
+}
+
+#[cfg(test)]
+mod judge_probe_tests {
+    use super::*;
+
+    fn write_tmp(case: &str, body: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "triq-judge-probe-{}-{case}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("probe.json");
+        fs::write(&p, body).unwrap();
+        p
+    }
+
+    #[test]
+    fn probe_reads_dim() {
+        let p = write_tmp("ok", r#"{"feature_spec":{"dim":640}}"#);
+        assert_eq!(probe_judge_artifact_dim(&p).unwrap(), 640);
+    }
+
+    #[test]
+    fn probe_ignores_unknown_fields() {
+        let p = write_tmp(
+            "extra",
+            r#"{"schema":"x","feature_spec":{"embedder":"harrier","dim":1024}}"#,
+        );
+        assert_eq!(probe_judge_artifact_dim(&p).unwrap(), 1024);
+    }
+
+    #[test]
+    fn probe_rejects_missing_dim() {
+        let p = write_tmp("missing", r#"{"feature_spec":{}}"#);
+        let err = probe_judge_artifact_dim(&p).unwrap_err();
+        assert!(err.contains("dim"), "error must mention dim, got: {err}");
+    }
+
+    #[test]
+    fn probe_rejects_unparseable_json() {
+        let p = write_tmp("garbage", "this is not json");
+        let err = probe_judge_artifact_dim(&p).unwrap_err();
+        assert!(err.contains("dim"), "error must mention dim, got: {err}");
     }
 }
 
