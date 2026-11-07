@@ -470,8 +470,10 @@ pub fn set_job_cv_dir(
             job_from_row,
         )
         .map_err(db_err)?;
+    // drop writer lock before invoking watch to avoid holding locks across
+    // filesystem/watch operations that could cause stack growth.
     drop(conn);
-    watch::watch_job(state, job_id);
+    watch::watch_job_with_dir(state, job_id, dir.as_str(), job.import_directory_path.clone());
     ok_json(job)
 }
 

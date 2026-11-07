@@ -214,6 +214,32 @@ pub fn stop_watching(state: &Arc<ServeState>, job_id: &str) {
 /// start fresh + viewed), `set_job_cv_dir` (Browse… selection), and bundle
 /// import.
 pub fn watch_job(state: &Arc<ServeState>, job_id: &str) {
+    let (dir, ad_path) = {
+        let conn = state.db.read().expect("db read failed");
+        let dir: Option<String> = conn.query_row(
+            "SELECT import_directory_path FROM jobs WHERE id = ?1",
+            rusqlite::params![job_id],
+            |r| r.get(0),
+        ).ok();
+        let ad_path: Option<String> = conn.query_row(
+            "SELECT job_ad_path FROM jobs WHERE id = ?1",
+            rusqlite::params![job_id],
+            |r| r.get(0),
+        ).ok().flatten();
+        (dir, ad_path)
+    };
+    watch_job_with_dir(state, job_id, dir.as_deref().unwrap_or(""), ad_path);
+}
+
+/// Single-watcher policy: same as [`watch_job`] but accepts explicit
+/// directory and ad path to avoid re-reading the database and prevent potential
+/// recursive call patterns during stack-sensitive operations.
+pub fn watch_job_with_dir(
+    state: &Arc<ServeState>,
+    job_id: &str,
+    dir: &str,
+    ad_path: Option<String>,
+) {
     state
         .watch
         .watchers
@@ -228,25 +254,6 @@ pub fn watch_job(state: &Arc<ServeState>, job_id: &str) {
         .lock()
         .expect("ad watch lock poisoned")
         .clear();
-    let dir: Option<String> = {
-        let conn = state.db.read().expect("db read failed");
-        conn.query_row(
-            "SELECT import_directory_path FROM jobs WHERE id = ?1",
-            rusqlite::params![job_id],
-            |r| r.get(0),
-        )
-        .ok()
-    };
-    let ad_path: Option<String> = {
-        let conn = state.db.read().expect("db read failed");
-        conn.query_row(
-            "SELECT job_ad_path FROM jobs WHERE id = ?1",
-            rusqlite::params![job_id],
-            |r| r.get(0),
-        )
-        .ok()
-        .flatten()
-    };
     if let Some(ad) = ad_path.filter(|p| !p.is_empty()) {
         watch_job_ad(state, job_id, Path::new(&ad));
         // Catch-up read, mirroring the CV side: the user may have edited (and
@@ -254,11 +261,11 @@ pub fn watch_job(state: &Arc<ServeState>, job_id: &str) {
         // event is coming now that the file is no longer changing.
         let _ = state.watch.ad_tx.send(job_id.to_string());
     }
-    let Some(dir) = dir.filter(|d| !d.is_empty()) else {
+    if dir.is_empty() {
         log::info!("cv-watch {job_id}: no CV directory set, nothing to watch");
         return;
-    };
-    if let Err(e) = watch_dir(state, job_id, &dir) {
+    }
+    if let Err(e) = watch_dir(state, job_id, dir) {
         log::warn!("cv-watch {job_id}: cannot watch {dir}: {e}");
         return;
     }

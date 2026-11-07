@@ -65,6 +65,8 @@ impl EffectRunner {
             }
             Event::TextExtracted { cv_id, .. } => {
                 out.push(WorkItem::Scout { cv_id: cv_id.clone() });
+            }
+            Event::ScoutCompleted { cv_id, .. } => {
                 out.push(WorkItem::Heavy { cv_id: cv_id.clone() });
             }
             Event::HeavyCompleted { cv_id, .. } => {
@@ -660,36 +662,45 @@ impl PipelineRunner {
     }
 
     pub fn dispatch_event(&self, event: Event) {
-        if let Some(dispatch) = self.dispatch.lock().expect("pipeline dispatch lock").clone() {
-            dispatch(event.clone());
-        }
-        let state_clone = self
-            .state
-            .lock()
-            .expect("pipeline state lock")
-            .as_ref()
-            .and_then(|s| s.lock().ok().map(|g| g.clone()));
-        if let Some(st) = state_clone {
-            let work = self.effect_runner.effects(&st, &event);
-            for w in work {
-                self.process_item(w);
+        let mut queue = vec![event];
+        while let Some(ev) = queue.pop() {
+            if let Some(dispatch) = self.dispatch.lock().expect("pipeline dispatch lock").clone() {
+                dispatch(ev.clone());
             }
-            match &event {
-                Event::HeavyMatched { .. } | Event::ComparisonCompleted { .. } => {
-                    if let Some(j) = self.effect_runner.next_judge_work(&st) {
-                        self.process_item(j);
+            let state_clone = self
+                .state
+                .lock()
+                .expect("pipeline state lock")
+                .as_ref()
+                .and_then(|s| s.lock().ok().map(|g| g.clone()));
+            if let Some(st) = state_clone {
+                let work = self.effect_runner.effects(&st, &ev);
+                for w in work {
+                    if let Some(e) = self.process_item(w) {
+                        queue.push(e);
                     }
                 }
-                _ => {}
+                match &ev {
+                    Event::HeavyMatched { .. } | Event::ComparisonCompleted { .. } => {
+                        if let Some(j) = self.effect_runner.next_judge_work(&st) {
+                            if let Some(e) = self.process_item(j) {
+                                queue.push(e);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
             }
         }
     }
 
     pub fn enqueue(&self, item: WorkItem) {
-        self.process_item(item);
+        if let Some(ev) = self.process_item(item) {
+            self.dispatch_event(ev);
+        }
     }
 
-    fn process_item(&self, item: WorkItem) {
+    fn process_item(&self, item: WorkItem) -> Option<Event> {
         let ctx = self.context.lock().expect("pipeline context lock").clone();
         let state_handle = self.state.lock().expect("pipeline state lock").clone();
         let event = match item {
@@ -778,7 +789,7 @@ impl PipelineRunner {
                     Some(p) => p,
                     None => {
                         log::warn!("scan {}: no db_path configured", job_id);
-                        return;
+                        return None;
                     }
                 };
                 let events = ScanWorker::new().scan(job_id, &db_path);
@@ -788,9 +799,7 @@ impl PipelineRunner {
                 None
             }
         };
-        if let Some(ev) = event {
-            self.dispatch_event(ev);
-        }
+        event
     }
 }
 
@@ -831,7 +840,7 @@ mod tests {
     }
 
     #[test]
-    fn text_extracted_schedules_scout_and_heavy() {
+    fn text_extracted_schedules_scout_only() {
         let e = Event::TextExtracted {
             cv_id: "c1".into(),
             text: "hi".into(),
@@ -841,6 +850,19 @@ mod tests {
         let r = EffectRunner::new();
         let work = r.schedule(&s, &e);
         assert!(work.iter().any(|w| matches!(w, WorkItem::Scout { .. })));
+        assert!(!work.iter().any(|w| matches!(w, WorkItem::Heavy { .. })));
+    }
+
+    #[test]
+    fn scout_completed_schedules_heavy() {
+        let e = Event::ScoutCompleted {
+            cv_id: "c1".into(),
+            vector: vec![0.1, 0.2],
+            model_bundle_version: 1,
+        };
+        let s = State::default();
+        let r = EffectRunner::new();
+        let work = r.schedule(&s, &e);
         assert!(work.iter().any(|w| matches!(w, WorkItem::Heavy { .. })));
     }
 

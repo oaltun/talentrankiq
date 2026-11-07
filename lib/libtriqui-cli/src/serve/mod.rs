@@ -191,7 +191,40 @@ impl ServeState {
             .values()
             .filter(|c| c.job_id == job_id)
             .collect();
-        let total = cvs.len() as i64;
+
+        // Determine total: use directory file count if available, else fall back to CV count.
+        let total = {
+            let dir: Option<String> = self
+                .db
+                .read()
+                .ok()
+                .and_then(|conn| {
+                    conn.query_row(
+                        "SELECT import_directory_path FROM jobs WHERE id = ?1",
+                        rusqlite::params![job_id],
+                        |r| r.get(0),
+                    )
+                    .ok()
+                    .flatten()
+                });
+            if let Some(dir) = dir.filter(|d: &String| !d.is_empty()) {
+                let mut file_count: i64 = 0;
+                if let Ok(entries) = std::fs::read_dir(&dir) {
+                    for entry in entries.flatten() {
+                        if entry.file_type().map_or(false, |ft| ft.is_file()) {
+                            file_count += 1;
+                        }
+                    }
+                }
+                if file_count > 0 {
+                    file_count
+                } else {
+                    cvs.len() as i64
+                }
+            } else {
+                cvs.len() as i64
+            }
+        };
         if total == 0 {
             return;
         }
