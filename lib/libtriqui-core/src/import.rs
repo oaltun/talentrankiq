@@ -41,6 +41,12 @@ fn is_supported(path: &Path) -> bool {
     !matches!(file_type_from_ext(path), FileType::Other)
 }
 
+/// Public wrapper around [`extract_text`] using [`file_type_from_ext`].
+pub fn extract_text_for(path: &std::path::Path) -> Result<String, String> {
+    let ft = file_type_from_ext(path);
+    extract_text(path, &ft)
+}
+
 /// Extract plain text from a supported file. Unknown types error.
 /// `.doc` (legacy Word 97-2003 binary) goes through libcvparser/anydoc.
 fn extract_text(path: &Path, ft: &FileType) -> Result<String, String> {

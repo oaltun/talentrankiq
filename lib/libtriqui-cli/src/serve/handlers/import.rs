@@ -108,7 +108,7 @@ pub fn spawn_dir_import(
     directory: &str,
     files: Vec<std::path::PathBuf>,
 ) -> Result<(), DomainError> {
-    // Mark this job as actively importing (the pipeline removes it when done).
+    // Mark this job as actively importing (cleared when done).
     state
         .import_state
         .0
@@ -120,31 +120,90 @@ pub fn spawn_dir_import(
     let jid = job_id.to_string();
     let dirstr = directory.to_string();
     std::thread::spawn(move || {
+        use libtriqui_core::db::open_connection_at;
+        use std::collections::HashSet;
+
         let emitter = ImportProgressEmitter::new(st.events.clone(), &jid);
-        let emit = |done: i64, total: i64, failed: i64, active: bool, phase: &str| {
-            emitter.import(done, total, failed, active, phase);
+
+        let conn = match open_connection_at(&st.db_path) {
+            Ok(c) => c,
+            Err(e) => {
+                log::error!("import: failed to open db: {e}");
+                let mut active = st.import_state.0.lock().expect("import state lock poisoned");
+                active.remove(&jid);
+                return;
+            }
         };
-        import::run_import(
-            &st.runtime,
-            &jid,
-            &dirstr,
-            files,
-            Some(libtriqui_core::db::ImportState(Arc::clone(
-                &st.import_state.0,
-            ))),
-            &emit,
+
+        let _ = conn.execute(
+            "UPDATE jobs SET import_directory_path = ?1, updated_at = datetime('now') WHERE id = ?2",
+            rusqlite::params![dirstr, jid],
         );
-        // Import is extract-only: it left a stage-0 order on disk, and the
-        // embed→judge cascade starts automatically from here, converging in the
-        // background (design §9). Import-done has already fired, so the gui
-        // shows the stage-0 sheet immediately and follows `rank-progress` until
-        // convergence.
-        auto_start_cascade(&st, &jid);
-        // Tell the shadow reducer about every CV that landed in the database so
-        // cv_state mirrors the candidates table. Idempotent: re-dispatching for a
-        // CV already tracked is a no-op, so re-imports and watcher catch-up
-        // scans never duplicate state.
-        dispatch_cv_added(&st, &jid);
+
+        let existing: HashSet<String> = {
+            let mut stmt = match conn.prepare(
+                "SELECT source_file_path FROM candidates WHERE job_id = ?1",
+            ) {
+                Ok(s) => s,
+                Err(_) => {
+                    let mut active = st.import_state.0.lock().expect("import state lock poisoned");
+                    active.remove(&jid);
+                    return;
+                }
+            };
+            stmt.query_map(rusqlite::params![jid], |r| r.get(0))
+                .map(|rows| rows.filter_map(Result::ok).collect())
+                .unwrap_or_default()
+        };
+
+        let total = files.len() as i64;
+        let mut done = 0i64;
+        let mut failed = 0i64;
+        emitter.import(0, total, 0, true, "importing");
+
+        for path in &files {
+            let path_str = path.to_string_lossy().to_string();
+
+            if existing.contains(&path_str) {
+                done += 1;
+                emitter.import(done, total, failed, true, "importing");
+                continue;
+            }
+
+            let _ = conn.execute(
+                "DELETE FROM candidates WHERE job_id = ?1 AND source_file_path = ?2",
+                rusqlite::params![jid, path_str],
+            );
+
+            let file_name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let file_type = match path.extension().and_then(|e| e.to_str()) {
+                Some("pdf") => "Pdf",
+                Some("docx") => "Docx",
+                Some("doc") => "Doc",
+                Some("txt") => "Txt",
+                _ => "Other",
+            }
+            .to_string();
+
+            let cv_id = format!("cv_{}", uuid::Uuid::new_v4());
+            let _ = conn.execute(
+                "INSERT INTO candidates (id, job_id, source_file_path, file_name, file_type, extraction_status, imported_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 'Pending', datetime('now'))",
+                rusqlite::params![cv_id, jid, path_str, file_name, file_type],
+            );
+
+            done += 1;
+            emitter.import(done, total, failed, true, "importing");
+        }
+
+        emitter.import(done, total, failed, false, "done");
+
+        let mut active = st.import_state.0.lock().expect("import state lock poisoned");
+        active.remove(&jid);
     });
 
     Ok(())
@@ -246,6 +305,209 @@ fn query_extracted_candidates(
     mapped
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|e| format!("CvAdded collect failed for {job_id}: {e}"))
+}
+
+
+pub fn convert_pending(
+    state: &Arc<ServeState>,
+    job_id: &str,
+) -> Result<serde_json::Value, ProtocolError> {
+    use libtriqui_core::embed;
+    use rusqlite::params;
+
+    let mut conn = state.db.writer();
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, source_file_path FROM candidates \
+             WHERE job_id = ?1 AND (extraction_status IN ('Pending','Failed') OR extracted_text IS NULL)",
+        )
+        .map_err(|e| crate::serve::handlers::domain(&libtriqui_core::types::DomainError::DbError {
+            message: e.to_string(),
+        }))?;
+    let rows: Vec<(String, String)> = stmt
+        .query_map(params![job_id], |r| Ok((r.get(0)?, r.get(1)?)))
+        .map_err(|e| crate::serve::handlers::domain(&libtriqui_core::types::DomainError::DbError {
+            message: e.to_string(),
+        }))?
+        .filter_map(Result::ok)
+        .collect();
+    drop(stmt);
+
+    let total = rows.len() as i64;
+    let mut done = 0i64;
+    let mut failed = 0i64;
+
+    for (cid, path) in rows {
+        let _ = conn.execute(
+            "UPDATE candidates SET extraction_status = 'Extracting' WHERE id = ?1",
+            params![cid],
+        );
+        match libtriqui_core::import::extract_text_for(std::path::Path::new(&path)) {
+            Ok(text) => {
+                let hash = embed::content_hash(&text);
+                let dup: bool = conn
+                    .query_row(
+                        "SELECT 1 FROM candidates WHERE job_id = ?1 AND content_hash = ?2 AND id <> ?3",
+                        params![job_id, hash, cid],
+                        |_| Ok(true),
+                    )
+                    .unwrap_or(false);
+                if dup {
+                    let _ = conn.execute("DELETE FROM candidates WHERE id = ?1", params![cid]);
+                } else {
+                    let _ = conn.execute(
+                        "UPDATE candidates SET extraction_status = 'Extracted', extracted_text = ?1, content_hash = ?2 WHERE id = ?3",
+                        params![text.clone(), hash, cid],
+                    );
+                }
+                if state
+                    .cv_state
+                    .lock()
+                    .map(|s| s.cvs.contains_key(&cid))
+                    .unwrap_or(false)
+                {
+                    state.dispatch_event(libcv_state::Event::TextExtracted {
+                        cv_id: cid.clone(),
+                        text,
+                        status: libcv_state::ExtractionStatus::Extracted,
+                    });
+                }
+            }
+            Err(_) => {
+                failed += 1;
+                let _ = conn.execute(
+                    "UPDATE candidates SET extraction_status = 'Failed' WHERE id = ?1",
+                    params![cid],
+                );
+                if state
+                    .cv_state
+                    .lock()
+                    .map(|s| s.cvs.contains_key(&cid))
+                    .unwrap_or(false)
+                {
+                    state.dispatch_event(libcv_state::Event::TextExtracted {
+                        cv_id: cid.clone(),
+                        text: String::new(),
+                        status: libcv_state::ExtractionStatus::Failed,
+                    });
+                }
+            }
+        }
+        done += 1;
+        state.events.emit(
+            "job-conversion-progress",
+            &libtriqui_client::types::EmbeddingProgress {
+                job_id: job_id.to_string(),
+                done,
+                total,
+                failed,
+                active: done < total,
+            },
+        );
+    }
+
+    if total == 0 {
+        let extracted: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM candidates WHERE job_id = ?1 AND extraction_status = 'Extracted'",
+                params![job_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        let failed_total: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM candidates WHERE job_id = ?1 AND extraction_status = 'Failed'",
+                params![job_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        let total_all = extracted + failed_total;
+        state.events.emit(
+            "job-conversion-progress",
+            &libtriqui_client::types::EmbeddingProgress {
+                job_id: job_id.to_string(),
+                done: total_all,
+                total: total_all,
+                failed: failed_total,
+                active: false,
+            },
+        );
+    }
+
+    crate::serve::handlers::ok_json(serde_json::Value::Null)
+}
+
+pub fn scout_pending(
+    state: &Arc<ServeState>,
+    job_id: &str,
+) -> Result<serde_json::Value, ProtocolError> {
+    state.runtime.ensure_started();
+    let scout_model = libtriqui_core::cascade::scout_model(&state.runtime);
+    if scout_model.is_none() {
+        let conn = state.db.read().map_err(|e| crate::serve::handlers::lock_err(e))?;
+        let total: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM candidates WHERE job_id = ?1 AND extraction_status = 'Extracted'",
+                rusqlite::params![job_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        state.events.emit(
+            "job-scout-progress",
+            &libtriqui_client::types::EmbeddingProgress {
+                job_id: job_id.to_string(),
+                done: total,
+                total,
+                failed: 0,
+                active: false,
+            },
+        );
+        return crate::serve::handlers::ok_json(serde_json::Value::Null);
+    }
+    let st = Arc::clone(state);
+    let jid = job_id.to_string();
+    let _ = libtriqui_core::scout::run_scout(&state.runtime, job_id, &|d, t, f, a| {
+        st.events.emit(
+            "job-scout-progress",
+            &libtriqui_client::types::EmbeddingProgress {
+                job_id: jid.clone(),
+                done: d,
+                total: t,
+                failed: f,
+                active: a,
+            },
+        );
+    });
+    crate::serve::handlers::ok_json(serde_json::Value::Null)
+}
+
+pub fn heavy_pending(
+    state: &Arc<ServeState>,
+    job_id: &str,
+) -> Result<serde_json::Value, ProtocolError> {
+    state.runtime.ensure_started();
+    let conn = state.db.writer();
+    let st = Arc::clone(state);
+    let jid = job_id.to_string();
+    let _ = libtriqui_core::embeddings::embed_missing_candidates(
+        &state.runtime,
+        &conn,
+        job_id,
+        &|d, t, f, a| {
+            st.events.emit(
+                "job-heavy-progress",
+                &libtriqui_client::types::EmbeddingProgress {
+                    job_id: jid.clone(),
+                    done: d,
+                    total: t,
+                    failed: f,
+                    active: a,
+                },
+            );
+        },
+    );
+    drop(conn);
+    crate::serve::handlers::ok_json(serde_json::Value::Null)
 }
 
 pub fn import_cv_directory(

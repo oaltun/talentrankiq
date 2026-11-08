@@ -2243,6 +2243,7 @@ dependencies = [
  "libconfigreader",
  "libcv-pipeline",
  "libcv-state",
+ "libcvparser",
  "libembedrank",
  "libmodelcallerclient",
  "libmodeldownloader",

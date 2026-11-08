@@ -60,14 +60,14 @@ impl EffectRunner {
     pub fn effects(&self, state: &State, event: &Event) -> Vec<WorkItem> {
         let mut out = Vec::new();
         match event {
-            Event::CvAdded { cv_id, .. } => {
-                out.push(WorkItem::TextExtract { cv_id: cv_id.clone() });
+            Event::CvAdded { .. } => {
+                // Auto-chaining disabled: scan/import only record pending rows.
             }
-            Event::TextExtracted { cv_id, .. } => {
-                out.push(WorkItem::Scout { cv_id: cv_id.clone() });
+            Event::TextExtracted { .. } => {
+                // Auto-chaining disabled: Convert is user-triggered.
             }
-            Event::ScoutCompleted { cv_id, .. } => {
-                out.push(WorkItem::Heavy { cv_id: cv_id.clone() });
+            Event::ScoutCompleted { .. } => {
+                // Auto-chaining disabled: Scout is user-triggered.
             }
             Event::HeavyCompleted { cv_id, .. } => {
                 // Match work is enqueued when a job ad version is known.
@@ -836,7 +836,7 @@ mod tests {
         s = libcv_state::reduce(s, &e);
         let r = EffectRunner::new();
         let work = r.schedule(&s, &e);
-        assert!(work.iter().any(|w| matches!(w, WorkItem::TextExtract { cv_id } if cv_id == "c1")));
+        assert!(work.is_empty());
     }
 
     #[test]
@@ -849,8 +849,7 @@ mod tests {
         let s = State::default();
         let r = EffectRunner::new();
         let work = r.schedule(&s, &e);
-        assert!(work.iter().any(|w| matches!(w, WorkItem::Scout { .. })));
-        assert!(!work.iter().any(|w| matches!(w, WorkItem::Heavy { .. })));
+        assert!(work.is_empty());
     }
 
     #[test]
@@ -863,7 +862,7 @@ mod tests {
         let s = State::default();
         let r = EffectRunner::new();
         let work = r.schedule(&s, &e);
-        assert!(work.iter().any(|w| matches!(w, WorkItem::Heavy { .. })));
+        assert!(work.is_empty());
     }
 
     #[test]

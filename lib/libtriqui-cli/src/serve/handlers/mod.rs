@@ -132,6 +132,18 @@ fn dispatch(state: &Arc<ServeState>, cmd: &str, params: &Value) -> Result<Value,
             let p: ImportCvDirectoryParams = from_params(params)?;
             import::import_cv_directory(state, &p.job_id, &p.directory)
         }
+        "convert_pending" => {
+            let p: GetJobDetailParams = from_params(params)?;
+            import::convert_pending(state, &p.job_id)
+        }
+        "scout_pending" => {
+            let p: GetJobDetailParams = from_params(params)?;
+            import::scout_pending(state, &p.job_id)
+        }
+        "heavy_pending" => {
+            let p: GetJobDetailParams = from_params(params)?;
+            import::heavy_pending(state, &p.job_id)
+        }
 
         // Job bundles
         "export_job_bundle" => {
