@@ -50,7 +50,7 @@ params! {
         fb_profile_weight: f64,
     }
 
-    struct SetJobCvDirParams { job_id: String, directory: String }
+    struct SetJobCvDirParams { job_id: String, directory: String, watch: Option<bool> }
 
     /// Make `job_id` the only watched job: drops all other CV-dir watchers,
     /// creates the job's directory if missing, and runs a catch-up import

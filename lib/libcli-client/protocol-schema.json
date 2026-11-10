@@ -62,6 +62,30 @@
         }
       ]
     },
+    "AddCriterionParams": {
+      "title": "AddCriterionParams",
+      "description": "Parameters for `add_criterion` command.",
+      "type": "object",
+      "required": [
+        "job_id",
+        "text"
+      ],
+      "properties": {
+        "job_id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "weight": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        }
+      }
+    },
     "AppPreferences": {
       "title": "AppPreferences",
       "description": "Application preferences that persist to disk.",
@@ -181,8 +205,51 @@
         }
       }
     },
+    "ApplyFeedbackParams": {
+      "title": "ApplyFeedbackParams",
+      "description": "Parameters for `apply_feedback` command.",
+      "type": "object",
+      "required": [
+        "job_id",
+        "liked_candidate_ids",
+        "ordered_candidate_ids"
+      ],
+      "properties": {
+        "job_id": {
+          "type": "string"
+        },
+        "liked_candidate_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ordered_candidate_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "ArchiveJobParams": {
+      "title": "ArchiveJobParams",
+      "description": "Parameters for `archive_job` command.",
+      "type": "object",
+      "required": [
+        "archived",
+        "job_id"
+      ],
+      "properties": {
+        "archived": {
+          "type": "boolean"
+        },
+        "job_id": {
+          "type": "string"
+        }
+      }
+    },
     "BundleExportOptions": {
-      "title": "BundleExportOptions",
       "description": "What to include in an export.",
       "type": "object",
       "properties": {
@@ -244,6 +311,19 @@
         "files_missing": {
           "type": "integer",
           "format": "int64"
+        }
+      }
+    },
+    "CancelRankParams": {
+      "title": "CancelRankParams",
+      "description": "Parameters for `cancel_rank` command.",
+      "type": "object",
+      "required": [
+        "job_id"
+      ],
+      "properties": {
+        "job_id": {
+          "type": "string"
         }
       }
     },
@@ -413,6 +493,41 @@
         }
       }
     },
+    "CandidateNeighborsParams": {
+      "title": "CandidateNeighborsParams",
+      "description": "Parameters for `candidate_neighbors` command.",
+      "type": "object",
+      "required": [
+        "candidate_id",
+        "job_id"
+      ],
+      "properties": {
+        "candidate_id": {
+          "type": "string"
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "query": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sort_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sort_dir": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      }
+    },
     "CandidatePage": {
       "title": "CandidatePage",
       "description": "A page of candidate results for the browser.",
@@ -549,6 +664,29 @@
         }
       }
     },
+    "ChunkMatchParams": {
+      "title": "ChunkMatchParams",
+      "description": "Parameters for `chunk_match` command.",
+      "type": "object",
+      "required": [
+        "candidate_id",
+        "chunk_size",
+        "target"
+      ],
+      "properties": {
+        "candidate_id": {
+          "type": "string"
+        },
+        "chunk_size": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "target": {
+          "$ref": "#/definitions/ChunkMatchTarget"
+        }
+      }
+    },
     "ChunkMatchResult": {
       "title": "ChunkMatchResult",
       "description": "Match Lens response: EVERY chunk of the candidate at the requested size, in document order. The frontend picks the top-n and ranks, so changing n re-ranks client-side without a refetch.",
@@ -572,7 +710,6 @@
       }
     },
     "ChunkMatchTarget": {
-      "title": "ChunkMatchTarget",
       "description": "Which text the CV chunks are compared against in the Match Lens (CV Inspector). Serialized externally tagged: `\"JobAd\"`, `{\"Criterion\": {\"id\": \"...\"}}`.",
       "oneOf": [
         {
@@ -697,6 +834,32 @@
         }
       }
     },
+    "DeleteCriterionParams": {
+      "title": "DeleteCriterionParams",
+      "description": "Parameters for `delete_criterion` command.",
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      }
+    },
+    "DeleteJobParams": {
+      "title": "DeleteJobParams",
+      "description": "Parameters for `delete_job` command.",
+      "type": "object",
+      "required": [
+        "job_id"
+      ],
+      "properties": {
+        "job_id": {
+          "type": "string"
+        }
+      }
+    },
     "DomainError": {
       "title": "DomainError",
       "description": "Fallible-domain errors (typed for frontend matching via `#[serde(tag = \"type\")]`).",
@@ -797,6 +960,19 @@
         }
       ]
     },
+    "DownloadEmbedderParams": {
+      "title": "DownloadEmbedderParams",
+      "description": "Parameters for `download_embedder` command.",
+      "type": "object",
+      "required": [
+        "slug"
+      ],
+      "properties": {
+        "slug": {
+          "type": "string"
+        }
+      }
+    },
     "DownloadStatus": {
       "title": "DownloadStatus",
       "description": "Download status for a model.",
@@ -872,6 +1048,19 @@
         }
       ]
     },
+    "DownloadStatusParams": {
+      "title": "DownloadStatusParams",
+      "description": "Parameters for `download_status` command.",
+      "type": "object",
+      "required": [
+        "slug"
+      ],
+      "properties": {
+        "slug": {
+          "type": "string"
+        }
+      }
+    },
     "EmbedderVariants": {
       "title": "EmbedderVariants",
       "description": "Which arm serves an embedder slug on this machine, and whether its weights are on disk — resolved engine-free (no model load, no wrapper).",
@@ -940,6 +1129,24 @@
         }
       }
     },
+    "EmptyCandidatesParams": {
+      "title": "EmptyCandidatesParams",
+      "description": "Parameters for `empty_candidates` command.",
+      "type": "object",
+      "required": [
+        "job_id"
+      ],
+      "properties": {
+        "job_id": {
+          "type": "string"
+        }
+      }
+    },
+    "EmptyParams": {
+      "title": "EmptyParams",
+      "description": "Empty parameters (for commands with no params).",
+      "type": "object"
+    },
     "Event": {
       "type": "object",
       "required": [
@@ -949,6 +1156,44 @@
       "properties": {
         "data": true,
         "event": {
+          "type": "string"
+        }
+      }
+    },
+    "ExportJobBundleParams": {
+      "title": "ExportJobBundleParams",
+      "description": "Parameters for `export_job_bundle` command.",
+      "type": "object",
+      "required": [
+        "job_id",
+        "options",
+        "out_path"
+      ],
+      "properties": {
+        "job_id": {
+          "type": "string"
+        },
+        "options": {
+          "$ref": "#/definitions/BundleExportOptions"
+        },
+        "out_path": {
+          "type": "string"
+        }
+      }
+    },
+    "ExportResultsCsvParams": {
+      "title": "ExportResultsCsvParams",
+      "description": "Parameters for `export_results_csv` command.",
+      "type": "object",
+      "required": [
+        "job_id",
+        "out_path"
+      ],
+      "properties": {
+        "job_id": {
+          "type": "string"
+        },
+        "out_path": {
           "type": "string"
         }
       }
@@ -975,6 +1220,58 @@
         "Txt",
         "Other"
       ]
+    },
+    "ForgetCvParams": {
+      "title": "ForgetCvParams",
+      "description": "Parameters for `forget_cv` command.",
+      "type": "object",
+      "required": [
+        "cv_id"
+      ],
+      "properties": {
+        "cv_id": {
+          "type": "string"
+        }
+      }
+    },
+    "GetCandidateParams": {
+      "title": "GetCandidateParams",
+      "description": "Parameters for `get_candidate` command.",
+      "type": "object",
+      "required": [
+        "candidate_id"
+      ],
+      "properties": {
+        "candidate_id": {
+          "type": "string"
+        }
+      }
+    },
+    "GetJobAdParams": {
+      "title": "GetJobAdParams",
+      "description": "Parameters for `get_job_ad` command.",
+      "type": "object",
+      "required": [
+        "job_id"
+      ],
+      "properties": {
+        "job_id": {
+          "type": "string"
+        }
+      }
+    },
+    "GetJobDetailParams": {
+      "title": "GetJobDetailParams",
+      "description": "Parameters for `get_job_detail` command.",
+      "type": "object",
+      "required": [
+        "job_id"
+      ],
+      "properties": {
+        "job_id": {
+          "type": "string"
+        }
+      }
     },
     "GradeSpace": {
       "title": "GradeSpace",
@@ -1066,6 +1363,36 @@
         },
         "source": {
           "description": "Hugging Face source (`hf:org/repo`) used by `modeldownloader`.",
+          "type": "string"
+        }
+      }
+    },
+    "ImportCvDirectoryParams": {
+      "title": "ImportCvDirectoryParams",
+      "description": "Parameters for `import_cv_directory` command.",
+      "type": "object",
+      "required": [
+        "directory",
+        "job_id"
+      ],
+      "properties": {
+        "directory": {
+          "type": "string"
+        },
+        "job_id": {
+          "type": "string"
+        }
+      }
+    },
+    "ImportJobBundleParams": {
+      "title": "ImportJobBundleParams",
+      "description": "Parameters for `import_job_bundle` command.",
+      "type": "object",
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "path": {
           "type": "string"
         }
       }
@@ -1433,6 +1760,32 @@
         }
       }
     },
+    "LicenseActivateParams": {
+      "title": "LicenseActivateParams",
+      "description": "Parameters for `license_activate` command.",
+      "type": "object",
+      "required": [
+        "license_key"
+      ],
+      "properties": {
+        "license_key": {
+          "type": "string"
+        }
+      }
+    },
+    "LicenseCheckArtifactParams": {
+      "title": "LicenseCheckArtifactParams",
+      "description": "Parameters for `license_check_artifact` command.",
+      "type": "object",
+      "required": [
+        "artifact_id"
+      ],
+      "properties": {
+        "artifact_id": {
+          "type": "string"
+        }
+      }
+    },
     "LicenseStatus": {
       "title": "LicenseStatus",
       "description": "License status for the judge license.",
@@ -1518,6 +1871,118 @@
         }
       ]
     },
+    "ListCandidatesParams": {
+      "title": "ListCandidatesParams",
+      "description": "Parameters for `list_candidates` command.",
+      "type": "object",
+      "required": [
+        "job_id",
+        "limit",
+        "offset"
+      ],
+      "properties": {
+        "job_id": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "offset": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "query": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sort_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sort_dir": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      }
+    },
+    "ListLikedCandidateIdsParams": {
+      "title": "ListLikedCandidateIdsParams",
+      "description": "Parameters for `list_liked_candidate_ids` command.",
+      "type": "object",
+      "required": [
+        "job_id"
+      ],
+      "properties": {
+        "job_id": {
+          "type": "string"
+        }
+      }
+    },
+    "LoadEmergencyDataParams": {
+      "title": "LoadEmergencyDataParams",
+      "description": "Parameters for `load_emergency_data` command.",
+      "type": "object",
+      "required": [
+        "filename"
+      ],
+      "properties": {
+        "filename": {
+          "type": "string"
+        }
+      }
+    },
+    "LoadJudgeArtifactParams": {
+      "title": "LoadJudgeArtifactParams",
+      "description": "Parameters for `load_judge_artifact` command.",
+      "type": "object",
+      "required": [
+        "source_path"
+      ],
+      "properties": {
+        "embedder_slug": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_path": {
+          "type": "string"
+        }
+      }
+    },
+    "MakeDefaultEmbedderParams": {
+      "title": "MakeDefaultEmbedderParams",
+      "description": "Parameters for `make_default_embedder` command.",
+      "type": "object",
+      "required": [
+        "slug"
+      ],
+      "properties": {
+        "slug": {
+          "type": "string"
+        }
+      }
+    },
+    "MarkCandidateViewedParams": {
+      "title": "MarkCandidateViewedParams",
+      "description": "Parameters for `mark_candidate_viewed` command.",
+      "type": "object",
+      "required": [
+        "candidate_id"
+      ],
+      "properties": {
+        "candidate_id": {
+          "type": "string"
+        }
+      }
+    },
     "ModelDownloadComplete": {
       "title": "ModelDownloadComplete",
       "description": "Completion payload emitted when an ONNX model download finishes.",
@@ -1567,13 +2032,25 @@
       }
     },
     "ModelKind": {
-      "title": "ModelKind",
       "description": "Which kind of model an operation targets.",
       "type": "string",
       "enum": [
         "embedding",
         "textGeneration"
       ]
+    },
+    "ModelVariantsParams": {
+      "title": "ModelVariantsParams",
+      "description": "Parameters for `model_variants` command.",
+      "type": "object",
+      "required": [
+        "model"
+      ],
+      "properties": {
+        "model": {
+          "type": "string"
+        }
+      }
     },
     "ProtocolError": {
       "title": "ProtocolError",
@@ -1854,6 +2331,45 @@
         }
       ]
     },
+    "ReloadJobAdParams": {
+      "title": "ReloadJobAdParams",
+      "description": "Parameters for `reload_job_ad` command.",
+      "type": "object",
+      "required": [
+        "job_id"
+      ],
+      "properties": {
+        "job_id": {
+          "type": "string"
+        }
+      }
+    },
+    "RemoveEmbedderParams": {
+      "title": "RemoveEmbedderParams",
+      "description": "Parameters for `remove_embedder` command.",
+      "type": "object",
+      "required": [
+        "slug"
+      ],
+      "properties": {
+        "slug": {
+          "type": "string"
+        }
+      }
+    },
+    "RemoveJudgeArtifactParams": {
+      "title": "RemoveJudgeArtifactParams",
+      "description": "Parameters for `remove_judge_artifact` command.",
+      "type": "object",
+      "required": [
+        "slug"
+      ],
+      "properties": {
+        "slug": {
+          "type": "string"
+        }
+      }
+    },
     "Request": {
       "title": "Request",
       "type": "object",
@@ -1879,6 +2395,19 @@
             "string",
             "null"
           ]
+        }
+      }
+    },
+    "ResetFeedbackParams": {
+      "title": "ResetFeedbackParams",
+      "description": "Parameters for `reset_feedback` command.",
+      "type": "object",
+      "required": [
+        "job_id"
+      ],
+      "properties": {
+        "job_id": {
+          "type": "string"
         }
       }
     },
@@ -2055,6 +2584,117 @@
         }
       }
     },
+    "SaveEmergencyDataParams": {
+      "title": "SaveEmergencyDataParams",
+      "description": "Parameters for `save_emergency_data` command.",
+      "type": "object",
+      "required": [
+        "data",
+        "filename"
+      ],
+      "properties": {
+        "data": true,
+        "filename": {
+          "type": "string"
+        }
+      }
+    },
+    "SetDefaultModelParams": {
+      "title": "SetDefaultModelParams",
+      "description": "Parameters for `set_default_model` command.",
+      "type": "object",
+      "required": [
+        "kind",
+        "repo_id"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/definitions/ModelKind"
+        },
+        "repo_id": {
+          "type": "string"
+        }
+      }
+    },
+    "SetEmbeddingModelParams": {
+      "title": "SetEmbeddingModelParams",
+      "description": "Parameters for `set_embedding_model` command.",
+      "type": "object",
+      "required": [
+        "slug"
+      ],
+      "properties": {
+        "slug": {
+          "type": "string"
+        }
+      }
+    },
+    "SetJobAdPathParams": {
+      "title": "SetJobAdPathParams",
+      "description": "Parameters for `set_job_ad_path` command.",
+      "type": "object",
+      "required": [
+        "job_id",
+        "path"
+      ],
+      "properties": {
+        "job_id": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      }
+    },
+    "SetJobCvDirParams": {
+      "title": "SetJobCvDirParams",
+      "description": "Parameters for `set_job_cv_dir` command.",
+      "type": "object",
+      "required": [
+        "directory",
+        "job_id"
+      ],
+      "properties": {
+        "directory": {
+          "type": "string"
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "watch": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      }
+    },
+    "SoftDeleteCvParams": {
+      "title": "SoftDeleteCvParams",
+      "description": "Parameters for `soft_delete_cv` command.",
+      "type": "object",
+      "required": [
+        "cv_id"
+      ],
+      "properties": {
+        "cv_id": {
+          "type": "string"
+        }
+      }
+    },
+    "SortJobParams": {
+      "title": "SortJobParams",
+      "description": "Parameters for `sort_job` command.",
+      "type": "object",
+      "required": [
+        "job_id"
+      ],
+      "properties": {
+        "job_id": {
+          "type": "string"
+        }
+      }
+    },
     "SortReport": {
       "title": "SortReport",
       "description": "Read-model of the last rank of a job: what the judge stage actually did.",
@@ -2107,6 +2747,19 @@
           "type": "integer",
           "format": "uint32",
           "minimum": 0.0
+        }
+      }
+    },
+    "StartRankParams": {
+      "title": "StartRankParams",
+      "description": "Parameters for `start_rank` command.",
+      "type": "object",
+      "required": [
+        "job_id"
+      ],
+      "properties": {
+        "job_id": {
+          "type": "string"
         }
       }
     },
@@ -2260,6 +2913,19 @@
         }
       }
     },
+    "TryModelParams": {
+      "title": "TryModelParams",
+      "description": "Parameters for `try_model` command.",
+      "type": "object",
+      "required": [
+        "slug"
+      ],
+      "properties": {
+        "slug": {
+          "type": "string"
+        }
+      }
+    },
     "TryModelProgress": {
       "title": "TryModelProgress",
       "description": "Per-CV progress event emitted during `try_model`.",
@@ -2325,6 +2991,84 @@
         }
       }
     },
+    "UpdateCriterionParams": {
+      "title": "UpdateCriterionParams",
+      "description": "Parameters for `update_criterion` command.",
+      "type": "object",
+      "required": [
+        "id",
+        "text",
+        "weight"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "weight": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "UpdateJobParams": {
+      "title": "UpdateJobParams",
+      "description": "Parameters for `update_job` command.",
+      "type": "object",
+      "required": [
+        "job_id",
+        "title",
+        "triqui_size"
+      ],
+      "properties": {
+        "job_ad_text": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "triqui_size": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "UpdateJobWeightsParams": {
+      "title": "UpdateJobWeightsParams",
+      "description": "Parameters for `update_job_weights` command.",
+      "type": "object",
+      "required": [
+        "ad_weight",
+        "fb_job_weight",
+        "fb_profile_weight",
+        "job_id"
+      ],
+      "properties": {
+        "ad_weight": {
+          "type": "number",
+          "format": "double"
+        },
+        "fb_job_weight": {
+          "type": "number",
+          "format": "double"
+        },
+        "fb_profile_weight": {
+          "type": "number",
+          "format": "double"
+        },
+        "job_id": {
+          "type": "string"
+        }
+      }
+    },
     "VettedEmbedder": {
       "type": "object",
       "required": [
@@ -2384,6 +3128,19 @@
           "type": "integer",
           "format": "uint64",
           "minimum": 0.0
+        }
+      }
+    },
+    "WatchJobParams": {
+      "title": "WatchJobParams",
+      "description": "Parameters for `watch_job` command.",
+      "type": "object",
+      "required": [
+        "job_id"
+      ],
+      "properties": {
+        "job_id": {
+          "type": "string"
         }
       }
     }

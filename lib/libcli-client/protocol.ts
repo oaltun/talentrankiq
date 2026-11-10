@@ -47,6 +47,11 @@ export type AdSource =
 "judge"
 
 /**
+ * Parameters for `add_criterion` command.
+ */
+export type AddCriterionParams = { job_id: string; text: string; weight?: number | null }
+
+/**
  * Application preferences that persist to disk.
  */
 export type AppPreferences = { theme: string; 
@@ -118,6 +123,16 @@ engine_no_cache?: boolean | null;
 gui_idle_unload_secs?: number | null }
 
 /**
+ * Parameters for `apply_feedback` command.
+ */
+export type ApplyFeedbackParams = { job_id: string; ordered_candidate_ids: string[]; liked_candidate_ids: string[] }
+
+/**
+ * Parameters for `archive_job` command.
+ */
+export type ArchiveJobParams = { job_id: string; archived: boolean }
+
+/**
  * What to include in an export.
  */
 export type BundleExportOptions = { include_ad?: boolean; include_weights?: boolean; include_results?: boolean; include_likes?: boolean; 
@@ -135,6 +150,11 @@ top_n?: number | null }
  * Outcome of an export (surfaced as a toast / log).
  */
 export type BundleExportSummary = { candidates_total: number; files_missing: number; criteria_included: number }
+
+/**
+ * Parameters for `cancel_rank` command.
+ */
+export type CancelRankParams = { job_id: string }
 
 /**
  * One applicant's CV within a Job.
@@ -172,6 +192,11 @@ viewed_at?: string | null }
  * across all candidates, not just the triqui).
  */
 export type CandidateNeighbors = { prev_id?: string | null; next_id?: string | null }
+
+/**
+ * Parameters for `candidate_neighbors` command.
+ */
+export type CandidateNeighborsParams = { job_id: string; candidate_id: string; query?: string | null; sort_by?: string | null; sort_dir?: boolean | null }
 
 /**
  * A page of candidate results for the browser.
@@ -226,6 +251,11 @@ text: string;
  * Cosine similarity of this chunk against the question vector.
  */
 similarity: number }
+
+/**
+ * Parameters for `chunk_match` command.
+ */
+export type ChunkMatchParams = { candidate_id: string; target: ChunkMatchTarget; chunk_size: number }
 
 /**
  * Match Lens response: EVERY chunk of the candidate at the requested size,
@@ -291,14 +321,34 @@ export type CosinePair = { i: number; j: number; label_i: string; label_j: strin
 export type Criterion = { id: string; job_id: string; text: string; weight: number; created_at: string }
 
 /**
+ * Parameters for `delete_criterion` command.
+ */
+export type DeleteCriterionParams = { id: string }
+
+/**
+ * Parameters for `delete_job` command.
+ */
+export type DeleteJobParams = { job_id: string }
+
+/**
  * Fallible-domain errors (typed for frontend matching via `#[serde(tag = "type")]`).
  */
 export type DomainError = { type: "NotFound"; entity: string; id: string } | { type: "ValidationError"; message: string } | { type: "DbError"; message: string } | { type: "IoError"; message: string } | { type: "ParseError"; message: string }
 
 /**
+ * Parameters for `download_embedder` command.
+ */
+export type DownloadEmbedderParams = { slug: string }
+
+/**
  * Download status for a model.
  */
 export type DownloadStatus = { status: "NotDownloaded" } | { status: "Downloading"; progress: number } | { status: "Downloaded"; path: string } | { status: "Failed"; error: string }
+
+/**
+ * Parameters for `download_status` command.
+ */
+export type DownloadStatusParams = { slug: string }
 
 /**
  * Which arm serves an embedder slug on this machine, and whether its weights
@@ -328,11 +378,31 @@ mlx_present?: boolean | null }
 export type EmbeddingProgress = { job_id: string; done: number; total: number; failed: number; active: boolean }
 
 /**
+ * Parameters for `empty_candidates` command.
+ */
+export type EmptyCandidatesParams = { job_id: string }
+
+/**
+ * Empty parameters (for commands with no params).
+ */
+export type EmptyParams = Record<string, never>
+
+/**
  * Payload for the `entitlements-updated` event.
  */
 export type EntitlementsUpdatedEvent = { head_to_head: boolean }
 
 export type Event = { event: string; data: JsonValue }
+
+/**
+ * Parameters for `export_job_bundle` command.
+ */
+export type ExportJobBundleParams = { job_id: string; options: BundleExportOptions; out_path: string }
+
+/**
+ * Parameters for `export_results_csv` command.
+ */
+export type ExportResultsCsvParams = { job_id: string; out_path: string }
 
 /**
  * Per-candidate extraction lifecycle.
@@ -348,6 +418,26 @@ export type FavToggledEvent = { fav_id: string; cv_id: string; workspace_id: str
  * Supported CV file types.
  */
 export type FileType = "Doc" | "Docx" | "Pdf" | "Txt" | "Other"
+
+/**
+ * Parameters for `forget_cv` command.
+ */
+export type ForgetCvParams = { cv_id: string }
+
+/**
+ * Parameters for `get_candidate` command.
+ */
+export type GetCandidateParams = { candidate_id: string }
+
+/**
+ * Parameters for `get_job_ad` command.
+ */
+export type GetJobAdParams = { job_id: string }
+
+/**
+ * Parameters for `get_job_detail` command.
+ */
+export type GetJobDetailParams = { job_id: string }
 
 /**
  * Payload for the `glicko-updated` event.
@@ -414,6 +504,16 @@ size_bytes: number;
  * Judge artifact mapped to this embedder (`None` when unconfigured).
  */
 judge?: JudgeArtifact | null }
+
+/**
+ * Parameters for `import_cv_directory` command.
+ */
+export type ImportCvDirectoryParams = { job_id: string; directory: string }
+
+/**
+ * Parameters for `import_job_bundle` command.
+ */
+export type ImportJobBundleParams = { path: string }
 
 /**
  * Payload for the `job-import-progress` event.
@@ -551,9 +651,49 @@ embedder_slug: string;
 entitled: boolean }
 
 /**
+ * Parameters for `license_activate` command.
+ */
+export type LicenseActivateParams = { license_key: string }
+
+/**
+ * Parameters for `license_check_artifact` command.
+ */
+export type LicenseCheckArtifactParams = { artifact_id: string }
+
+/**
  * License status for the judge license.
  */
 export type LicenseStatus = { kind: "Licensed"; customer: string; expires_at: string; artifacts: string[] } | { kind: "Invalid"; reason: string } | { kind: "NotFound" } | { kind: "Revoked"; reason: string }
+
+/**
+ * Parameters for `list_candidates` command.
+ */
+export type ListCandidatesParams = { job_id: string; offset: number; limit: number; query?: string | null; sort_by?: string | null; sort_dir?: boolean | null }
+
+/**
+ * Parameters for `list_liked_candidate_ids` command.
+ */
+export type ListLikedCandidateIdsParams = { job_id: string }
+
+/**
+ * Parameters for `load_emergency_data` command.
+ */
+export type LoadEmergencyDataParams = { filename: string }
+
+/**
+ * Parameters for `load_judge_artifact` command.
+ */
+export type LoadJudgeArtifactParams = { source_path: string; embedder_slug?: string | null }
+
+/**
+ * Parameters for `make_default_embedder` command.
+ */
+export type MakeDefaultEmbedderParams = { slug: string }
+
+/**
+ * Parameters for `mark_candidate_viewed` command.
+ */
+export type MarkCandidateViewedParams = { candidate_id: string }
 
 /**
  * Completion payload emitted when an ONNX model download finishes.
@@ -569,6 +709,11 @@ export type ModelDownloadProgress = { repo_id: string; filename: string; done: n
  * Which kind of model an operation targets.
  */
 export type ModelKind = "embedding" | "textGeneration"
+
+/**
+ * Parameters for `model_variants` command.
+ */
+export type ModelVariantsParams = { model: string }
 
 export type ProtocolError = { code: string; message: string; domain?: JsonValue | null }
 
@@ -675,12 +820,32 @@ export type RecoveryError =
  */
 { type: "ParseError"; message: string }
 
+/**
+ * Parameters for `reload_job_ad` command.
+ */
+export type ReloadJobAdParams = { job_id: string }
+
+/**
+ * Parameters for `remove_embedder` command.
+ */
+export type RemoveEmbedderParams = { slug: string }
+
+/**
+ * Parameters for `remove_judge_artifact` command.
+ */
+export type RemoveJudgeArtifactParams = { slug: string }
+
 export type Request = { id: number; cmd: string; params?: JsonValue; 
 /**
  * Protocol version sent by the client (e.g., "1.2.0").
  * The server uses this to verify compatibility.
  */
 protocol_version?: string | null }
+
+/**
+ * Parameters for `reset_feedback` command.
+ */
+export type ResetFeedbackParams = { job_id: string }
 
 export type Response = { id: number; ok?: JsonValue | null; err?: ProtocolError | null }
 
@@ -750,6 +915,11 @@ backend?: string | null;
 activity?: Activity | null }
 
 /**
+ * Parameters for `save_emergency_data` command.
+ */
+export type SaveEmergencyDataParams = { filename: string; data: JsonValue }
+
+/**
  * Scout model info exposed to the GUI.
  */
 export type ScoutModel = { 
@@ -769,6 +939,36 @@ downloaded: boolean;
  * On-disk size of the cached model, in bytes (0 when not downloaded).
  */
 size_bytes: number }
+
+/**
+ * Parameters for `set_default_model` command.
+ */
+export type SetDefaultModelParams = { kind: ModelKind; repo_id: string }
+
+/**
+ * Parameters for `set_embedding_model` command.
+ */
+export type SetEmbeddingModelParams = { slug: string }
+
+/**
+ * Parameters for `set_job_ad_path` command.
+ */
+export type SetJobAdPathParams = { job_id: string; path: string }
+
+/**
+ * Parameters for `set_job_cv_dir` command.
+ */
+export type SetJobCvDirParams = { job_id: string; directory: string; watch?: boolean | null }
+
+/**
+ * Parameters for `soft_delete_cv` command.
+ */
+export type SoftDeleteCvParams = { cv_id: string }
+
+/**
+ * Parameters for `sort_job` command.
+ */
+export type SortJobParams = { job_id: string }
 
 /**
  * Read-model of the last rank of a job: what the judge stage actually did.
@@ -791,6 +991,11 @@ complete?: boolean;
  * The last rank was cancelled mid-run (partial coverage).
  */
 cancelled?: boolean; created_at: string }
+
+/**
+ * Parameters for `start_rank` command.
+ */
+export type StartRankParams = { job_id: string }
 
 /**
  * Backend-derived snapshot of the system-capacity budget (libsyscap).
@@ -861,6 +1066,11 @@ liked?: boolean;
 viewed_at?: string | null }
 
 /**
+ * Parameters for `try_model` command.
+ */
+export type TryModelParams = { slug: string }
+
+/**
  * Per-CV progress event emitted during `try_model`.
  */
 export type TryModelProgress = { cvIndex: number; cvTotal: number; cvLabel: string }
@@ -886,7 +1096,27 @@ pairs: CosinePair[];
  */
 labels: string[] }
 
+/**
+ * Parameters for `update_criterion` command.
+ */
+export type UpdateCriterionParams = { id: string; text: string; weight: number }
+
+/**
+ * Parameters for `update_job` command.
+ */
+export type UpdateJobParams = { job_id: string; title: string; job_ad_text?: string | null; triqui_size: number }
+
+/**
+ * Parameters for `update_job_weights` command.
+ */
+export type UpdateJobWeightsParams = { job_id: string; ad_weight: number; fb_job_weight: number; fb_profile_weight: number }
+
 export type VettedEmbedder = { slug: string; name: string; memory_mb: number; dim: number; max_context_window: number; downloaded: boolean }
 
 export type VettedEmbeddersResponse = { embedders: VettedEmbedder[]; system_ram_mb: number; recommended_slug: string }
+
+/**
+ * Parameters for `watch_job` command.
+ */
+export type WatchJobParams = { job_id: string }
 

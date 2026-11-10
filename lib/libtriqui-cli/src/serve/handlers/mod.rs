@@ -86,7 +86,7 @@ fn dispatch(state: &Arc<ServeState>, cmd: &str, params: &Value) -> Result<Value,
         }
         "set_job_cv_dir" => {
             let p: SetJobCvDirParams = from_params(params)?;
-            jobs::set_job_cv_dir(state, &p.job_id, &p.directory)
+            jobs::set_job_cv_dir(state, &p.job_id, &p.directory, p.watch)
         }
         "watch_job" => {
             let p: WatchJobParams = from_params(params)?;

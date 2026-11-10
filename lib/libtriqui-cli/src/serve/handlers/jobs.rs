@@ -441,13 +441,15 @@ pub fn delete_job(state: &Arc<ServeState>, job_id: &str) -> Result<(), ProtocolE
 }
 
 /// Set (or clear, with an empty string) the job's watched CV directory and
-/// restart its watcher. The directory is created when missing so a typed
-/// fresh path just works. Selecting a directory (Browse…) therefore restarts
-/// watching AND auto-import: a catch-up scan imports the files already there.
+/// optionally restart its watcher. The directory is created when missing so a typed
+/// fresh path just works. When `watch` is true (default), restarts watching AND
+/// auto-import: a catch-up scan imports the files already there. When `watch` is
+/// false, only updates the database path without triggering the watcher or import.
 pub fn set_job_cv_dir(
     state: &Arc<ServeState>,
     job_id: &str,
     directory: &str,
+    watch: Option<bool>,
 ) -> Result<Value, ProtocolError> {
     let dir = directory.trim().to_string();
     let mut conn = state.db.writer();
@@ -473,7 +475,10 @@ pub fn set_job_cv_dir(
     // drop writer lock before invoking watch to avoid holding locks across
     // filesystem/watch operations that could cause stack growth.
     drop(conn);
-    watch::watch_job_with_dir(state, job_id, dir.as_str(), job.import_directory_path.clone());
+    // Default to true for backward compatibility
+    if watch.unwrap_or(true) {
+        watch::watch_job_with_dir(state, job_id, dir.as_str(), job.import_directory_path.clone());
+    }
     ok_json(job)
 }
 

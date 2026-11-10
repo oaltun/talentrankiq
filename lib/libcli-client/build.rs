@@ -129,6 +129,56 @@ fn main() {
         ChunkMatchResult
     );
 
+    add_type!(
+        // Request parameter types
+        SetJobCvDirParams,
+        WatchJobParams,
+        ImportCvDirectoryParams,
+        SetJobAdPathParams,
+        AddCriterionParams,
+        UpdateCriterionParams,
+        DeleteCriterionParams,
+        UpdateJobParams,
+        UpdateJobWeightsParams,
+        ArchiveJobParams,
+        EmptyCandidatesParams,
+        DeleteJobParams,
+        GetJobDetailParams,
+        GetJobAdParams,
+        ReloadJobAdParams,
+        ExportJobBundleParams,
+        ImportJobBundleParams,
+        ExportResultsCsvParams,
+        SortJobParams,
+        StartRankParams,
+        CancelRankParams,
+        MarkCandidateViewedParams,
+        GetCandidateParams,
+        ListCandidatesParams,
+        CandidateNeighborsParams,
+        ApplyFeedbackParams,
+        ResetFeedbackParams,
+        ListLikedCandidateIdsParams,
+        ChunkMatchParams,
+        DownloadEmbedderParams,
+        RemoveEmbedderParams,
+        SetDefaultModelParams,
+        MakeDefaultEmbedderParams,
+        SetEmbeddingModelParams,
+        DownloadStatusParams,
+        ModelVariantsParams,
+        TryModelParams,
+        LoadJudgeArtifactParams,
+        RemoveJudgeArtifactParams,
+        SaveEmergencyDataParams,
+        LoadEmergencyDataParams,
+        LicenseActivateParams,
+        LicenseCheckArtifactParams,
+        SoftDeleteCvParams,
+        ForgetCvParams,
+        EmptyParams
+    );
+
     // Write JSON Schema
     std::fs::write(
         "protocol-schema.json",
@@ -192,7 +242,54 @@ fn main() {
         .register::<Activity>()
         .register::<ChunkMatchTarget>()
         .register::<ChunkSim>()
-        .register::<ChunkMatchResult>();
+        .register::<ChunkMatchResult>()
+        // Request parameter types
+        .register::<SetJobCvDirParams>()
+        .register::<WatchJobParams>()
+        .register::<ImportCvDirectoryParams>()
+        .register::<SetJobAdPathParams>()
+        .register::<AddCriterionParams>()
+        .register::<UpdateCriterionParams>()
+        .register::<DeleteCriterionParams>()
+        .register::<UpdateJobParams>()
+        .register::<UpdateJobWeightsParams>()
+        .register::<ArchiveJobParams>()
+        .register::<EmptyCandidatesParams>()
+        .register::<DeleteJobParams>()
+        .register::<GetJobDetailParams>()
+        .register::<GetJobAdParams>()
+        .register::<ReloadJobAdParams>()
+        .register::<ExportJobBundleParams>()
+        .register::<ImportJobBundleParams>()
+        .register::<ExportResultsCsvParams>()
+        .register::<SortJobParams>()
+        .register::<StartRankParams>()
+        .register::<CancelRankParams>()
+        .register::<MarkCandidateViewedParams>()
+        .register::<GetCandidateParams>()
+        .register::<ListCandidatesParams>()
+        .register::<CandidateNeighborsParams>()
+        .register::<ApplyFeedbackParams>()
+        .register::<ResetFeedbackParams>()
+        .register::<ListLikedCandidateIdsParams>()
+        .register::<ChunkMatchParams>()
+        .register::<DownloadEmbedderParams>()
+        .register::<RemoveEmbedderParams>()
+        .register::<SetDefaultModelParams>()
+        .register::<MakeDefaultEmbedderParams>()
+        .register::<SetEmbeddingModelParams>()
+        .register::<DownloadStatusParams>()
+        .register::<ModelVariantsParams>()
+        .register::<TryModelParams>()
+        .register::<LoadJudgeArtifactParams>()
+        .register::<RemoveJudgeArtifactParams>()
+        .register::<SaveEmergencyDataParams>()
+        .register::<LoadEmergencyDataParams>()
+        .register::<LicenseActivateParams>()
+        .register::<LicenseCheckArtifactParams>()
+        .register::<SoftDeleteCvParams>()
+        .register::<ForgetCvParams>()
+        .register::<EmptyParams>();
 
     specta_typescript::Typescript::default()
         .bigint(specta_typescript::BigIntExportBehavior::Number)

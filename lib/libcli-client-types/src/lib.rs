@@ -1099,3 +1099,325 @@ pub enum DownloadStatus {
     Downloaded { path: String },
     Failed { error: String },
 }
+
+// ============================================================================
+// Request Parameters (wire DTOs for CLI serve commands)
+// ============================================================================
+
+/// Parameters for `set_job_cv_dir` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct SetJobCvDirParams {
+    pub job_id: String,
+    pub directory: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub watch: Option<bool>,
+}
+
+/// Parameters for `watch_job` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct WatchJobParams {
+    pub job_id: String,
+}
+
+/// Parameters for `import_cv_directory` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct ImportCvDirectoryParams {
+    pub job_id: String,
+    pub directory: String,
+}
+
+/// Parameters for `set_job_ad_path` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct SetJobAdPathParams {
+    pub job_id: String,
+    pub path: String,
+}
+
+/// Parameters for `add_criterion` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct AddCriterionParams {
+    pub job_id: String,
+    pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub weight: Option<f64>,
+}
+
+/// Parameters for `update_criterion` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct UpdateCriterionParams {
+    pub id: String,
+    pub text: String,
+    pub weight: f64,
+}
+
+/// Parameters for `delete_criterion` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct DeleteCriterionParams {
+    pub id: String,
+}
+
+/// Parameters for `update_job` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct UpdateJobParams {
+    pub job_id: String,
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub job_ad_text: Option<String>,
+    pub triqui_size: i32,
+}
+
+/// Parameters for `update_job_weights` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct UpdateJobWeightsParams {
+    pub job_id: String,
+    pub ad_weight: f64,
+    pub fb_job_weight: f64,
+    pub fb_profile_weight: f64,
+}
+
+/// Parameters for `archive_job` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct ArchiveJobParams {
+    pub job_id: String,
+    pub archived: bool,
+}
+
+/// Parameters for `empty_candidates` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct EmptyCandidatesParams {
+    pub job_id: String,
+}
+
+/// Parameters for `delete_job` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct DeleteJobParams {
+    pub job_id: String,
+}
+
+/// Parameters for `get_job_detail` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct GetJobDetailParams {
+    pub job_id: String,
+}
+
+/// Parameters for `get_job_ad` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct GetJobAdParams {
+    pub job_id: String,
+}
+
+/// Parameters for `reload_job_ad` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct ReloadJobAdParams {
+    pub job_id: String,
+}
+
+/// Parameters for `export_job_bundle` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct ExportJobBundleParams {
+    pub job_id: String,
+    pub options: BundleExportOptions,
+    pub out_path: String,
+}
+
+/// Parameters for `import_job_bundle` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct ImportJobBundleParams {
+    pub path: String,
+}
+
+/// Parameters for `export_results_csv` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct ExportResultsCsvParams {
+    pub job_id: String,
+    pub out_path: String,
+}
+
+/// Parameters for `sort_job` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct SortJobParams {
+    pub job_id: String,
+}
+
+/// Parameters for `start_rank` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct StartRankParams {
+    pub job_id: String,
+}
+
+/// Parameters for `cancel_rank` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct CancelRankParams {
+    pub job_id: String,
+}
+
+/// Parameters for `mark_candidate_viewed` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct MarkCandidateViewedParams {
+    pub candidate_id: String,
+}
+
+/// Parameters for `get_candidate` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct GetCandidateParams {
+    pub candidate_id: String,
+}
+
+/// Parameters for `list_candidates` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct ListCandidatesParams {
+    pub job_id: String,
+    pub offset: i32,
+    pub limit: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub query: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sort_by: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sort_dir: Option<bool>,
+}
+
+/// Parameters for `candidate_neighbors` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct CandidateNeighborsParams {
+    pub job_id: String,
+    pub candidate_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub query: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sort_by: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sort_dir: Option<bool>,
+}
+
+/// Parameters for `apply_feedback` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct ApplyFeedbackParams {
+    pub job_id: String,
+    pub ordered_candidate_ids: Vec<String>,
+    pub liked_candidate_ids: Vec<String>,
+}
+
+/// Parameters for `reset_feedback` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct ResetFeedbackParams {
+    pub job_id: String,
+}
+
+/// Parameters for `list_liked_candidate_ids` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct ListLikedCandidateIdsParams {
+    pub job_id: String,
+}
+
+/// Parameters for `chunk_match` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct ChunkMatchParams {
+    pub candidate_id: String,
+    pub target: ChunkMatchTarget,
+    pub chunk_size: usize,
+}
+
+/// Parameters for `download_embedder` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct DownloadEmbedderParams {
+    pub slug: String,
+}
+
+/// Parameters for `remove_embedder` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct RemoveEmbedderParams {
+    pub slug: String,
+}
+
+/// Parameters for `set_default_model` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct SetDefaultModelParams {
+    pub kind: ModelKind,
+    pub repo_id: String,
+}
+
+/// Parameters for `make_default_embedder` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct MakeDefaultEmbedderParams {
+    pub slug: String,
+}
+
+/// Parameters for `set_embedding_model` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct SetEmbeddingModelParams {
+    pub slug: String,
+}
+
+/// Parameters for `download_status` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct DownloadStatusParams {
+    pub slug: String,
+}
+
+/// Parameters for `model_variants` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct ModelVariantsParams {
+    pub model: String,
+}
+
+/// Parameters for `try_model` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct TryModelParams {
+    pub slug: String,
+}
+
+/// Parameters for `load_judge_artifact` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct LoadJudgeArtifactParams {
+    pub source_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub embedder_slug: Option<String>,
+}
+
+/// Parameters for `remove_judge_artifact` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct RemoveJudgeArtifactParams {
+    pub slug: String,
+}
+
+/// Parameters for `save_emergency_data` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct SaveEmergencyDataParams {
+    pub filename: String,
+    pub data: serde_json::Value,
+}
+
+/// Parameters for `load_emergency_data` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct LoadEmergencyDataParams {
+    pub filename: String,
+}
+
+/// Parameters for `license_activate` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct LicenseActivateParams {
+    pub license_key: String,
+}
+
+/// Parameters for `license_check_artifact` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct LicenseCheckArtifactParams {
+    pub artifact_id: String,
+}
+
+/// Parameters for `soft_delete_cv` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct SoftDeleteCvParams {
+    pub cv_id: String,
+}
+
+/// Parameters for `forget_cv` command.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct ForgetCvParams {
+    pub cv_id: String,
+}
+
+/// Empty parameters (for commands with no params).
+#[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
+pub struct EmptyParams {}
