@@ -213,7 +213,7 @@ impl ComparatorStage {
                 .unwrap_or_else(|| format!("candidate {i}"))
         };
         let total_pairs = fresh.len();
-        let mut comparatord_pairs = 0usize;
+        let mut compared_pairs = 0usize;
         for chunk in fresh.chunks(per_tile) {
             let (si, sj, _) = chunk[0];
             let subject = format!("{} vs {}", name_of(si), name_of(sj));
@@ -221,7 +221,7 @@ impl ComparatorStage {
                 rt.set_activity(
                     "comparator",
                     &subject,
-                    Some(format!("pair {}/{}", comparatord_pairs + 1, total_pairs)),
+                    Some(format!("pair {}/{}", compared_pairs + 1, total_pairs)),
                     Some(model),
                 );
             }
@@ -233,12 +233,12 @@ impl ComparatorStage {
                 &pairs,
                 &docs,
             );
-            comparatord_pairs += chunk.len();
+            compared_pairs += chunk.len();
             if let Some(rt) = rt {
                 rt.set_activity(
                     "comparator",
                     &subject,
-                    Some(format!("pair {}/{}", comparatord_pairs, total_pairs)),
+                    Some(format!("pair {}/{}", compared_pairs, total_pairs)),
                     Some(model),
                 );
             }
@@ -493,7 +493,7 @@ fn write_grades(
     for (i, cid) in ids.iter().enumerate() {
         tx.execute(
             "DELETE FROM candidate_scores WHERE candidate_id = ?1 AND question_id = ?2",
-            rusqlite::params![cid, crate::rescore::JUDGE_Q],
+            rusqlite::params![cid, crate::rescore::COMPARATOR_Q],
         )
         .map_err(|e| e.to_string())?;
         tx.execute(
@@ -503,7 +503,7 @@ fn write_grades(
             rusqlite::params![
                 format!("cs_{}", uuid::Uuid::new_v4()),
                 cid,
-                crate::rescore::JUDGE_Q,
+                crate::rescore::COMPARATOR_Q,
                 ComparatorStage::AD_LABEL,
                 ad_weight * wins[i],
                 ad_weight

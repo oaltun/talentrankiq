@@ -196,7 +196,7 @@ impl CascadeRunner {
             wave: 0,
             embedded_done: 0,
             embedded_total: candidate_count as u32,
-            comparatord: 0,
+            compared: 0,
             candidates: candidate_count as u32,
             running: true,
             reason: None,
@@ -298,7 +298,7 @@ impl CascadeRunner {
         }
         let mut wave: u32 = 0;
         let mut total_embedded: i64 = 0;
-        let mut total_comparatord: u32 = 0;
+        let mut total_compared: u32 = 0;
         loop {
             // The supersede check comes first: a superseded runner must exit
             // silently even when the DB row (the newer run's) is not
@@ -359,7 +359,7 @@ impl CascadeRunner {
                     wave,
                     embedded_done: total_embedded as u32,
                     embedded_total: candidate_count as u32,
-                    comparatord: total_comparatord,
+                    compared: total_compared,
                     candidates: candidate_count as u32,
                     running: true,
                     reason: syscap::holding_code(&sys),
@@ -385,7 +385,7 @@ impl CascadeRunner {
                         wave,
                         embedded_done: (total_embedded + done) as u32,
                         embedded_total: (total_embedded + total) as u32,
-                        comparatord: total_comparatord,
+                        compared: total_compared,
                         candidates: candidate_count as u32,
                         running: active,
                         reason: None,
@@ -406,7 +406,7 @@ impl CascadeRunner {
                 Ok(outcome) => {
                     total_embedded += outcome.embedded;
                     if outcome.comparator_ran {
-                        total_comparatord += outcome.comparator_pairs_fresh;
+                        total_compared += outcome.comparator_pairs_fresh;
                     }
                     self.events.emit("rank-progress", &RankProgress {
                         job_id: self.job_id.clone(),
@@ -414,7 +414,7 @@ impl CascadeRunner {
                         wave,
                         embedded_done: total_embedded as u32,
                         embedded_total: candidate_count as u32,
-                        comparatord: total_comparatord,
+                        compared: total_compared,
                         candidates: candidate_count as u32,
                         running: !outcome.converged,
                         reason: None,
@@ -518,7 +518,7 @@ impl CascadeRunner {
             wave: 0,
             embedded_done: 0,
             embedded_total: 0,
-            comparatord: 0,
+            compared: 0,
             candidates: 0,
             running: false,
             reason: None,
@@ -546,7 +546,7 @@ impl CascadeRunner {
             wave: 0,
             embedded_done: 0,
             embedded_total: 0,
-            comparatord: 0,
+            compared: 0,
             candidates: 0,
             running: false,
             reason: None,
@@ -720,7 +720,7 @@ pub fn start_rank(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Protoc
                 wave: None,
                 embedded_total: 0,
                 embedded_done: 0,
-                comparatord: 0,
+                compared: 0,
                 candidates: 0,
                 converged: false,
                 reason: None,
@@ -737,7 +737,7 @@ pub fn start_rank(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Protoc
         wave: None,
         embedded_total: 0,
         embedded_done: 0,
-        comparatord: 0,
+        compared: 0,
         candidates: 0,
         converged: false,
         reason: None,
@@ -784,7 +784,7 @@ fn sample_budget_for_state() -> (libsyscap::Budget, libsyscap::LoadSnapshot) {
 /// Progress counters are **derived from the data**, not carried in a column that
 /// the background thread has to remember to update: `candidates` is the
 /// extracted candidate count, `embedded_done` counts candidates that actually
-/// hold chunk vectors for the full embedder, and `comparatord` is the last wave's
+/// hold chunk vectors for the full embedder, and `compared` is the last wave's
 /// fresh-verdict count from the sort report. Deriving them means a poll can
 /// never disagree with the sheet, and it costs one indexed count each.
 ///

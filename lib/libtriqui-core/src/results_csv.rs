@@ -68,7 +68,7 @@ pub fn export_results_csv(
         // written cell records which grade it holds.
         let mut written: HashMap<(String, usize), u8> = HashMap::new();
         for (candidate_id, question_id, pts, max) in rows {
-            let is_comparator = question_id == crate::sort::JUDGE_QUESTION_ID;
+            let is_comparator = question_id == crate::sort::COMPARATOR_QUESTION_ID;
             let Some(&i) = column.get(if is_comparator {
                 crate::sort::AD_QUESTION_ID
             } else {

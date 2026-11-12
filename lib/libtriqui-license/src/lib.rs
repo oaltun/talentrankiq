@@ -96,7 +96,11 @@ impl License {
         if self.format != LICENSE_FORMAT {
             return Err(LicenseError::Version(self.format, LICENSE_FORMAT));
         }
-        if self.feature != "comparator" {
+        // `feature` is part of the signed payload, so an already-issued license
+        // is bound to the string it was signed with. Accept the pre-rename `judge`
+        // alongside `comparator` so existing licenses keep verifying; licgen only
+        // issues `comparator` now.
+        if self.feature != "comparator" && self.feature != "judge" {
             return Err(LicenseError::MissingField("feature"));
         }
         if self.signature.is_empty() {

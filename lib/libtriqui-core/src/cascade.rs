@@ -75,7 +75,7 @@ pub struct WaveOutcome {
     pub comparator_pairs_cached: u32,
     /// Pool members still without a comparator grade after this wave.
     pub remaining_comparator: i64,
-    /// True when nothing is left to embed and the pool is fully comparatord.
+    /// True when nothing is left to embed and the pool is fully compared.
     pub converged: bool,
 }
 
@@ -131,7 +131,7 @@ pub fn freeze_pool(rt: &Arc<EngineRuntime>, job_id: &str, pool_size: usize) -> R
         .map_err(|e| DomainError::DbError { message: e.to_string() })
 }
 
-/// How many pool members are still uncomparatord.
+/// How many pool members are still uncompared.
 pub fn remaining_comparator_count(
     rt: &Arc<EngineRuntime>,
     job_id: &str,
@@ -155,7 +155,7 @@ pub fn remaining_comparator_count(
              AND jp.candidate_id IN ({holes})"
     );
     let model = rt.model();
-    let mut params: Vec<&dyn rusqlite::ToSql> = vec![&job_id, &model, &rescore::JUDGE_Q];
+    let mut params: Vec<&dyn rusqlite::ToSql> = vec![&job_id, &model, &rescore::COMPARATOR_Q];
     params.extend(ids.iter().map(|i| i as &dyn rusqlite::ToSql));
     conn.query_row(
         &sql,

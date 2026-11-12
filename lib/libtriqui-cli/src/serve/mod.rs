@@ -134,7 +134,7 @@ impl ServeState {
                             job_ad_version: *job_version,
                             model_bundle_version: *model_bundle_version,
                             result: *result,
-                            comparatord_at: 0,
+                            compared_at: 0,
                         },
                     );
                 }

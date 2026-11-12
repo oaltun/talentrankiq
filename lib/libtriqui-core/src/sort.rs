@@ -30,7 +30,7 @@ pub const AD_LABEL: &str = "Job fit (embed)";
 /// Question id of the deep embedder's ad grade. It lives in [`crate::rubric`]
 /// now (the ad is one of the rubric's questions); re-exported here because the
 /// CSV and bundle exporters speak in these ids.
-pub use crate::rescore::JUDGE_Q as JUDGE_QUESTION_ID;
+pub use crate::rescore::COMPARATOR_Q as COMPARATOR_QUESTION_ID;
 pub use crate::rubric::AD_Q as AD_QUESTION_ID;
 
 /// Run the whole pipeline to convergence and return the triqui.
@@ -80,7 +80,7 @@ pub fn sort_job_blocking(
     // Report what the comparator actually did — "cached" when every verdict came from the
     // memoized cache is the whole point of the verdict cache, and the gui and the
     // tests read it. Passing `None` here would report `skipped` for a run that
-    // comparatord, which is a lie in the direction of "nothing happened".
+    // compared, which is a lie in the direction of "nothing happened".
     let stats = crate::comparator::run_pool(rt, job_id)
         .map_err(|e| DomainError::DbError { message: e })?;
     cascade::project(rt, job_id)?;

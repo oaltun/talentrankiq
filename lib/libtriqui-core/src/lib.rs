@@ -12,7 +12,7 @@ pub mod cascade;
 pub mod chunk_match;
 pub mod config;
 pub mod db;
-pub use libcv_heavy::embed;
+pub use libcv_deep::embed;
 pub mod embeddings;
 pub mod feedback;
 pub mod favs;

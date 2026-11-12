@@ -16,7 +16,7 @@
 //!
 //! ```text
 //! space(c) = deep if c has deep-space grades else quick
-//! fit(c)   = comparator win-rate if comparatord, else the ad grade in space(c)
+//! fit(c)   = comparator win-rate if compared, else the ad grade in space(c)
 //! total(c) = ad_weight · fit(c) + Σ q.weight · sim(c, q, space(c))
 //! ```
 //!
@@ -28,7 +28,7 @@
 //! number, not to produce it.
 //!
 //! Exactly one row carries the ad slot per candidate, and the row id says which:
-//! `ad_comparator` when comparatord, `ad` when the deep embedder has graded it, `quick`
+//! `ad_comparator` when compared, `ad` when the deep embedder has graded it, `quick`
 //! while it has not. `rubric_capacity` counts the ad slot once regardless, since
 //! it is `ad_weight` plus the rubric's own questions.
 
@@ -47,7 +47,7 @@ use crate::types::{
 
 /// Question id of the comparator's win-rate row — the comparator's own, so the deep
 /// embedder's ad cosine survives as a separate column.
-pub const JUDGE_Q: &str = "ad_comparator";
+pub const COMPARATOR_Q: &str = "ad_comparator";
 
 /// What one rescore pass did. The reported-behaviour contract the gui and the
 /// tests assert on (never instrumentation).
@@ -59,7 +59,7 @@ pub struct RescoreReport {
     /// nothing to measure them against.
     pub ungraded: i64,
     /// Candidates whose total is backed by a comparator's win-rate.
-    pub comparatord: i64,
+    pub compared: i64,
     /// Candidates still graded only in the quick space.
     pub scout_only: i64,
     /// The job's rubric capacity — the "Total /N" denominator.
@@ -178,19 +178,19 @@ pub fn rescore_in_spaces(
             _ => (deep.as_str(), &heavy_rubric, &heavy_grades),
         };
         let space_fit = grades.get(&(cid.clone(), AD_Q.to_string())).copied();
-        let comparatord = comparator_grades.get(cid).copied().filter(|w| (0.0..=1.0).contains(w));
-        let Some(fit) = comparatord.or(space_fit) else {
+        let compared = comparator_grades.get(cid).copied().filter(|w| (0.0..=1.0).contains(w));
+        let Some(fit) = compared.or(space_fit) else {
             report.ungraded += 1;
             continue;
         };
         if space == deep.as_str() {
-            if comparatord.is_some() {
-                report.comparatord += 1;
+            if compared.is_some() {
+                report.compared += 1;
             }
         } else {
             report.scout_only += 1;
-            if comparatord.is_some() {
-                report.comparatord += 1;
+            if compared.is_some() {
+                report.compared += 1;
             }
         }
 
@@ -219,7 +219,7 @@ pub fn rescore_in_spaces(
         // carries it and its id names the stage; when the comparator *has*, its own row
         // (written by the comparator stage — the only writer of `ad_comparator`) is the one the
         // sheet shows, and this pass only reads its value.
-        if comparatord.is_none() {
+        if compared.is_none() {
             let (slot_id, slot_label, slot_kind, slot_points) = match heavy_fit {
                 Some(cos) => (
                     AD_Q.to_string(),
@@ -357,7 +357,7 @@ fn comparator_grades(
         .join(",");
     let sql = format!(
         "SELECT candidate_id, points / NULLIF(max_points, 0) FROM candidate_scores
-         WHERE question_id = '{JUDGE_Q}' AND candidate_id IN ({holes})"
+         WHERE question_id = '{COMPARATOR_Q}' AND candidate_id IN ({holes})"
     );
     let mut stmt = conn.prepare(&sql).map_err(dberr)?;
     let params: Vec<&dyn rusqlite::ToSql> =
@@ -439,7 +439,7 @@ fn persist(conn: &Connection, pending: &[Pending]) -> Result<(), DomainError> {
         // row cannot be clobbered by omission.
         tx.execute(
             "DELETE FROM candidate_scores WHERE candidate_id = ?1 AND question_id != ?2",
-            rusqlite::params![p.id, JUDGE_Q],
+            rusqlite::params![p.id, COMPARATOR_Q],
         )
         .map_err(dberr)?;
         {
@@ -847,7 +847,7 @@ pub fn inputs_changed(
         conn.execute(
             "DELETE FROM candidate_scores WHERE question_id = ?1
              AND candidate_id IN (SELECT id FROM candidates WHERE job_id = ?2)",
-            rusqlite::params![JUDGE_Q, job_id],
+            rusqlite::params![COMPARATOR_Q, job_id],
         )
         .map_err(dberr)?;
         // An empty ad leaves nothing to measure against, so the deep space has no
@@ -934,7 +934,7 @@ pub fn score_live_spaces(
 }
 
 /// Whether a job still has work a cascade would do: candidates the deep embedder
-/// has not reached, or pool members uncomparatord.
+/// has not reached, or pool members uncompared.
 ///
 /// This is what the rank button means now. A rescored job is never *stale* — the
 /// sheet is always the best answer available right now — but it can be
@@ -952,7 +952,7 @@ pub fn pending_work(rt: &Arc<EngineRuntime>, job_id: &str) -> Result<PendingWork
              LEFT JOIN candidate_scores cs
                ON cs.candidate_id = jp.candidate_id AND cs.question_id = ?2
              WHERE jp.job_id = ?1 AND cs.id IS NULL",
-            rusqlite::params![job_id, JUDGE_Q],
+            rusqlite::params![job_id, COMPARATOR_Q],
             |r| r.get(0),
         )
         .map_err(dberr)?

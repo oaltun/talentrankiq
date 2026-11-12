@@ -770,6 +770,34 @@
         }
       }
     },
+    "ComparatorArtifact": {
+      "description": "Comparator artifact info exposed to the GUI.",
+      "type": "object",
+      "required": [
+        "embedder_slug",
+        "entitled",
+        "exists",
+        "path"
+      ],
+      "properties": {
+        "embedder_slug": {
+          "description": "Active embedder slug this artifact applies to.",
+          "type": "string"
+        },
+        "entitled": {
+          "description": "Whether the user is entitled to use the comparator.",
+          "type": "boolean"
+        },
+        "exists": {
+          "description": "True when the artifact file exists on disk.",
+          "type": "boolean"
+        },
+        "path": {
+          "description": "Path relative to the app data dir.",
+          "type": "string"
+        }
+      }
+    },
     "CosinePair": {
       "title": "CosinePair",
       "description": "Result of a single pair-wise cosine comparison.",
@@ -1309,6 +1337,18 @@
         "source"
       ],
       "properties": {
+        "comparator": {
+          "description": "Comparator artifact mapped to this embedder (`None` when unconfigured).",
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ComparatorArtifact"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "dim": {
           "description": "Embedding dimension.",
           "type": "integer",
@@ -1322,18 +1362,6 @@
         "is_default": {
           "description": "True when this is the active default embedder (per saved preferences).",
           "type": "boolean"
-        },
-        "comparator": {
-          "description": "Comparator artifact mapped to this embedder (`None` when unconfigured).",
-          "default": null,
-          "anyOf": [
-            {
-              "$ref": "#/definitions/ComparatorArtifact"
-            },
-            {
-              "type": "null"
-            }
-          ]
         },
         "max_context_window": {
           "description": "Max context window in tokens.",
@@ -1699,10 +1727,10 @@
           "description": "Progressive-ranking cascade state (live run + last-rank coverage).",
           "default": {
             "candidates": 0,
+            "compared": 0,
             "converged": false,
             "embedded_done": 0,
             "embedded_total": 0,
-            "comparatord": 0,
             "ranking": false,
             "reason": null,
             "running": false,
@@ -1729,34 +1757,6 @@
         "sort_allowed": {
           "description": "At least one extracted CV — without it ranking is meaningless.",
           "type": "boolean"
-        }
-      }
-    },
-    "ComparatorArtifact": {
-      "description": "Comparator artifact info exposed to the GUI.",
-      "type": "object",
-      "required": [
-        "embedder_slug",
-        "entitled",
-        "exists",
-        "path"
-      ],
-      "properties": {
-        "embedder_slug": {
-          "description": "Active embedder slug this artifact applies to.",
-          "type": "string"
-        },
-        "entitled": {
-          "description": "Whether the user is entitled to use the comparator.",
-          "type": "boolean"
-        },
-        "exists": {
-          "description": "True when the artifact file exists on disk.",
-          "type": "boolean"
-        },
-        "path": {
-          "description": "Path relative to the app data dir.",
-          "type": "string"
         }
       }
     },
@@ -1925,19 +1925,6 @@
         }
       }
     },
-    "LoadEmergencyDataParams": {
-      "title": "LoadEmergencyDataParams",
-      "description": "Parameters for `load_emergency_data` command.",
-      "type": "object",
-      "required": [
-        "filename"
-      ],
-      "properties": {
-        "filename": {
-          "type": "string"
-        }
-      }
-    },
     "LoadComparatorArtifactParams": {
       "title": "LoadComparatorArtifactParams",
       "description": "Parameters for `load_comparator_artifact` command.",
@@ -1953,6 +1940,19 @@
           ]
         },
         "source_path": {
+          "type": "string"
+        }
+      }
+    },
+    "LoadEmergencyDataParams": {
+      "title": "LoadEmergencyDataParams",
+      "description": "Parameters for `load_emergency_data` command.",
+      "type": "object",
+      "required": [
+        "filename"
+      ],
+      "properties": {
+        "filename": {
           "type": "string"
         }
       }
@@ -2104,16 +2104,21 @@
       "type": "object",
       "required": [
         "candidates",
+        "compared",
         "embedded_done",
         "embedded_total",
         "job_id",
-        "comparatord",
         "running",
         "stage",
         "wave"
       ],
       "properties": {
         "candidates": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "compared": {
           "type": "integer",
           "format": "uint32",
           "minimum": 0.0
@@ -2130,11 +2135,6 @@
         },
         "job_id": {
           "type": "string"
-        },
-        "comparatord": {
-          "type": "integer",
-          "format": "uint32",
-          "minimum": 0.0
         },
         "reason": {
           "description": "Stable reason code while the run is alive but not making progress: `holding` = the system-capacity budget says hold (low memory).",
@@ -2163,15 +2163,21 @@
       "type": "object",
       "required": [
         "candidates",
+        "compared",
         "converged",
         "embedded_done",
         "embedded_total",
-        "comparatord",
         "running"
       ],
       "properties": {
         "candidates": {
           "description": "Extracted candidates overall.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "compared": {
+          "description": "Candidates in the comparator pool so far.",
           "type": "integer",
           "format": "uint32",
           "minimum": 0.0
@@ -2188,12 +2194,6 @@
         },
         "embedded_total": {
           "description": "Candidates with embeddable text — the embed stage's total.",
-          "type": "integer",
-          "format": "uint32",
-          "minimum": 0.0
-        },
-        "comparatord": {
-          "description": "Candidates in the comparator pool so far.",
           "type": "integer",
           "format": "uint32",
           "minimum": 0.0
@@ -2344,9 +2344,9 @@
         }
       }
     },
-    "RemoveEmbedderParams": {
-      "title": "RemoveEmbedderParams",
-      "description": "Parameters for `remove_embedder` command.",
+    "RemoveComparatorArtifactParams": {
+      "title": "RemoveComparatorArtifactParams",
+      "description": "Parameters for `remove_comparator_artifact` command.",
       "type": "object",
       "required": [
         "slug"
@@ -2357,9 +2357,9 @@
         }
       }
     },
-    "RemoveComparatorArtifactParams": {
-      "title": "RemoveComparatorArtifactParams",
-      "description": "Parameters for `remove_comparator_artifact` command.",
+    "RemoveEmbedderParams": {
+      "title": "RemoveEmbedderParams",
+      "description": "Parameters for `remove_embedder` command.",
       "type": "object",
       "required": [
         "slug"
@@ -2700,28 +2700,17 @@
       "description": "Read-model of the last rank of a job: what the comparator stage actually did.",
       "type": "object",
       "required": [
-        "created_at",
-        "job_id",
         "comparator_mode",
         "comparator_pairs_cached",
-        "comparator_pairs_fresh"
+        "comparator_pairs_fresh",
+        "created_at",
+        "job_id"
       ],
       "properties": {
         "cancelled": {
           "description": "The last rank was cancelled mid-run (partial coverage).",
           "default": false,
           "type": "boolean"
-        },
-        "complete": {
-          "description": "The last rank covered every candidate (not cancelled mid-run).",
-          "default": false,
-          "type": "boolean"
-        },
-        "created_at": {
-          "type": "string"
-        },
-        "job_id": {
-          "type": "string"
         },
         "comparator_mode": {
           "type": "string"
@@ -2735,6 +2724,17 @@
           "type": "integer",
           "format": "uint32",
           "minimum": 0.0
+        },
+        "complete": {
+          "description": "The last rank covered every candidate (not cancelled mid-run).",
+          "default": false,
+          "type": "boolean"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "job_id": {
+          "type": "string"
         },
         "mode": {
           "description": "How the last rank ran: `full` (one blocking pass) or `waves` (progressive cascade).",

@@ -7,7 +7,7 @@ edition = "2021"
 rust-version = "1.82"
 
 [lib]
-name = "libcv_scout"
+name = "libcv_quick"
 
 [dependencies]
 libtriqui-core = { path = "../libtriqui-core" }

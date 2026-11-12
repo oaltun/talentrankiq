@@ -642,7 +642,7 @@ fn build_rubric(job: &Job, criteria: &[Criterion]) -> Vec<RubricQuestion> {
             max_points: job.ad_weight as f32,
         },
         stage(
-            libtriqui_core::sort::JUDGE_QUESTION_ID,
+            libtriqui_core::sort::COMPARATOR_QUESTION_ID,
             ComparatorStage::AD_LABEL,
             QuestionKind::AdComparator,
         ),
@@ -744,7 +744,7 @@ pub fn compute_rank_state(
         wave: last.filter(|r| r.waves > 0).map(|r| r.waves),
         embedded_total: candidates as u32,
         embedded_done: embedded_done as u32,
-        comparatord: last.map(|r| r.comparator_pairs_fresh).unwrap_or(0),
+        compared: last.map(|r| r.comparator_pairs_fresh).unwrap_or(0),
         candidates: candidates as u32,
         converged,
         reason,

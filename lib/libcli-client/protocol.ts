@@ -306,9 +306,30 @@ char_end: number;
 similarity: number }
 
 /**
+ * Comparator artifact info exposed to the GUI.
+ */
+export type ComparatorArtifact = { 
+/**
+ * Path relative to the app data dir.
+ */
+path: string; 
+/**
+ * True when the artifact file exists on disk.
+ */
+exists: boolean; 
+/**
+ * Active embedder slug this artifact applies to.
+ */
+embedder_slug: string; 
+/**
+ * Whether the user is entitled to use the comparator.
+ */
+entitled: boolean }
+
+/**
  * Payload for the `comparison-completed` event.
  */
-export type ComparisonCompletedEvent = { cv_a_id: string; cv_b_id: string; job_ad_version: number; model_bundle_version: number; result: number; comparatord_at: number }
+export type ComparisonCompletedEvent = { cv_a_id: string; cv_b_id: string; job_ad_version: number; model_bundle_version: number; result: number; compared_at: number }
 
 /**
  * Result of a single pair-wise cosine comparison.
@@ -630,27 +651,6 @@ rank?: RankState }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
 
 /**
- * Comparator artifact info exposed to the GUI.
- */
-export type ComparatorArtifact = { 
-/**
- * Path relative to the app data dir.
- */
-path: string; 
-/**
- * True when the artifact file exists on disk.
- */
-exists: boolean; 
-/**
- * Active embedder slug this artifact applies to.
- */
-embedder_slug: string; 
-/**
- * Whether the user is entitled to use the comparator.
- */
-entitled: boolean }
-
-/**
  * Parameters for `license_activate` command.
  */
 export type LicenseActivateParams = { license_key: string }
@@ -676,14 +676,14 @@ export type ListCandidatesParams = { job_id: string; offset: number; limit: numb
 export type ListLikedCandidateIdsParams = { job_id: string }
 
 /**
- * Parameters for `load_emergency_data` command.
- */
-export type LoadEmergencyDataParams = { filename: string }
-
-/**
  * Parameters for `load_comparator_artifact` command.
  */
 export type LoadComparatorArtifactParams = { source_path: string; embedder_slug?: string | null }
+
+/**
+ * Parameters for `load_emergency_data` command.
+ */
+export type LoadEmergencyDataParams = { filename: string }
 
 /**
  * Parameters for `make_default_embedder` command.
@@ -742,7 +742,7 @@ export type RankCancelledEvent = { job_id: string }
 /**
  * Progress event payload for a running cascade (`rank-progress` event).
  */
-export type RankProgress = { job_id: string; stage: string; wave: number; embedded_done: number; embedded_total: number; comparatord: number; candidates: number; running: boolean; 
+export type RankProgress = { job_id: string; stage: string; wave: number; embedded_done: number; embedded_total: number; compared: number; candidates: number; running: boolean; 
 /**
  * Stable reason code while the run is alive but not making progress:
  * `holding` = the system-capacity budget says hold (low memory).
@@ -780,7 +780,7 @@ embedded_done: number;
 /**
  * Candidates in the comparator pool so far.
  */
-comparatord: number; 
+compared: number; 
 /**
  * Extracted candidates overall.
  */
@@ -826,14 +826,14 @@ export type RecoveryError =
 export type ReloadJobAdParams = { job_id: string }
 
 /**
- * Parameters for `remove_embedder` command.
- */
-export type RemoveEmbedderParams = { slug: string }
-
-/**
  * Parameters for `remove_comparator_artifact` command.
  */
 export type RemoveComparatorArtifactParams = { slug: string }
+
+/**
+ * Parameters for `remove_embedder` command.
+ */
+export type RemoveEmbedderParams = { slug: string }
 
 export type Request = { id: number; cmd: string; params?: JsonValue; 
 /**

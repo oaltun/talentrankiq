@@ -579,7 +579,7 @@ pub fn job_ui_state(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Prot
             wave: None,
             embedded_total: 0,
             embedded_done: 0,
-            comparatord: 0,
+            compared: 0,
             candidates: 0,
             converged: false,
             reason: None,

@@ -309,7 +309,7 @@ CREATE TABLE IF NOT EXISTS comparisons (
   job_ad_version INTEGER NOT NULL,
   model_bundle_version INTEGER NOT NULL,
   result REAL NOT NULL,
-  comparatord_at INTEGER NOT NULL,
+  compared_at INTEGER NOT NULL,
   PRIMARY KEY (cv_a_id, cv_b_id, job_ad_version, model_bundle_version)
 );
 CREATE INDEX IF NOT EXISTS comparisons_by_job ON comparisons(job_ad_version, cv_a_id);
@@ -359,6 +359,11 @@ pub fn open_connection_at(path: &Path) -> Result<Connection, String> {
             .map_err(|e| format!("Failed to create database directory: {e}"))?;
     }
     let conn = Connection::open(path).map_err(|e| format!("Failed to open database: {e}"))?;
+    // Rename legacy `judge_*` tables BEFORE `SCHEMA` runs. SCHEMA uses
+    // `CREATE TABLE IF NOT EXISTS`, so on an old database it would create empty
+    // `comparator_*` tables first and the rename below would then be skipped,
+    // orphaning every pre-rename row.
+    migrate_legacy_judge_names(&conn)?;
     conn.execute_batch(SCHEMA)
         .map_err(|e| format!("Failed to migrate database: {e}"))?;
     migrate(&conn)?;
@@ -393,6 +398,88 @@ fn add_column_if_missing(
         )
         .map_err(|e| e.to_string())?;
     }
+    Ok(())
+}
+
+/// True when `table` exists in `sqlite_master`.
+fn table_exists(conn: &Connection, table: &str) -> bool {
+    conn.query_row(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1",
+        [table],
+        |_| Ok(()),
+    )
+    .is_ok()
+}
+
+/// Column names of `table`, or empty when the table does not exist.
+fn column_names(conn: &Connection, table: &str) -> Result<Vec<String>, String> {
+    if !table_exists(conn, table) {
+        return Ok(Vec::new());
+    }
+    let mut stmt = conn
+        .prepare(&format!("PRAGMA table_info({table})"))
+        .map_err(|e| e.to_string())?;
+    let names = stmt
+        .query_map([], |r| r.get::<_, String>(1))
+        .map_err(|e| e.to_string())?
+        .filter_map(Result::ok)
+        .collect();
+    Ok(names)
+}
+
+/// `ALTER TABLE old RENAME TO new`, only when the old name is present and the new
+/// one is not. Keeps the rename idempotent across every connection open.
+fn rename_table_if_present(conn: &Connection, from: &str, to: &str) -> Result<(), String> {
+    if table_exists(conn, from) && !table_exists(conn, to) {
+        conn.execute(&format!("ALTER TABLE {from} RENAME TO {to}"), [])
+            .map_err(|e| format!("failed to rename table {from} -> {to}: {e}"))?;
+        log::info!("db: renamed legacy table {from} -> {to}");
+    }
+    Ok(())
+}
+
+/// `ALTER TABLE t RENAME COLUMN from TO to`, only when needed. SQLite rebuilds
+/// any indexes that reference the column, so this preserves the data.
+fn rename_column_if_present(
+    conn: &Connection,
+    table: &str,
+    from: &str,
+    to: &str,
+) -> Result<(), String> {
+    let cols = column_names(conn, table)?;
+    if cols.iter().any(|c| c == from) && !cols.iter().any(|c| c == to) {
+        conn.execute(
+            &format!("ALTER TABLE {table} RENAME COLUMN {from} TO {to}"),
+            [],
+        )
+        .map_err(|e| format!("failed to rename column {table}.{from} -> {to}: {e}"))?;
+        log::info!("db: renamed legacy column {table}.{from} -> {to}");
+    }
+    Ok(())
+}
+
+/// Bring a pre-rename database up to the comparator names.
+///
+/// The `judge` stage was renamed to `comparator`; the schema followed, but
+/// `CREATE TABLE IF NOT EXISTS` cannot rename an existing table or column, so a
+/// database written by an older build would otherwise keep `judge_pool`,
+/// `judge_pair_verdicts`, `judge_cache`, `sort_reports.judge_*` and
+/// `comparisons.judged_at` — and every query for the new names would fail (or,
+/// worse, silently read an empty table). Run before the `add_column_if_missing`
+/// calls in [`migrate`], which assume the new names.
+fn migrate_legacy_judge_names(conn: &Connection) -> Result<(), String> {
+    rename_table_if_present(conn, "judge_pool", "comparator_pool")?;
+    rename_table_if_present(conn, "judge_pair_verdicts", "comparator_pair_verdicts")?;
+    rename_table_if_present(conn, "judge_cache", "comparator_cache")?;
+    for (from, to) in [
+        ("judge_mode", "comparator_mode"),
+        ("judge_pairs_fresh", "comparator_pairs_fresh"),
+        ("judge_pairs_cached", "comparator_pairs_cached"),
+    ] {
+        rename_column_if_present(conn, "sort_reports", from, to)?;
+    }
+    rename_column_if_present(conn, "comparisons", "judged_at", "compared_at")?;
+    rename_column_if_present(conn, "comparator_cache", "judged_at", "compared_at")?;
     Ok(())
 }
 
@@ -548,6 +635,11 @@ fn migrate_scoring_v3(conn: &Connection) -> Result<(), String> {
 /// "not embedded yet" (candidate) or "zero" (eprofile/b). `vector_model`/`ead_model`
 /// stamp which embedding model produced a vector so a model swap is detectable.
 pub fn migrate(conn: &Connection) -> Result<(), String> {
+    // Column renames must precede the `add_column_if_missing` calls below, which
+    // use the post-rename names. (Table renames already ran in `open_connection_at`
+    // before `SCHEMA`, so `CREATE TABLE IF NOT EXISTS` could not pre-empt them;
+    // this call is an idempotent no-op there.)
+    migrate_legacy_judge_names(conn)?;
     add_column_if_missing(conn, "candidates", "vector", "BLOB")?;
     add_column_if_missing(conn, "candidates", "vector_model", "TEXT")?;
     add_column_if_missing(conn, "candidates", "match_score", "REAL")?;
@@ -693,7 +785,7 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
 
     // Canonicalize legacy comparison rows into the `comparisons` table.
     let _ = conn.execute(
-        "INSERT OR IGNORE INTO comparisons (cv_a_id, cv_b_id, job_ad_version, model_bundle_version, result, comparatord_at) \
+        "INSERT OR IGNORE INTO comparisons (cv_a_id, cv_b_id, job_ad_version, model_bundle_version, result, compared_at) \
          SELECT CASE WHEN doc_a <= doc_b THEN doc_a ELSE doc_b END, \
                 CASE WHEN doc_a <= doc_b THEN doc_b ELSE doc_a END, \
                 0, 0, \
@@ -732,26 +824,39 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
         } else {
             "0.5"
         };
-        let comparatord_col = if cols.iter().any(|c| c == "comparatord_at") {
-            "comparatord_at"
+        let compared_col = if cols.iter().any(|c| c == "compared_at") {
+            "compared_at"
         } else {
             "strftime('%s','now')"
         };
         let sql = format!(
-            "INSERT OR IGNORE INTO comparisons (cv_a_id, cv_b_id, job_ad_version, model_bundle_version, result, comparatord_at) \
+            "INSERT OR IGNORE INTO comparisons (cv_a_id, cv_b_id, job_ad_version, model_bundle_version, result, compared_at) \
              SELECT CASE WHEN cv_a_id <= cv_b_id THEN cv_a_id ELSE cv_b_id END, \
                     CASE WHEN cv_a_id <= cv_b_id THEN cv_b_id ELSE cv_a_id END, \
                     COALESCE({job_col},0), COALESCE({model_col},0), \
                     CASE WHEN cv_a_id <= cv_b_id THEN {result_col} ELSE {result_col} END, \
-                    COALESCE({comparatord_col}, strftime('%s','now')) \
+                    COALESCE({compared_col}, strftime('%s','now')) \
              FROM comparator_cache",
             job_col = job_col,
             model_col = model_col,
             result_col = result_col,
-            comparatord_col = comparatord_col,
+            compared_col = compared_col,
         );
         let _ = conn.execute(&sql, []);
     }
+
+    // The comparator's question id was `ad_judge`; carry existing grades over.
+    // `OR IGNORE` keeps a freshly written `ad_comparator` row when both exist.
+    conn.execute(
+        "UPDATE OR IGNORE candidate_scores SET question_id = 'ad_comparator' WHERE question_id = 'ad_judge'",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE OR IGNORE stage_scores SET question_id = 'ad_comparator' WHERE question_id = 'ad_judge'",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -1207,4 +1312,126 @@ pub fn candidates_with_centroids(
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
     Ok(rows)
+}
+
+#[cfg(test)]
+mod legacy_rename_tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    /// A database written by a pre-rename build must keep its rows: the
+    /// comparator tables/columns are reached through `ALTER TABLE ... RENAME`,
+    /// not by recreating them.
+    #[test]
+    fn pre_rename_judge_schema_is_migrated_in_place() {
+        let path = std::env::temp_dir().join(format!("triqui-legacy-{}.db", uuid::Uuid::new_v4()));
+        let _ = std::fs::remove_file(&path);
+
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE judge_pool (
+                   job_id TEXT NOT NULL,
+                   candidate_id TEXT NOT NULL,
+                   position INTEGER NOT NULL,
+                   PRIMARY KEY (job_id, candidate_id)
+                 );
+                 INSERT INTO judge_pool (job_id, candidate_id, position) VALUES ('j1','c1',0);
+
+                 CREATE TABLE judge_pair_verdicts (
+                   model TEXT NOT NULL,
+                   artifact_hash TEXT NOT NULL,
+                   ad_hash TEXT NOT NULL,
+                   doc_a TEXT NOT NULL,
+                   doc_b TEXT NOT NULL,
+                   prob REAL NOT NULL
+                 );
+
+                 CREATE TABLE sort_reports (
+                   id INTEGER PRIMARY KEY,
+                   judge_mode TEXT NOT NULL,
+                   judge_pairs_fresh INTEGER NOT NULL DEFAULT 0,
+                   judge_pairs_cached INTEGER NOT NULL DEFAULT 0,
+                   mode TEXT,
+                   waves INTEGER,
+                   complete INTEGER,
+                   cancelled INTEGER,
+                   created_at TEXT
+                 );
+                 INSERT INTO sort_reports (judge_mode, judge_pairs_fresh, judge_pairs_cached)
+                   VALUES ('waves', 3, 4);
+
+                 CREATE TABLE comparisons (
+                   cv_a_id TEXT NOT NULL,
+                   cv_b_id TEXT NOT NULL,
+                   job_ad_version INTEGER NOT NULL,
+                   model_bundle_version INTEGER NOT NULL,
+                   result REAL NOT NULL,
+                   judged_at INTEGER NOT NULL
+                 );
+                 INSERT INTO comparisons VALUES ('a','b',1,1,0.5,123);
+
+                 CREATE TABLE candidate_scores (
+                   id TEXT PRIMARY KEY,
+                   candidate_id TEXT NOT NULL,
+                   question_id TEXT NOT NULL,
+                   kind TEXT NOT NULL,
+                   sign TEXT NOT NULL,
+                   label TEXT NOT NULL,
+                   points REAL NOT NULL,
+                   max_points REAL NOT NULL,
+                   evaluated_at TEXT NOT NULL DEFAULT (datetime('now'))
+                 );
+                 INSERT INTO candidate_scores
+                   (id, candidate_id, question_id, kind, sign, label, points, max_points)
+                   VALUES ('s1','c1','ad_judge','judge','positive','Comparator',1,1);",
+            )
+            .unwrap();
+        }
+
+        let conn = open_connection_at(&path).expect("open migrated db");
+
+        assert!(
+            !table_exists(&conn, "judge_pool"),
+            "judge_pool must be renamed away"
+        );
+        let pool: i64 = conn
+            .query_row("SELECT COUNT(*) FROM comparator_pool", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(pool, 1, "judge_pool rows must survive the table rename");
+
+        let cols = column_names(&conn, "sort_reports").unwrap();
+        assert!(cols.iter().any(|c| c == "comparator_mode"));
+        assert!(!cols.iter().any(|c| c == "judge_mode"));
+        let fresh: i64 = conn
+            .query_row(
+                "SELECT comparator_pairs_fresh FROM sort_reports",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(fresh, 3, "sort_reports rows must survive the column rename");
+
+        let cols = column_names(&conn, "comparisons").unwrap();
+        assert!(cols.iter().any(|c| c == "compared_at"));
+        let at: i64 = conn
+            .query_row("SELECT compared_at FROM comparisons", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(at, 123, "comparisons.judged_at rows must survive the rename");
+
+        let question_id: String = conn
+            .query_row(
+                "SELECT question_id FROM candidate_scores WHERE id = 's1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            question_id, "ad_comparator",
+            "ad_judge grades must be carried over"
+        );
+
+        drop(conn);
+        let _ = std::fs::remove_file(&path);
+    }
 }

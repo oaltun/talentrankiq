@@ -254,7 +254,7 @@ pub fn export_job(
             // criteria only — an excluded criterion's label (its text) must
             // not leak through the scores.
             let included = if question_id == crate::sort::AD_QUESTION_ID
-                || question_id == crate::sort::JUDGE_QUESTION_ID
+                || question_id == crate::sort::COMPARATOR_QUESTION_ID
             {
                 opts.include_ad
             } else {
@@ -648,7 +648,7 @@ pub fn apply_bundle_results(
                 // The ad stage grades keep their own ids: the embedder's cosine
                 // (`ad`) and the comparator's win-rate (`ad_comparator`) are distinct rows.
                 let question_id = if s.question_id == crate::sort::AD_QUESTION_ID
-                    || s.question_id == crate::sort::JUDGE_QUESTION_ID
+                    || s.question_id == crate::sort::COMPARATOR_QUESTION_ID
                 {
                     s.question_id.clone()
                 } else {

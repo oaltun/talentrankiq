@@ -94,7 +94,7 @@ fn browser_clause(like: &Option<String>, sort: &SortCol, asc: bool) -> (String, 
     // bookkeeping column to fall out of sync with the scores.
     let in_heavy = "(EXISTS (SELECT 1 FROM candidate_scores cs WHERE cs.candidate_id = candidates.id \
                       AND cs.kind = 'Ad'))";
-    let comparatord = "(EXISTS (SELECT 1 FROM candidate_scores cs WHERE cs.candidate_id = candidates.id \
+    let compared = "(EXISTS (SELECT 1 FROM candidate_scores cs WHERE cs.candidate_id = candidates.id \
                    AND cs.kind = 'AdComparator'))";
     let order = match sort {
         // Space tier first, then total. A better space always leads, because its
@@ -105,7 +105,7 @@ fn browser_clause(like: &Option<String>, sort: &SortCol, asc: bool) -> (String, 
         SortCol::Name => format!("file_name {dir}"),
         SortCol::Rank => format!("rank {dir} NULLS LAST, points DESC, file_name"),
         SortCol::AdSourceT => format!(
-            "{comparatord} {dir}, {in_heavy} {dir}, \
+            "{compared} {dir}, {in_heavy} {dir}, \
              (EXISTS (SELECT 1 FROM candidate_scores cs WHERE cs.candidate_id = candidates.id \
               AND cs.kind = 'Quick')) {dir}, \
              points DESC NULLS LAST, file_name"
@@ -450,7 +450,7 @@ pub fn insert_comparison(
     let (x, y) = if a <= b { (a, b) } else { (b, a) };
     let r = if a <= b { result } else { -result };
     conn.execute(
-        "INSERT OR REPLACE INTO comparisons (cv_a_id, cv_b_id, job_ad_version, model_bundle_version, result, comparatord_at)
+        "INSERT OR REPLACE INTO comparisons (cv_a_id, cv_b_id, job_ad_version, model_bundle_version, result, compared_at)
          VALUES (?1, ?2, ?3, ?4, ?5, strftime('%s','now'))",
         rusqlite::params![x, y, job_version, bundle_version, r],
     )
@@ -458,7 +458,7 @@ pub fn insert_comparison(
     Ok(())
 }
 
-pub fn already_comparatord(
+pub fn already_compared(
     conn: &Connection,
     a: &str,
     b: &str,
@@ -621,8 +621,8 @@ mod extra_cv_tests {
         conn.execute("INSERT INTO jobs (id, title, triqui_size) VALUES ('j1','Job',1)", []).unwrap();
         // need candidate rows? comparisons FK? no FK. insert
         insert_comparison(&conn, "b", "a", 1, 1, 0.7).unwrap();
-        assert!(already_comparatord(&conn, "a", "b", 1, 1).unwrap());
-        assert!(already_comparatord(&conn, "b", "a", 1, 1).unwrap());
+        assert!(already_compared(&conn, "a", "b", 1, 1).unwrap());
+        assert!(already_compared(&conn, "b", "a", 1, 1).unwrap());
         // one row
         let count: i64 = conn.query_row("SELECT COUNT(*) FROM comparisons", [], |r| r.get(0)).unwrap();
         assert_eq!(count, 1);

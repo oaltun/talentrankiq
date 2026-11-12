@@ -212,9 +212,9 @@ pub fn apply_feedback_blocking(
     }
     let report = crate::rescore::rescore(rt, job_id)?;
     log::info!(
-        "feedback: job {job_id} rescored ({} candidates, {} comparatord) across {} space(s)",
+        "feedback: job {job_id} rescored ({} candidates, {} compared) across {} space(s)",
         report.scored,
-        report.comparatord,
+        report.compared,
         spaces.len()
     );
     let conn = rt

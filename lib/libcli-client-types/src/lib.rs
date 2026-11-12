@@ -693,7 +693,7 @@ fn default_rank_state() -> RankState {
         wave: None,
         embedded_total: 0,
         embedded_done: 0,
-        comparatord: 0,
+        compared: 0,
         candidates: 0,
         converged: false,
         reason: None,
@@ -740,7 +740,7 @@ pub struct RankState {
     /// Candidates embedded with the current model so far.
     pub embedded_done: u32,
     /// Candidates in the comparator pool so far.
-    pub comparatord: u32,
+    pub compared: u32,
     /// Extracted candidates overall.
     pub candidates: u32,
     /// The last completed rank covers every candidate and inputs are clean.
@@ -758,7 +758,7 @@ pub struct RankProgress {
     pub wave: u32,
     pub embedded_done: u32,
     pub embedded_total: u32,
-    pub comparatord: u32,
+    pub compared: u32,
     pub candidates: u32,
     pub running: bool,
     /// Stable reason code while the run is alive but not making progress:
@@ -1008,7 +1008,7 @@ pub struct ComparisonCompletedEvent {
     pub job_ad_version: u32,
     pub model_bundle_version: u32,
     pub result: f64,
-    pub comparatord_at: i64,
+    pub compared_at: i64,
 }
 
 /// Payload for the `glicko-updated` event.

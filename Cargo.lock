@@ -1966,10 +1966,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "libcomparator"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "libcvevidence",
+ "libcvparser",
+ "libtokenizer",
+ "rayon",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror 2.0.21",
+ "zip 0.6.6",
+]
+
+[[package]]
 name = "libconfigreader"
 version = "0.1.0"
 dependencies = [
  "libmodelstorage",
+ "serde",
+]
+
+[[package]]
+name = "libcv-comparator-order"
+version = "0.1.0"
+dependencies = [
+ "libcomparator",
+ "libcv-core",
  "serde",
 ]
 
@@ -1993,15 +2019,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "libcv-comparator-order"
-version = "0.1.0"
-dependencies = [
- "libcv-core",
- "libcomparator",
- "serde",
-]
-
-[[package]]
 name = "libcv-match"
 version = "0.1.0"
 dependencies = [
@@ -2013,11 +2030,11 @@ name = "libcv-pipeline"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "libcomparator",
  "libcv-comparator-order",
  "libcv-match",
  "libcv-state",
  "libcvparser",
- "libcomparator",
  "libsyscap",
  "libtriqui-core",
  "log",
@@ -2037,8 +2054,8 @@ name = "libcv-state"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "libcv-core",
  "libcomparator",
+ "libcv-core",
  "libtriqui-client",
  "libtriqui-core",
  "rusqlite",
@@ -2083,23 +2100,6 @@ dependencies = [
  "log",
  "serde_json",
  "thiserror 2.0.21",
-]
-
-[[package]]
-name = "libcomparator"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "libcvevidence",
- "libcvparser",
- "libtokenizer",
- "rayon",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "tempfile",
- "thiserror 2.0.21",
- "zip 0.6.6",
 ]
 
 [[package]]
@@ -2277,12 +2277,12 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "env_logger",
+ "libcomparator",
  "libconfigreader",
  "libcv-core",
  "libcv-deep",
  "libcvparser",
  "libembedrank",
- "libcomparator",
  "libmodelcaller",
  "libmodelcallerclient",
  "libmodelstorage",
