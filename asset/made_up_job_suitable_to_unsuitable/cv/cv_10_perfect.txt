@@ -1,0 +1,87 @@
+Daniel Okafor
+Staff Frontend Engineer
+daniel.okafor@email.com | (555) 210-1010 | github.com/danielokafor
+
+PROFESSIONAL SUMMARY
+Staff frontend engineer with 11 years of experience building large-scale React and TypeScript
+applications, design systems, and frontend platforms. I specialize in Next.js, accessibility, and
+performance at scale, and I have led cross-team initiatives that improved quality for hundreds of
+engineers. I am a maintainer of open-source UI tooling and a frequent speaker on frontend
+architecture. I am looking for a senior individual contributor role with broad technical ownership
+and mentorship responsibility. I combine hands-on engineering with the ability to align multiple
+teams around shared standards and measurable outcomes.
+
+CORE COMPETENCIES
+React, TypeScript, JavaScript, Next.js (App Router, RSC, streaming), Jest, React Testing Library,
+Playwright, Storybook, GraphQL, Apollo Client, React Query, D3, Visx, Tailwind CSS, CSS Modules,
+design systems, accessibility (WCAG 2.1 AA, ARIA, screen readers, axe-core), Core Web Vitals,
+performance profiling, micro-frontends, CI/CD, technical leadership, mentoring, open source,
+architecture governance
+
+PROFESSIONAL EXPERIENCE
+Staff Frontend Engineer | Northstar Software | 2021 - Present
+- Set frontend technical direction for a suite of five products used by 1.2 million monthly users.
+- Architected a multi-app Next.js 14 App Router platform with shared design system, auth, and observability.
+- Built an accessibility program achieving WCAG 2.1 AA across all customer surfaces, with automated axe-core gates and manual audits.
+- Led performance work reducing median LCP from 3.4s to 1.4s and INP by 55% across the product suite.
+- Designed a testing strategy spanning Jest, React Testing Library, and Playwright, with contract tests against GraphQL APIs.
+- Owned design system governance: 120+ components, versioning, codemods, and adoption metrics.
+- Mentored 10+ engineers, including four promoted to senior, and ran the frontend architecture review board.
+- Partnered with security and platform teams on SOC 2 evidence for frontend build and release pipelines.
+- Introduced bundle budgets and performance regression gates in CI.
+- Authored RFCs for state management and data-fetching standards adopted across teams.
+- Built an internal frontend metrics dashboard tracking performance, errors, and adoption.
+- Led incident reviews for frontend outages and drove follow-up reliability work.
+- Coordinated quarterly frontend planning across product and platform teams.
+
+Senior Frontend Engineer | Northstar Software | 2018 - 2021
+- Led migration from a legacy monolith to a React and TypeScript micro-frontend architecture.
+- Built data visualization tooling with D3 and Visx for analytics dashboards.
+- Reduced runtime errors by 60% through typed API contracts and error boundaries.
+- Established the first shared component library and onboarding guide.
+- Introduced contract testing between frontend and backend teams.
+- Improved accessibility of complex data grids and filters.
+- Mentored mid-level engineers on React patterns and debugging.
+
+Frontend Engineer | Bright Harbor | 2014 - 2018
+- Built marketing sites and customer dashboards in React and Backbone.
+- Introduced the team's first component library and Jest test suite.
+- Improved accessibility of customer account pages.
+- Worked with designers to establish responsive breakpoints and UI guidelines.
+- Supported production releases and on-call rotations for customer-facing apps.
+- Integrated analytics and error tracking into client applications.
+
+Junior Web Developer | Bright Harbor | 2013 - 2014
+- Built static pages and email templates.
+- Fixed browser compatibility issues and optimized images.
+- Learned version control and code review practices.
+- Assisted with client content updates and deployments.
+
+EDUCATION
+B.S. Computer Science | Summit University | 2013
+Relevant coursework: Web Development, Human-Computer Interaction, Software Engineering, Databases,
+Computer Graphics.
+
+CERTIFICATIONS
+IAAP Web Accessibility Specialist (WAS) (2021)
+AWS Certified Developer - Associate (2020)
+
+SKILLS
+React, TypeScript, JavaScript, Next.js (App Router, RSC, streaming), Jest, React Testing Library,
+Playwright, Storybook, GraphQL, Apollo Client, React Query, D3, Visx, Tailwind CSS, CSS Modules,
+design systems, accessibility (WCAG 2.1 AA, ARIA, screen readers, axe-core), Core Web Vitals,
+performance profiling, micro-frontends, CI/CD, technical leadership, mentoring, Chrome DevTools
+
+OPEN SOURCE
+- Maintainer of a 4k-star accessible React component library.
+- Author of an ESLint plugin for React hooks best practices.
+- Contributor to testing and accessibility tooling used by several frontend teams.
+- Speaker at ReactConf and several frontend meetups on design systems and accessibility.
+
+PROJECTS
+- Multi-app Next.js reference architecture with shared design system.
+- Performance budget tooling for CI pipelines.
+- Accessibility audit checklist and training materials.
+
+INTERESTS
+Open-source stewardship, mentoring, and community tech education.

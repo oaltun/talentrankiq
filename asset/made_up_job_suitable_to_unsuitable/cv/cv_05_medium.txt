@@ -1,0 +1,75 @@
+Elena Petrova
+Frontend Developer
+elena.petrova@email.com | (555) 205-5566 | github.com/elenapetrova
+
+PROFESSIONAL SUMMARY
+Frontend developer with 4 years of experience building customer-facing web applications in React and
+TypeScript. Comfortable owning features end to end, from design review through deployment. Strong
+CSS and component skills, with growing experience in testing and accessibility. Looking to deepen
+my expertise in Next.js, design systems, and performance optimization. I enjoy working closely with
+designers and product managers, writing clear documentation, and improving the quality of shared code.
+
+CORE COMPETENCIES
+React, TypeScript, JavaScript, HTML, CSS, Sass, Tailwind CSS, React Query, Jest, React Testing
+Library, Git, Figma, REST APIs, responsive design, accessibility basics, form validation, component
+design, cross-browser debugging, code review
+
+PROFESSIONAL EXPERIENCE
+Frontend Developer | CloudDesk | 2022 - Present
+- Built and maintained customer-facing features in a React and TypeScript application used by 20k users.
+- Developed reusable components and form validation patterns adopted across three teams.
+- Integrated REST APIs and managed server state with React Query, including caching and refetching.
+- Wrote unit and integration tests with Jest and React Testing Library, raising coverage from 45% to 72%.
+- Improved accessibility of key flows, including keyboard navigation, focus management, and ARIA labels.
+- Collaborated with designers in Figma to implement responsive layouts and design tokens.
+- Reduced initial bundle size by 15% by lazy-loading non-critical routes.
+- Participated in on-call triage for frontend incidents and postmortems.
+- Mentored one intern on React fundamentals and testing practices.
+- Built a reusable data table with sorting, filtering, and pagination.
+- Documented component APIs and usage examples in Storybook.
+- Partnered with product to scope and estimate frontend work.
+- Improved form error messaging and inline validation.
+- Wrote end-to-end smoke tests for signup and checkout flows.
+
+Junior Frontend Developer | CloudDesk | 2021 - 2022
+- Implemented UI fixes and small features in an existing React codebase.
+- Built responsive email templates and marketing landing pages.
+- Participated in code reviews and learned testing conventions.
+- Created Storybook stories for common components.
+- Fixed accessibility issues reported in quarterly audits.
+- Supported the release process by running smoke tests.
+- Updated legacy styles to use the shared spacing scale.
+
+Web Developer Apprentice | Bright Harbor Agency | 2020 - 2021
+- Built marketing pages from Figma designs using HTML and CSS.
+- Assisted with CMS content entry and image optimization.
+- Learned Git workflows and code review basics.
+- Fixed responsive issues on client sites.
+
+EDUCATION
+B.S. Computer Science | State Polytechnic | 2021
+Relevant coursework: Web Application Development, Databases, Software Testing, Algorithms,
+Human-Computer Interaction.
+
+CERTIFICATIONS
+JavaScript Algorithms and Data Structures (freeCodeCamp, 2021)
+Responsive Web Design (freeCodeCamp, 2020)
+
+PROFESSIONAL DEVELOPMENT
+- Completed a course on TypeScript advanced types (2024).
+- Attended a workshop on web accessibility (2023).
+- Presented an internal talk on React Query caching (2024).
+
+SKILLS
+React, TypeScript, JavaScript, HTML, CSS, Sass, Tailwind CSS, React Query, Jest, React Testing
+Library, Git, GitHub, Figma, REST APIs, Storybook, responsive design, accessibility basics, Vite,
+Chrome DevTools
+
+PROJECTS
+- Expense tracker built with React and TypeScript.
+- Component library starter with Storybook and TypeScript.
+- Accessible modal dialog implementation with focus trapping.
+- Dashboard prototype using React Query and a public API.
+
+INTERESTS
+Design systems, accessibility advocacy, and hiking.

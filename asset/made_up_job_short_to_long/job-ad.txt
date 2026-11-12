@@ -1,0 +1,36 @@
+Senior Software Engineer (Backend & Platform)
+Northwind Cloud, Inc. | Remote (US/Canada) | Full-time
+
+About the role
+Northwind Cloud is hiring a Senior Software Engineer to help design, build, and operate the
+distributed systems that power our billing and identity platform. You will join a team of twelve
+engineers who own services end to end, from architecture and implementation through deployment,
+observability, and on-call. This is a hands-on individual contributor role with significant
+technical leadership and mentorship expectations.
+
+What you will do
+- Design and implement backend services in Go or Rust that handle high-throughput, low-latency traffic.
+- Build and operate event-driven pipelines using Apache Kafka, including exactly-once processing and replay tooling.
+- Own services deployed on Kubernetes, including Helm charts, rolling deployments, and autoscaling.
+- Model and optimize relational data in PostgreSQL; write migrations and tune slow queries.
+- Define and maintain gRPC and REST APIs using Protobuf and OpenAPI.
+- Instrument services with OpenTelemetry, Prometheus, and Grafana; participate in a humane on-call rotation.
+- Write unit, integration, and contract tests; drive test coverage and reliability improvements.
+- Review code, mentor mid-level engineers, and contribute to architecture decision records.
+- Collaborate with product managers and designers to scope and deliver customer-facing capabilities.
+
+Required qualifications
+- 5+ years of professional backend engineering experience.
+- Strong proficiency in at least one of Go, Rust, or Java, with production experience.
+- Deep knowledge of distributed systems fundamentals: consensus, retries, idempotency, caching, and backpressure.
+- Hands-on experience with PostgreSQL or a comparable relational database at scale.
+- Experience deploying and operating services on Kubernetes in production.
+- Solid understanding of observability, incident response, and root-cause analysis.
+- Excellent written communication and a track record of mentoring other engineers.
+
+Nice to have
+- Apache Kafka or comparable streaming infrastructure in production.
+- gRPC and Protobuf API design.
+- Terraform or other infrastructure-as-code tooling.
+- Experience in a regulated industry such as fintech or healthcare.
+- Contributions to open-source projects.

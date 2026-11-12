@@ -1,0 +1,72 @@
+Marcus Lee
+Junior Frontend Developer
+marcus.lee@email.com | (555) 204-4455 | github.com/marcuslee-dev
+
+PROFESSIONAL SUMMARY
+Junior frontend developer with 2 years of experience building React components and responsive web
+interfaces. Comfortable with JavaScript, TypeScript basics, and modern CSS. Have shipped several
+internal tools and marketing pages in a small product team. Learning Next.js and testing practices
+and looking for a role where I can grow into a senior frontend engineer. I am detail-oriented with
+layouts, curious about accessibility, and comfortable asking questions and iterating on feedback.
+
+CORE COMPETENCIES
+JavaScript, TypeScript, React, HTML, CSS, Tailwind CSS, CSS Modules, Git, Jest, React Testing
+Library, Figma, REST API integration, responsive design, cross-browser debugging, component design,
+debugging, Agile teamwork
+
+PROFESSIONAL EXPERIENCE
+Junior Frontend Developer | Brightline Software | 2023 - Present
+- Built reusable React components with TypeScript for an internal admin dashboard used by 300 staff.
+- Implemented responsive layouts with CSS Modules and Tailwind CSS.
+- Converted Figma designs into pixel-accurate interfaces and documented component usage.
+- Wrote basic unit tests with Jest and React Testing Library for forms and tables.
+- Fixed cross-browser layout issues in Chrome, Safari, and Firefox.
+- Participated in daily standups, sprint planning, and code reviews.
+- Reduced duplicated styles by extracting a shared set of form and button components.
+- Worked with a designer to improve empty states and loading placeholders.
+- Debugged state and rendering issues in complex filter and search views.
+- Added keyboard focus styles and labels to forms flagged in an accessibility review.
+- Supported release testing and verified fixes in staging environments.
+- Built a small component playground to preview states and props.
+- Updated documentation screenshots and setup notes.
+
+Frontend Intern | Brightline Software | 2022 - 2023
+- Built static pages and reusable UI elements using React and CSS.
+- Assisted with accessibility fixes such as labels, focus styles, and heading structure.
+- Maintained the internal component documentation site.
+- Ran a weekly browser-compatibility checklist before releases.
+- Paired with senior developers on bug fixes and learned debugging workflows.
+- Created simple charts for an internal reporting page.
+
+IT Help Desk Assistant | Metro State University | 2021 - 2022
+- Resolved student and staff software and account issues.
+- Documented common fixes in a knowledge base.
+- Set up laptops and classroom equipment.
+- Supported password resets and account provisioning.
+
+EDUCATION
+B.S. Computer Science | Metro State University | 2023
+Relevant coursework: Web Development, Data Structures, Human-Computer Interaction, Databases,
+Software Engineering.
+
+CERTIFICATIONS
+Meta Front-End Developer Professional Certificate (2023)
+JavaScript Algorithms and Data Structures (freeCodeCamp, 2022)
+
+PROFESSIONAL DEVELOPMENT
+- Completed a course on React performance patterns (2024).
+- Attended a local frontend meetup on accessibility basics (2023).
+- Completed Git branching and code review training at work (2023).
+
+SKILLS
+JavaScript, TypeScript (basic), React, HTML, CSS, Tailwind CSS, CSS Modules, Git, GitHub, Jest (basic),
+React Testing Library (basic), Figma, REST APIs (basic), Chrome DevTools, responsive design, Vite
+
+PROJECTS
+- Weather dashboard using React and a public REST API.
+- Personal blog built with React Router and Markdown.
+- Task tracker with local storage and TypeScript types.
+- Rebuilt a university club site with React and responsive CSS.
+
+INTERESTS
+Open-source contributions, running, and community college tutoring.

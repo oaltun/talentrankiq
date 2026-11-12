@@ -1,0 +1,77 @@
+Noah Williams
+Senior Frontend Engineer
+noah.williams@email.com | (555) 208-8899 | github.com/noahwilliams
+
+PROFESSIONAL SUMMARY
+Senior frontend engineer with 8 years of experience building data-rich React applications and
+design systems. I have owned frontend architecture for products used by hundreds of thousands of
+people and led initiatives in accessibility, performance, and testing. Strong in React, TypeScript,
+and CSS architecture, with practical experience in component libraries and cross-team design system
+adoption. I mentor engineers and enjoy improving developer experience. I am looking for a role with
+broad frontend ownership, where I can continue to raise quality and help teams ship with confidence.
+
+CORE COMPETENCIES
+React, TypeScript, JavaScript, Next.js, Jest, React Testing Library, Playwright, Storybook, D3, CSS
+architecture, design systems, accessibility (WCAG 2.1 AA), Core Web Vitals, performance profiling,
+GraphQL, Git, mentoring, frontend architecture, technical leadership, code review
+
+PROFESSIONAL EXPERIENCE
+Senior Frontend Engineer | Insight Metrics | 2021 - Present
+- Led frontend architecture for an analytics platform with 200k monthly users.
+- Built and maintained a 60-component design system in TypeScript with Storybook and visual regression tests.
+- Drove accessibility improvements to reach WCAG 2.1 AA across core dashboards, including keyboard navigation and screen-reader testing.
+- Reduced dashboard bundle size by 28% through code splitting, dependency cleanup, and route-level lazy loading.
+- Introduced Playwright end-to-end tests for critical user journeys, cutting release regressions by half.
+- Mentored four engineers and led frontend guild sessions on React patterns and performance.
+- Partnered with design to establish tokens, spacing, and typography standards.
+- Improved table rendering for 10k-row datasets using virtualization.
+- Collaborated with backend teams on GraphQL schema design and query performance.
+- Established frontend error monitoring and alerting with Sentry.
+- Ran accessibility audits before major releases and tracked remediation.
+- Documented architecture decisions and onboarding guides for new team members.
+- Introduced a shared lint and formatting configuration.
+- Ran performance reviews for dashboards and tracked improvements.
+
+Frontend Engineer | Insight Metrics | 2018 - 2021
+- Built charting and reporting interfaces with React and D3.
+- Migrated legacy AngularJS pages to React incrementally.
+- Improved rendering performance for large tables and reduced jank during filtering.
+- Introduced unit testing for complex calculation utilities.
+- Supported customers during quarterly release windows.
+- Built reusable filter and date-range components used across dashboards.
+- Improved form accessibility and error handling for report builders.
+- Worked with data engineers to understand query shapes and latency.
+
+Web Developer | Clearwater Labs | 2017 - 2018
+- Built responsive marketing pages and internal tools.
+- Fixed cross-browser bugs and improved page load times.
+- Collaborated with designers on reusable UI patterns.
+- Integrated CMS content into custom templates.
+
+EDUCATION
+B.S. Computer Science | Riverbend University | 2017
+Relevant coursework: Web Development, Algorithms, Databases, Human-Computer Interaction,
+Software Engineering.
+
+CERTIFICATIONS
+IAAP Web Accessibility Specialist (WAS) (2021)
+Advanced CSS and Sass (2020)
+
+PROFESSIONAL DEVELOPMENT
+- Completed a course on React Server Components (2024).
+- Attended a frontend performance summit (2023).
+- Mentored at a local code bootcamp (2022 - Present).
+
+SKILLS
+React, TypeScript, JavaScript, Next.js, Jest, React Testing Library, Playwright, Storybook, D3,
+GraphQL, CSS architecture, CSS Modules, design systems, accessibility (WCAG 2.1 AA, ARIA), Core Web
+Vitals, performance profiling, virtualization, Git, mentoring, Chrome DevTools
+
+PROJECTS
+- Accessible data table component library.
+- Open-source charting primitives built on SVG.
+- Conference talk on maintaining design systems across teams.
+- Interactive dashboard example using React, D3, and GraphQL.
+
+INTERESTS
+Data visualization, trail running, and mentoring at a local code bootcamp.

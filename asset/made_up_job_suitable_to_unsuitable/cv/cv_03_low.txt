@@ -1,0 +1,69 @@
+Priya Nair
+Junior Web Designer
+priya.nair@email.com | (555) 203-3344 | behance.net/priyanair
+
+PROFESSIONAL SUMMARY
+Creative web designer with 1.5 years of experience building marketing websites for small businesses.
+Strong visual design skills with a solid grasp of HTML, CSS, and responsive layouts. Comfortable
+working in WordPress and customizing themes with a little jQuery. Familiar with Figma and eager to
+grow into front-end development with React and TypeScript. I enjoy translating client needs into
+clean, usable interfaces and learning new tools quickly. I pay close attention to typography, spacing,
+and consistency across breakpoints.
+
+CORE COMPETENCIES
+HTML, CSS, responsive design, UI design, wireframing, WordPress, Figma, Adobe Photoshop,
+Adobe Illustrator, basic JavaScript and jQuery, typography, color theory, client communication,
+image optimization, basic SEO, design systems basics
+
+PROFESSIONAL EXPERIENCE
+Junior Web Designer | Bright Pixel Studio | 2023 - Present
+- Designed and built 14 small-business websites using WordPress, HTML, and CSS.
+- Created responsive layouts and verified appearance across mobile, tablet, and desktop browsers.
+- Customized themes with child themes and small jQuery scripts for sliders and menus.
+- Prepared visual mockups in Figma and coordinated revisions with clients and account managers.
+- Improved page load times by compressing images and removing unused plugins.
+- Maintained a component snippet library for buttons, cards, and form styles.
+- Assisted with basic SEO setup including meta descriptions and image alt text.
+- Tested forms and contact pages across browsers and email clients.
+- Documented page templates so clients could make simple content updates themselves.
+- Supported senior designers with asset exports and design file cleanup.
+
+Design Intern | Bright Pixel Studio | 2023
+- Produced social media graphics, email templates, and simple animations.
+- Assisted senior designers with asset preparation, file organization, and export specs.
+- Participated in weekly design critiques and presented two self-directed concepts.
+- Recreated existing client pages in Figma to practice layout and spacing.
+- Helped audit a client site for broken links and missing alt text.
+
+Freelance Designer | Self-employed | 2022 - 2023
+- Built a five-page site for a local bakery using WordPress and custom CSS.
+- Created a logo and brand palette for a neighborhood yoga studio.
+- Designed social media templates and a simple email newsletter layout.
+- Set up basic contact forms and analytics for small-business clients.
+
+Web Design Assistant | Riverside Creative Co-op | 2022
+- Helped update client sites and replace outdated content.
+- Cropped and optimized images for faster loading.
+- Organized shared design files and naming conventions.
+- Assisted with print-to-web asset conversions.
+
+EDUCATION
+B.A. Visual Communication | Riverside College | 2022
+Relevant coursework: Typography, Color Theory, User Interface Design, Web Design Fundamentals,
+Digital Imaging, Portfolio Development, Advertising Design.
+
+CERTIFICATIONS
+Google UX Design Certificate (2023)
+
+SKILLS
+HTML, CSS, JavaScript (basic), jQuery (basic), WordPress, Elementor, Figma, Photoshop, Illustrator,
+responsive design, UI design, wireframing, basic SEO, Git (basic), image optimization
+
+PROJECTS
+- Portfolio site for a local bakery (HTML, CSS, WordPress).
+- Redesign concept for a nonprofit donation page (Figma).
+- Personal portfolio with case studies of three student projects.
+- Mobile-first landing page concept for a fitness studio.
+
+INTERESTS
+Design systems, photography, and volunteering for a neighborhood arts nonprofit.

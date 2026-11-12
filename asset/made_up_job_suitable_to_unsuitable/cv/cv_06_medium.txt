@@ -1,0 +1,74 @@
+Jamal Carter
+Full Stack Developer
+jamal.carter@email.com | (555) 206-6677 | github.com/jamalcarter
+
+PROFESSIONAL SUMMARY
+Full stack developer with 5 years of experience building web applications. My strongest work is on
+the backend with Node.js, PostgreSQL, and Docker, but I am also productive in React and TypeScript
+on the frontend. I enjoy owning features across the stack and have led several small teams. I am
+now looking for a frontend-focused role where I can build deeper expertise in Next.js, design
+systems, and performance. I communicate clearly with non-technical partners and care about shipping
+reliable, maintainable software.
+
+CORE COMPETENCIES
+React, TypeScript, JavaScript, Node.js, Express, PostgreSQL, REST APIs, Docker, AWS, Git, Jest,
+HTML, CSS, authentication, database design, CI/CD basics, sprint leadership, API design,
+troubleshooting, documentation
+
+PROFESSIONAL EXPERIENCE
+Full Stack Developer | ShipFast Logistics | 2021 - Present
+- Built and maintained a React and TypeScript customer portal with a Node.js and PostgreSQL backend.
+- Designed REST APIs and database schemas for shipment tracking and notifications.
+- Implemented role-based authentication and authorization across the application.
+- Containerized services with Docker and deployed them to AWS ECS.
+- Wrote integration tests for API endpoints and component tests for key UI flows.
+- Mentored two junior developers and led sprint planning for a team of five.
+- Improved portal page load by adding pagination and reducing payload sizes.
+- Collaborated with operations teams to turn manual processes into self-service features.
+- Set up basic CI checks for linting and unit tests.
+- Added structured logging and error monitoring for backend services.
+- Built an admin console for support staff to investigate shipments.
+- Documented API endpoints and onboarding steps for new developers.
+- Improved database indexes for shipment lookup queries.
+- Added request validation and error handling middleware.
+
+Software Developer | ShipFast Logistics | 2020 - 2021
+- Built internal tools for warehouse staff using React and Express.
+- Automated reporting jobs and reduced manual data entry by 30%.
+- Collaborated with operations teams to gather requirements.
+- Maintained legacy Perl scripts and migrated them to Node.js services.
+- Improved dashboard load times by adding pagination and caching.
+- Wrote documentation for internal APIs and setup steps.
+- Fixed data sync issues between warehouse scanners and the database.
+
+Junior Developer | Lakeside Digital | 2019 - 2020
+- Built simple CRUD features in a React and PHP codebase.
+- Fixed bugs and wrote basic unit tests.
+- Supported deployments and monitored error logs.
+- Created responsive layouts for client marketing pages.
+
+EDUCATION
+B.S. Information Systems | Lakeside University | 2020
+Relevant coursework: Web Development, Database Design, Cloud Computing, Systems Analysis,
+Networking Fundamentals.
+
+CERTIFICATIONS
+AWS Certified Cloud Practitioner (2022)
+
+PROFESSIONAL DEVELOPMENT
+- Completed a course on React and TypeScript patterns (2024).
+- Attended a workshop on PostgreSQL query optimization (2023).
+- Presented an internal demo of the admin console (2023).
+
+SKILLS
+React, TypeScript, JavaScript, Node.js, Express, PostgreSQL, REST APIs, Docker, AWS (ECS, S3), Git,
+Jest, HTML, CSS, authentication, database design, basic CI/CD, Agile, technical documentation
+
+PROJECTS
+- Delivery tracking dashboard with live map updates.
+- Inventory management API with role-based access.
+- Open-source Node.js utility for CSV report generation.
+- Warehouse scanner integration prototype using Node.js and SQLite.
+
+INTERESTS
+Open-source tooling, basketball, and mentoring through a local coding club.

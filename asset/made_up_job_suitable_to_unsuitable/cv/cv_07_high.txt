@@ -1,0 +1,70 @@
+Aisha Rahman
+Frontend Engineer
+aisha.rahman@email.com | (555) 207-7788 | github.com/aisharahman
+
+PROFESSIONAL SUMMARY
+Frontend engineer with 6 years of experience building React and TypeScript applications, including
+customer-facing dashboards and e-commerce experiences. Comfortable with Next.js, GraphQL, and
+performance tuning. I care about accessibility and testing, and I have led small frontend efforts
+from design through launch. Looking to grow into a senior role with more ownership of design systems
+and frontend architecture. I work well with designers, product managers, and backend engineers, and I
+enjoy turning ambiguous requirements into clear, shippable features.
+
+CORE COMPETENCIES
+React, TypeScript, JavaScript, Next.js (Pages Router), GraphQL, Apollo Client, Redux Toolkit, React
+Query, Jest, React Testing Library, HTML, CSS, Sass, performance profiling, accessibility (WCAG
+basics), A/B testing, Git, REST APIs, Figma, code review, incident response
+
+PROFESSIONAL EXPERIENCE
+Frontend Engineer | MarketLane | 2022 - Present
+- Built customer-facing shopping and account features in Next.js and TypeScript.
+- Consumed GraphQL APIs with Apollo Client, including caching and optimistic updates.
+- Improved Largest Contentful Paint on key pages from 3.6s to 2.1s through image optimization and code splitting.
+- Added accessibility improvements such as semantic landmarks, ARIA labels, keyboard support, and visible focus.
+- Wrote component and integration tests with Jest and React Testing Library, raising coverage to 80%.
+- Worked with designers to implement a responsive checkout flow used by 50k monthly shoppers.
+- Set up preview deployments and a lightweight visual regression check for critical pages.
+- Participated in frontend guild discussions on state management and data fetching.
+- Fixed production bugs and improved error reporting with Sentry.
+- Built a reusable search and filter system for product listings.
+- Partnered with backend engineers to improve API pagination and caching.
+- Reviewed code for teammates and documented shared component conventions.
+
+Frontend Engineer | MarketLane | 2020 - 2022
+- Built product listing and search UI in React with Redux Toolkit.
+- Implemented A/B tests for pricing and promotional banners with a 5% lift in conversion.
+- Fixed layout and cross-browser issues across the storefront.
+- Migrated legacy class components to function components with hooks.
+- Collaborated with the backend team on API contracts and caching headers.
+- Improved form validation and error messaging on account pages.
+- Documented component usage for the growing frontend team.
+- Supported seasonal promotions and high-traffic sale events.
+
+Web Developer | Bluebird Digital | 2019 - 2020
+- Built marketing sites and landing pages in React and JavaScript.
+- Integrated third-party analytics and tag management.
+- Supported clients with content updates and minor fixes.
+- Improved page speed scores on client sites.
+
+EDUCATION
+B.S. Computer Science | Northgate University | 2020
+Relevant coursework: Web Development, Human-Computer Interaction, Software Engineering, Databases,
+Computer Networks.
+
+CERTIFICATIONS
+Responsive Web Design (freeCodeCamp, 2020)
+JavaScript Algorithms and Data Structures (freeCodeCamp, 2019)
+
+SKILLS
+React, TypeScript, JavaScript, Next.js (Pages Router), GraphQL, Apollo Client, Redux Toolkit, React
+Query, Jest, React Testing Library, HTML, CSS, Sass, Git, GitHub, Sentry, A/B testing, performance
+profiling, accessibility (WCAG basics), Figma, REST APIs, Chrome DevTools
+
+PROJECTS
+- Recipe app with server-side rendering and GraphQL.
+- Open-source React hooks collection for form state.
+- Accessibility audit write-up for a local nonprofit website.
+- E-commerce product page performance case study.
+
+INTERESTS
+Accessibility advocacy, urban gardening, and community volunteering.

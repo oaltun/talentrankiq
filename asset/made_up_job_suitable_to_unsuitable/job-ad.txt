@@ -1,0 +1,36 @@
+Senior Frontend Engineer (React / TypeScript)
+Lumen Analytics | Remote-first (US) | Full-time
+
+About the role
+Lumen Analytics builds a customer analytics platform used by product teams to understand how their
+features are adopted. We are looking for a Senior Frontend Engineer to lead development of our web
+application, a data-dense React dashboard used daily by more than 40,000 analysts. You will work
+closely with design and product, own features from concept to production, and raise the bar for
+frontend quality across the team.
+
+What you will do
+- Build and maintain complex, accessible user interfaces with React and TypeScript.
+- Develop features in a Next.js application, including server components and data fetching.
+- Create and evolve our shared component library and design system.
+- Ensure WCAG 2.1 AA accessibility across all customer-facing flows.
+- Improve Core Web Vitals and runtime performance of data-heavy views.
+- Write unit, integration, and end-to-end tests with Jest, React Testing Library, and Playwright.
+- Consume GraphQL and REST APIs, including caching and optimistic updates.
+- Participate in code review, design reviews, and frontend architecture discussions.
+- Mentor other engineers and contribute to our frontend guild.
+
+Required qualifications
+- 5+ years of professional frontend engineering experience.
+- Expert-level React and TypeScript skills, including hooks, context, and performance patterns.
+- Production experience with Next.js (App Router preferred).
+- Experience building and maintaining a component library or design system.
+- Strong testing practice with Jest, React Testing Library, and Playwright.
+- Practical knowledge of web accessibility standards and assistive technology.
+- Experience optimizing Core Web Vitals and debugging rendering performance.
+- Experience consuming GraphQL and REST APIs in production applications.
+
+Nice to have
+- Data visualization libraries such as D3, Visx, or ECharts.
+- Experience with state machines or complex client-side state.
+- Contributions to open-source frontend projects.
+- Experience at a B2B SaaS company.

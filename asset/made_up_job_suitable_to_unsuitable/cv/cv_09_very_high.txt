@@ -1,0 +1,74 @@
+Sofia Martinez
+Senior Frontend Engineer
+sofia.martinez@email.com | (555) 209-9900 | github.com/sofiamartinez
+
+PROFESSIONAL SUMMARY
+Senior frontend engineer with 9 years of experience building production React and TypeScript
+applications, including complex B2B dashboards and customer portals. Deep expertise in Next.js App
+Router, design systems, accessibility, and web performance. I have led frontend platform work across
+multiple teams, established testing standards, and mentored engineers at several levels. I am looking
+for a senior role where I can continue to raise the bar for frontend quality. I am comfortable
+driving cross-team initiatives, writing RFCs, and balancing short-term delivery with long-term
+platform health.
+
+CORE COMPETENCIES
+React, TypeScript, JavaScript, Next.js (App Router, RSC), Jest, React Testing Library, Playwright,
+Storybook, GraphQL, Apollo Client, React Query, Tailwind CSS, CSS Modules, design systems,
+accessibility (WCAG 2.1 AA, ARIA, screen readers), Core Web Vitals, performance optimization, CI/CD,
+mentoring, frontend architecture, technical writing
+
+PROFESSIONAL EXPERIENCE
+Senior Frontend Engineer | Vantage Health | 2020 - Present
+- Led migration of a large customer portal to Next.js 14 App Router with React Server Components and TypeScript.
+- Designed and shipped a 90-component design system with tokens, Storybook docs, and automated accessibility checks.
+- Achieved WCAG 2.1 AA across patient-facing flows; ran manual screen-reader testing with NVDA and VoiceOver.
+- Built Playwright end-to-end suites for 25 critical journeys, integrated into CI with trace-based debugging.
+- Cut p75 interaction latency by 40% through bundle analysis, image optimization, and streaming.
+- Consumed GraphQL APIs with Apollo Client and React Query, including cache normalization and optimistic updates.
+- Mentored six engineers, ran frontend architecture reviews, and led the accessibility guild.
+- Partnered with product and design on roadmap planning and quarterly frontend OKRs.
+- Introduced visual regression testing and reduced UI defects reported by QA by 45%.
+- Standardized error handling and logging across the frontend.
+- Authored frontend RFCs for data fetching, state management, and testing standards.
+- Worked with security and platform teams on release and dependency policies.
+- Improved onboarding by writing setup guides and a component usage playbook.
+
+Frontend Engineer | Vantage Health | 2017 - 2020
+- Built scheduling and messaging features in React and TypeScript.
+- Introduced Jest and React Testing Library coverage from 20% to 78% on core modules.
+- Migrated legacy class components to hooks and reduced bugs in shared state.
+- Improved keyboard accessibility of complex form wizards.
+- Built shared chart and table components for clinical dashboards.
+- Worked with QA to triage and reproduce frontend defects.
+- Documented onboarding material for new frontend hires.
+- Supported HIPAA-related data handling requirements in the UI.
+
+Frontend Developer | Cedar Interactive | 2016 - 2017
+- Built responsive web pages for healthcare clients.
+- Implemented CMS integrations and form handling.
+- Fixed accessibility issues identified in client audits.
+- Collaborated with designers on responsive breakpoints.
+
+EDUCATION
+B.S. Software Engineering | Bay State University | 2016
+Relevant coursework: Web Development, Human-Computer Interaction, Software Testing, Distributed
+Systems, Database Design.
+
+CERTIFICATIONS
+IAAP Web Accessibility Specialist (WAS) (2022)
+Professional Scrum Master I (2021)
+
+SKILLS
+React, TypeScript, JavaScript, Next.js (App Router, RSC, streaming), Jest, React Testing Library,
+Playwright, Storybook, GraphQL, Apollo Client, React Query, Tailwind CSS, CSS Modules, design
+systems, accessibility (WCAG 2.1 AA, ARIA, screen readers), Core Web Vitals, performance
+optimization, CI/CD, mentoring, architecture reviews, technical writing
+
+PROJECTS
+- Open-source accessible combobox component with full keyboard and screen-reader support.
+- Next.js starter template with testing, linting, and CI preconfigured.
+- Blog series on migrating from Pages Router to App Router.
+- Accessibility checklist for design and engineering teams.
+
+INTERESTS
+Accessibility advocacy, mentoring, and long-distance cycling.
