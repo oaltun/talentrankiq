@@ -50,14 +50,14 @@ fn like_pattern(q: &str) -> String {
 /// Which column the browser is sorted by.
 enum SortCol {
     /// The grade space, then the total within it. **The default**, and the honest
-    /// order: a scout-space total and a heavy-space total are both complete and
+    /// order: a quick-space total and a deep-space total are both complete and
     /// comparable, but they are not equally *good*, so the better space leads and
     /// the total breaks the tie inside it.
     Space,
     Name,
     Rank,
-    /// The ad source, then the total: judge-backed rows lead, then the heavy
-    /// embedder's cosine, then the scout's.
+    /// The ad source, then the total: comparator-backed rows lead, then the deep
+    /// embedder's cosine, then the quick's.
     AdSourceT,
     Question(String),
 }
@@ -88,14 +88,14 @@ fn browser_clause(like: &Option<String>, sort: &SortCol, asc: bool) -> (String, 
     if has_like {
         where_sql.push_str(" AND lower(extracted_text) LIKE ? ESCAPE '\\'");
     }
-    // One EXISTS probe per quality axis. The heavy embedder's ad row exists
-    // exactly when the candidate has been embedded, and the judge row exactly when
+    // One EXISTS probe per quality axis. The deep embedder's ad row exists
+    // exactly when the candidate has been embedded, and the comparator row exactly when
     // it has been compared, so those two probes *are* the axes — no separate
     // bookkeeping column to fall out of sync with the scores.
     let in_heavy = "(EXISTS (SELECT 1 FROM candidate_scores cs WHERE cs.candidate_id = candidates.id \
                       AND cs.kind = 'Ad'))";
-    let judged = "(EXISTS (SELECT 1 FROM candidate_scores cs WHERE cs.candidate_id = candidates.id \
-                   AND cs.kind = 'AdJudge'))";
+    let comparatord = "(EXISTS (SELECT 1 FROM candidate_scores cs WHERE cs.candidate_id = candidates.id \
+                   AND cs.kind = 'AdComparator'))";
     let order = match sort {
         // Space tier first, then total. A better space always leads, because its
         // total is the better estimate — even when it is numerically lower.
@@ -105,9 +105,9 @@ fn browser_clause(like: &Option<String>, sort: &SortCol, asc: bool) -> (String, 
         SortCol::Name => format!("file_name {dir}"),
         SortCol::Rank => format!("rank {dir} NULLS LAST, points DESC, file_name"),
         SortCol::AdSourceT => format!(
-            "{judged} {dir}, {in_heavy} {dir}, \
+            "{comparatord} {dir}, {in_heavy} {dir}, \
              (EXISTS (SELECT 1 FROM candidate_scores cs WHERE cs.candidate_id = candidates.id \
-              AND cs.kind = 'Scout')) {dir}, \
+              AND cs.kind = 'Quick')) {dir}, \
              points DESC NULLS LAST, file_name"
         ),
         SortCol::Question(_) => format!(
@@ -163,7 +163,7 @@ pub fn get_candidate(
     // The original may have moved/been deleted since import.
     detail.original_available = Path::new(&detail.source_file_path).exists();
 
-    // Per-question rubric breakdown (ad → criteria → feedback → the judge
+    // Per-question rubric breakdown (ad → criteria → feedback → the comparator
     // stand-in for the ad → the cascade's stage grades, matching the results
     // table's column order).
     let mut sstmt = conn
@@ -172,7 +172,7 @@ pub fn get_candidate(
              FROM candidate_scores WHERE candidate_id = ?1
              ORDER BY CASE kind WHEN 'Ad' THEN 0 WHEN 'Criterion' THEN 1
                                  WHEN 'FeedbackJob' THEN 2 WHEN 'FeedbackProfile' THEN 3
-                                 WHEN 'AdJudge' THEN 4 WHEN 'Lexical' THEN 5 ELSE 6 END,
+                                 WHEN 'AdComparator' THEN 4 WHEN 'Lexical' THEN 5 ELSE 6 END,
                       question_id",
         )
         .map_err(db_err)?;
@@ -265,7 +265,7 @@ pub fn list_candidates(
 
     // Attach per-question scores (one RubricScore per rubric question) in a single
     // batch query so each row can render its own column in the spreadsheet.
-    // Ordered like the results table (ad → criteria → feedback → judge → the
+    // Ordered like the results table (ad → criteria → feedback → comparator → the
     // cascade's stage grades) so a page's rows are deterministic.
     if !items.is_empty() {
         let ids: Vec<String> = items.iter().map(|i| i.id.clone()).collect();
@@ -276,7 +276,7 @@ pub fn list_candidates(
              ORDER BY candidate_id,
                        CASE kind WHEN 'Ad' THEN 0 WHEN 'Criterion' THEN 1
                                  WHEN 'FeedbackJob' THEN 2 WHEN 'FeedbackProfile' THEN 3
-                                 WHEN 'AdJudge' THEN 4 ELSE 5 END,
+                                 WHEN 'AdComparator' THEN 4 ELSE 5 END,
                        question_id"
         );
         let mut score_stmt = conn.prepare(&sql).map_err(db_err)?;
@@ -309,7 +309,7 @@ pub fn list_candidates(
                 item.scores = scores.clone();
             }
             item.grade_space = Some(
-                GradeSpace::from_scores(&item.scores).unwrap_or(GradeSpace::Scout),
+                GradeSpace::from_scores(&item.scores).unwrap_or(GradeSpace::Quick),
             );
             item.ad_source = AdSource::from_scores(&item.scores);
         }
@@ -409,7 +409,7 @@ pub fn forget_cv(conn: &Connection, cv_id: &str) -> Result<(), String> {
     forget_candidate(conn, cv_id)
 }
 
-/// Retrieve a candidate's heavy vector regardless of deleted status.
+/// Retrieve a candidate's deep vector regardless of deleted status.
 pub fn get_heavy(conn: &Connection, cv_id: &str) -> Result<Option<Vec<f32>>, String> {
     let blob: Option<Vec<u8>> = conn
         .query_row(
@@ -450,7 +450,7 @@ pub fn insert_comparison(
     let (x, y) = if a <= b { (a, b) } else { (b, a) };
     let r = if a <= b { result } else { -result };
     conn.execute(
-        "INSERT OR REPLACE INTO comparisons (cv_a_id, cv_b_id, job_ad_version, model_bundle_version, result, judged_at)
+        "INSERT OR REPLACE INTO comparisons (cv_a_id, cv_b_id, job_ad_version, model_bundle_version, result, comparatord_at)
          VALUES (?1, ?2, ?3, ?4, ?5, strftime('%s','now'))",
         rusqlite::params![x, y, job_version, bundle_version, r],
     )
@@ -458,7 +458,7 @@ pub fn insert_comparison(
     Ok(())
 }
 
-pub fn already_judged(
+pub fn already_comparatord(
     conn: &Connection,
     a: &str,
     b: &str,
@@ -602,7 +602,7 @@ mod extra_cv_tests {
     fn migrate_legacy_pair_verdicts_to_comparisons() {
         let conn = test_conn();
         conn.execute(
-            "INSERT INTO judge_pair_verdicts (model, artifact_hash, ad_hash, doc_a, doc_b, prob) VALUES ('m','art','ad','b','a',0.7)",
+            "INSERT INTO comparator_pair_verdicts (model, artifact_hash, ad_hash, doc_a, doc_b, prob) VALUES ('m','art','ad','b','a',0.7)",
             [],
         )
         .unwrap();
@@ -621,8 +621,8 @@ mod extra_cv_tests {
         conn.execute("INSERT INTO jobs (id, title, triqui_size) VALUES ('j1','Job',1)", []).unwrap();
         // need candidate rows? comparisons FK? no FK. insert
         insert_comparison(&conn, "b", "a", 1, 1, 0.7).unwrap();
-        assert!(already_judged(&conn, "a", "b", 1, 1).unwrap());
-        assert!(already_judged(&conn, "b", "a", 1, 1).unwrap());
+        assert!(already_comparatord(&conn, "a", "b", 1, 1).unwrap());
+        assert!(already_comparatord(&conn, "b", "a", 1, 1).unwrap());
         // one row
         let count: i64 = conn.query_row("SELECT COUNT(*) FROM comparisons", [], |r| r.get(0)).unwrap();
         assert_eq!(count, 1);

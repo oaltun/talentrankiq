@@ -40,7 +40,7 @@ notify = "8"
 # (`~/Documents/jobs` on Linux/macOS, the Known Folder equivalent on Windows).
 dirs = "6"
 
-# Judge license commands (activate/deactivate/status/check-artifact) served
+# Comparator license commands (activate/deactivate/status/check-artifact) served
 # over the JSONL protocol for the thin GUI.
 libtriqui-license = { path = "../libtriqui-license" }
 

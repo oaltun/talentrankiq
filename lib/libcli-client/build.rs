@@ -168,8 +168,8 @@ fn main() {
         DownloadStatusParams,
         ModelVariantsParams,
         TryModelParams,
-        LoadJudgeArtifactParams,
-        RemoveJudgeArtifactParams,
+        LoadComparatorArtifactParams,
+        RemoveComparatorArtifactParams,
         SaveEmergencyDataParams,
         LoadEmergencyDataParams,
         LicenseActivateParams,
@@ -281,8 +281,8 @@ fn main() {
         .register::<DownloadStatusParams>()
         .register::<ModelVariantsParams>()
         .register::<TryModelParams>()
-        .register::<LoadJudgeArtifactParams>()
-        .register::<RemoveJudgeArtifactParams>()
+        .register::<LoadComparatorArtifactParams>()
+        .register::<RemoveComparatorArtifactParams>()
         .register::<SaveEmergencyDataParams>()
         .register::<LoadEmergencyDataParams>()
         .register::<LicenseActivateParams>()

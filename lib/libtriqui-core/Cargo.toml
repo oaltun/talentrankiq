@@ -40,9 +40,9 @@ libmodelcallerclient = { path = "../libmodelcallerclient" }
 libmodelstorage = { path = "../libmodelstorage" }
 libembedrank = { path = "../libembedrank" }
 libtokenizer = { path = "../libtokenizer" }
-# gui judge stage: hand-rolled pairwise-judge inference over stored vectors
+# gui comparator stage: hand-rolled pairwise-comparator inference over stored vectors
 # (production-safe: no burn, parity re-verified on artifact load)
-libjudge = { path = "../libjudge" }
+libcomparator = { path = "../libcomparator" }
 # In-process engine: the libmodelcaller JSONL loop runs inside the host process
 # (the gui ships no libmodelcaller binary), and the ORT wrapper runs in-process
 # too — on a dedicated thread, so the gui is a single binary with no spawned
@@ -52,7 +52,7 @@ libtriqui-license = { path = "../libtriqui-license" }
 
 # Strangler-fig split: re-exported from the cv-* crates
 libcv-core = { path = "../libcv-core" }
-libcv-heavy = { path = "../libcv-heavy" }
+libcv-deep = { path = "../libcv-deep" }
 
 [dev-dependencies]
 # RUST_LOG visibility for the in-process engine probe test

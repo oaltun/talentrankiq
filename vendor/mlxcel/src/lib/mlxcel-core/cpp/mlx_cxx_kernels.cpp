@@ -2547,7 +2547,7 @@ std::unique_ptr<MlxArray> run_fused_moe_two_kernel(
     // inputs (bitwise-determinism check) and computes the gather_qmm reference
     // (numeric-parity check) for every call, reporting any call whose fused
     // output is non-deterministic or deviates from the reference beyond
-    // MLXCEL_FUSED_MOE_PARITY_THRESHOLD (normalized RMS, default 0.05). Heavy:
+    // MLXCEL_FUSED_MOE_PARITY_THRESHOLD (normalized RMS, default 0.05). Deep:
     // adds two eager evals per MoE call; strictly a debugging aid for
     // corruption triage on real models, never enabled by default.
     static const int parity_check = [] {

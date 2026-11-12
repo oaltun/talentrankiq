@@ -15,8 +15,8 @@ Everything runs on-device (Tauri + Rust + React); no CV data leaves the machine.
 - Watch the CV directory for new files and re-rank incrementally — no re-embed
   of unchanged input.
 - Rank the whole corpus with a **progressive cascade**: a cheap multilingual
-  "scout" pass orders everyone, then an expensive on-device embedder (MLX in macOS)
-  and then an optional in-house developed model (Judge) refine the top of the sheet wave by wave.
+  "quick" pass orders everyone, then an expensive on-device embedder (MLX in macOS)
+  and then an optional in-house developed model (Comparator) refine the top of the sheet wave by wave.
 - Show per-candidate scores, rank, evidence and reasoning; export results to
   CSV; record candidate feedback ("like") that feeds back into scoring.
 
@@ -26,22 +26,22 @@ TalentRankIQ ranks candidates in two layers:
 
 1. **Embedder ranking** — always available. Fast on-device embedding + rubric cascade ranking. 
 
-The cascade guarantees convergence (a run ends when every candidate holds heavy-space chunks and every pool member holds a judge grade) and monotone improvement (a wave only ever replaces grades with better ones), so the top of the sheet stabilises early. 
+The cascade guarantees convergence (a run ends when every candidate holds deep-space chunks and every pool member holds a comparator grade) and monotone improvement (a wave only ever replaces grades with better ones), so the top of the sheet stabilises early. 
 
 System-capacity budgeting (`libsyscap`) scales wave size to the machine, and a `holding` reason code surfaces budget-limited rows instead of fake results.
 
-2. **Judge** — the pairwise in-house AI that resolves close candidates in the frozen top-P pool. Highly recommended!
+2. **Comparator** — the pairwise in-house AI that resolves close candidates in the frozen top-P pool. Highly recommended!
 
-The judge is a separately distributed **judge artifact** and is **licensed**: buy a judge license, place the signed key file in your user config dir, and the judge is enabled. 
+The comparator is a separately distributed **comparator artifact** and is **licensed**: buy a comparator license, place the signed key file in your user config dir, and the comparator is enabled. 
 
 Without a license the full app still works with embedder ranking.
 
-Judge artifacts are **not** part of this repository. Artifacts are purchased and delivered through [talentrankiq.com](https://talentrankiq.com).
+Comparator artifacts are **not** part of this repository. Artifacts are purchased and delivered through [talentrankiq.com](https://talentrankiq.com).
 
 > **Licensing note (Elastic License 2.0, ELv2).** This code is *source-available*,
 > not open source. You may use, copy, modify, and redistribute it, but you may
 > **not** (a) offer it to third parties as a hosted or managed service, or
-> (b) circumvent the license-key functionality that enables judge functionality
+> (b) circumvent the license-key functionality that enables comparator functionality
 > (see `lib/libtriqui-license`).
 
 ## Repository layout
@@ -51,12 +51,12 @@ Judge artifacts are **not** part of this repository. Artifacts are purchased and
   - `libtriqui-core` — domain: SQLite store, cascade ranking, CV import, scoring
   - `libtriqui-cli` — headless CLI (`triq`): serve loop over stdio JSONL, plus tools
   - `libtriqui-client` — gui↔engine wire contract (JSONL protocol, DTOs, client)
-  - `libtriqui-license` — judge entitlement (Ed25519-verified license files)
+  - `libtriqui-license` — comparator entitlement (Ed25519-verified license files)
   - `libmlxembed` / `libonnxwrapperrs` / `libtokenizer` — on-device inference
   - `libmodelcaller` / `libmodelcallerclient` / `libmodeldownloader` /
     `libmodelstorage` — model serving & management
   - `libcvparser` / `libcvevidence` — CV parsing and evidence extraction
-  - `libjudge` — judge artifact schema, feature assembly, judge verdicts
+  - `libcomparator` — comparator artifact schema, feature assembly, comparator verdicts
   - `libsyscap` — system-capacity budgeting for cascade waves
   - `libconfigreader` — config helper
 - `vendor/` — vendored libraries
@@ -78,5 +78,5 @@ cargo build --release
 ## License
 
 Licensed under the [Elastic License 2.0 (ELv2)](LICENSE). See the [license
-note above](#ranking-model) for the source-available restrictions. Judge
+note above](#ranking-model) for the source-available restrictions. Comparator
 artifacts are separate commercial products and not covered by this license.

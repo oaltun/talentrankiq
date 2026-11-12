@@ -1,4 +1,4 @@
-pub mod scout {
-    pub use libtriqui_core::scout::*;
+pub mod quick {
+    pub use libtriqui_core::quick::*;
 }
-pub use libtriqui_core::scout::*;
+pub use libtriqui_core::quick::*;

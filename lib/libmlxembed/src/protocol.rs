@@ -64,7 +64,7 @@ type Payload = serde_json::Map<String, Value>;
 
 /// Sessions the arm can hold. One model at a time is deliberate: MLX models
 /// are GPU-resident, and the cascade's own rule is that only one embedder is
-/// resident at a time (the scout unloads before the heavy model loads).
+/// resident at a time (the quick unloads before the deep model loads).
 pub struct SessionManager {
     sessions: std::collections::HashMap<u32, Loaded>,
     next_handle: u32,

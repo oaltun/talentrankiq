@@ -1,23 +1,23 @@
 //! Hand-rolled forward pass. This is the production inference path — burn
-//! never leaves `judgetrainer`. Weights are f32 (as exported); math runs in
+//! never leaves `comparatortrainer`. Weights are f32 (as exported); math runs in
 //! f64. Parity with burn is asserted by the artifact's fixture vectors
 //! (design 15.6).
 
-use crate::artifact::{JudgeArtifact, JudgeKind};
-use crate::{sigmoid, JudgeError};
+use crate::artifact::{ComparatorArtifact, ComparatorKind};
+use crate::{sigmoid, ComparatorError};
 use rayon::prelude::*;
 
-/// A loaded judge network: consecutive affine layers, ReLU between hidden
+/// A loaded comparator network: consecutive affine layers, ReLU between hidden
 /// layers. Output is interpreted by `kind` (softmax over 3 for pointwise,
 /// sigmoid over 1 logit for pairwise).
-pub struct JudgeModel {
+pub struct ComparatorModel {
     layers: Vec<(Vec<Vec<f64>>, Vec<f64>)>,
-    kind: JudgeKind,
+    kind: ComparatorKind,
     input_dim: usize,
 }
 
-impl JudgeModel {
-    pub fn from_artifact(artifact: &JudgeArtifact) -> Result<Self, JudgeError> {
+impl ComparatorModel {
+    pub fn from_artifact(artifact: &ComparatorArtifact) -> Result<Self, ComparatorError> {
         artifact.validate()?;
         let layers = artifact
             .layers
@@ -38,7 +38,7 @@ impl JudgeModel {
         })
     }
 
-    pub fn kind(&self) -> JudgeKind {
+    pub fn kind(&self) -> ComparatorKind {
         self.kind
     }
 
@@ -118,7 +118,7 @@ impl JudgeModel {
     /// of [`Self::pair_prob`], and the entry point the tournament uses
     /// (bench design 15.13). Bitwise identical to the scalar path.
     pub fn pair_probs_batch(&self, flat: &[f32], rows: usize) -> Vec<f64> {
-        debug_assert_eq!(self.kind, JudgeKind::Pairwise);
+        debug_assert_eq!(self.kind, ComparatorKind::Pairwise);
         self.logits_batch(flat, rows)
             .into_iter()
             .map(sigmoid)
@@ -129,8 +129,8 @@ impl JudgeModel {
     pub fn score_ref(&self, x: &[f32]) -> f64 {
         let h = self.logits_row(x);
         match self.kind {
-            JudgeKind::Pairwise => h[0],
-            JudgeKind::Pointwise => {
+            ComparatorKind::Pairwise => h[0],
+            ComparatorKind::Pointwise => {
                 // softmax over 3 classes, score = P(Good Fit) = class 2
                 let max = h.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
                 let exps: Vec<f64> = h.iter().map(|&v| (v - max).exp()).collect();
@@ -143,7 +143,7 @@ impl JudgeModel {
     /// Probability that cv1 beats cv2 for the given ad, from the comparison
     /// logit. Pointwise models don't produce pairwise probabilities.
     pub fn pair_prob(&self, x: Vec<f32>) -> f64 {
-        debug_assert_eq!(self.kind, JudgeKind::Pairwise);
+        debug_assert_eq!(self.kind, ComparatorKind::Pairwise);
         sigmoid(self.score(x))
     }
 }
@@ -158,17 +158,17 @@ mod tests {
         FeatureSpec::raw_pair("m", dim, crate::artifact::ChunkingMode::CtxSize, None, crate::artifact::Contextual::Off, TextPrep::Lowercase)
     }
 
-    fn artifact(kind: JudgeKind, layers: Vec<LayerWeights>, input_dim: usize) -> JudgeArtifact {
+    fn artifact(kind: ComparatorKind, layers: Vec<LayerWeights>, input_dim: usize) -> ComparatorArtifact {
         let mut spec = pair_spec(1);
         spec.input_dim = input_dim;
         spec.blocks = vec![crate::artifact::Block { name: "x".into(), start: 0, len: input_dim }];
         let architecture = match (kind, layers.len()) {
-            (JudgeKind::Pairwise, 1) => Architecture::Linear,
-            (JudgeKind::Pairwise, 2) => Architecture::Mlp1,
-            (JudgeKind::Pairwise, _) => Architecture::Mlp2,
-            (JudgeKind::Pointwise, _) => Architecture::PointwiseLinear3,
+            (ComparatorKind::Pairwise, 1) => Architecture::Linear,
+            (ComparatorKind::Pairwise, 2) => Architecture::Mlp1,
+            (ComparatorKind::Pairwise, _) => Architecture::Mlp2,
+            (ComparatorKind::Pointwise, _) => Architecture::PointwiseLinear3,
         };
-        JudgeArtifact {
+        ComparatorArtifact {
             spec_version: crate::artifact::SPEC_VERSION,
             kind,
             architecture,
@@ -209,8 +209,8 @@ mod tests {
     fn linear_logit_hand_computed() {
         // score = 1*x0 + (-2)*x1 + 0.5
         let layers = vec![LayerWeights { w: vec![vec![1.0, -2.0]], b: vec![0.5] }];
-        let a = artifact(JudgeKind::Pairwise, layers, 2);
-        let m = JudgeModel::from_artifact(&a).unwrap();
+        let a = artifact(ComparatorKind::Pairwise, layers, 2);
+        let m = ComparatorModel::from_artifact(&a).unwrap();
         let score = m.score_ref(&[2.0, 3.0]);
         assert!((score - (2.0 - 6.0 + 0.5)).abs() < 1e-9);
         let p = m.pair_prob(vec![2.0, 3.0]);
@@ -222,8 +222,8 @@ mod tests {
         // h = relu(x . w1 + b1); out = h . w2 + b2
         let l1 = LayerWeights { w: vec![vec![1.0, -1.0], vec![1.0, 1.0]], b: vec![0.0, 0.0] }; // 2->2
         let l2 = LayerWeights { w: vec![vec![2.0, 3.0]], b: vec![-1.0] }; // 2->1
-        let a = artifact(JudgeKind::Pairwise, vec![l1, l2], 2);
-        let m = JudgeModel::from_artifact(&a).unwrap();
+        let a = artifact(ComparatorKind::Pairwise, vec![l1, l2], 2);
+        let m = ComparatorModel::from_artifact(&a).unwrap();
         // x = [1, 2]: h = [max(0, 1-2), max(0, 1+2)] = [0, 3]; out = 0*2 + 3*3 - 1 = 8
         assert!((m.score_ref(&[1.0, 2.0]) - 8.0).abs() < 1e-9);
         // x = [3, 1]: h = [2, 4]; out = 4 + 12 - 1 = 15
@@ -237,8 +237,8 @@ mod tests {
             w: vec![vec![0.0, 0.0], vec![0.0, 0.0], vec![1.0, 1.0]],
             b: vec![0.0, 0.0, 2.0],
         }];
-        let a = artifact(JudgeKind::Pointwise, layers, 2);
-        let m = JudgeModel::from_artifact(&a).unwrap();
+        let a = artifact(ComparatorKind::Pointwise, layers, 2);
+        let m = ComparatorModel::from_artifact(&a).unwrap();
         let score = m.score_ref(&[1.0, 1.0]);
         // logits = [0, 0, 4] -> p2 = e4 / (2 + e4)
         let e4 = (4.0f64).exp();
@@ -249,11 +249,11 @@ mod tests {
     #[test]
     fn artifact_roundtrip_parity_file() {
         let layers = vec![LayerWeights { w: vec![vec![1.0, -2.0]], b: vec![0.5] }];
-        let mut a = artifact(JudgeKind::Pairwise, layers, 2);
-        let m = JudgeModel::from_artifact(&a).unwrap();
+        let mut a = artifact(ComparatorKind::Pairwise, layers, 2);
+        let m = ComparatorModel::from_artifact(&a).unwrap();
         a.parity = vec![ParityPair { input: vec![2.0, 3.0], score: m.score_ref(&[2.0, 3.0]) as f32 }];
         let json = a.to_json().unwrap();
-        let loaded = JudgeArtifact::load_from_str(&json).unwrap();
+        let loaded = ComparatorArtifact::load_from_str(&json).unwrap();
         assert!(loaded.verify_parity().is_ok());
     }
 
@@ -278,8 +278,8 @@ mod tests {
                 b: vec![0.25],
             },
         ];
-        let a = artifact(JudgeKind::Pairwise, layers, dim);
-        let m = JudgeModel::from_artifact(&a).unwrap();
+        let a = artifact(ComparatorKind::Pairwise, layers, dim);
+        let m = ComparatorModel::from_artifact(&a).unwrap();
 
         let rows: Vec<Vec<f32>> = (0..257)
             .map(|r| (0..dim).map(|i| ((r * 17 + i * 5) % 29) as f32 * 0.02 - 0.3).collect())

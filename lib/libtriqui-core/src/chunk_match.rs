@@ -258,7 +258,7 @@ pub fn chunk_match(
     let embedder: Arc<dyn Embedder> = rt.embedder()?;
 
     // Inspector priority: hold the gate so background embeds (cascade waves,
-    // scout, import) pause between work units, then run this request's embeds
+    // quick, import) pause between work units, then run this request's embeds
     // immediately. Setting changes re-enter here — a new request, a new hold.
     let _gate = rt.gate_hold();
     let file_name: String = conn

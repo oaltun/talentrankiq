@@ -1984,7 +1984,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "libcv-heavy"
+name = "libcv-deep"
 version = "0.1.0"
 dependencies = [
  "libcv-core",
@@ -1993,11 +1993,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "libcv-judge-order"
+name = "libcv-comparator-order"
 version = "0.1.0"
 dependencies = [
  "libcv-core",
- "libjudge",
+ "libcomparator",
  "serde",
 ]
 
@@ -2013,11 +2013,11 @@ name = "libcv-pipeline"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "libcv-judge-order",
+ "libcv-comparator-order",
  "libcv-match",
  "libcv-state",
  "libcvparser",
- "libjudge",
+ "libcomparator",
  "libsyscap",
  "libtriqui-core",
  "log",
@@ -2026,7 +2026,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "libcv-scout"
+name = "libcv-quick"
 version = "0.1.0"
 dependencies = [
  "libtriqui-core",
@@ -2038,7 +2038,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "libcv-core",
- "libjudge",
+ "libcomparator",
  "libtriqui-client",
  "libtriqui-core",
  "rusqlite",
@@ -2086,7 +2086,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "libjudge"
+name = "libcomparator"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -2279,10 +2279,10 @@ dependencies = [
  "env_logger",
  "libconfigreader",
  "libcv-core",
- "libcv-heavy",
+ "libcv-deep",
  "libcvparser",
  "libembedrank",
- "libjudge",
+ "libcomparator",
  "libmodelcaller",
  "libmodelcallerclient",
  "libmodelstorage",

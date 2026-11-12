@@ -1,6 +1,6 @@
 //! Evidence `x`-block features (design 18-structured-evidence.md §18.5):
 //! pair-level scalars from (job ad, cv evidence), the non-similarity signal
-//! fused into the `fused` judge variant. One code path for judgetrainer and
+//! fused into the `fused` comparator variant. One code path for comparatortrainer and
 //! bench — the same function feeds the trainer's extraction and the
 //! `evidence-rules` stage-1 method (rules only add fixed weights on top).
 
@@ -242,7 +242,7 @@ pub fn compute_features(job_text: &str, ev: &CvEvidence, ad_terms: &[String]) ->
 
 /// The fused x block for one cv, in [`X_FEATURES`] order. Unlike the
 /// rules score, no fixed weighting or coverage discount here — the raw
-/// features go in and the judge learns the blend (coverage flags are part
+/// features go in and the comparator learns the blend (coverage flags are part
 /// of the block for exactly that reason).
 pub fn x_block(f: &PairFeatures) -> Vec<f32> {
     vec![

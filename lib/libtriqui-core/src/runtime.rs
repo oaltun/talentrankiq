@@ -27,7 +27,7 @@ use crate::app_config;
 use crate::db;
 use crate::embed::{Embedder, ModelCallerEmbedder};
 use crate::types::{Activity, DomainError, RuntimeStatusInfo};
-use libtriqui_license::{load_judge_license, License};
+use libtriqui_license::{load_comparator_license, License};
 
 /// Callback invoked on every status change. The GUI forwards these as the
 /// `runtime-status` Tauri event so the UI can react (e.g. enable Sort).
@@ -39,9 +39,9 @@ pub struct RuntimeConfig {
     pub model_dir: std::path::PathBuf,
     /// Embedding model slug resolved against the `modelcaller` registry.
     pub model: String,
-    /// Judge stage artifacts (`gui_judge_artifact`): per-embedder overrides
-    /// plus a default; empty = judge disabled.
-    pub judge_artifacts: libconfigreader::GuiJudgeArtifact,
+    /// Comparator stage artifacts (`gui_comparator_artifact`): per-embedder overrides
+    /// plus a default; empty = comparator disabled.
+    pub comparator_artifacts: libconfigreader::GuiComparatorArtifact,
     /// Idle-unload timeout for the embedding engine in seconds (0 = disable idle unload).
     pub gui_idle_unload_secs: u64,
     /// Whether to automatically download missing models via modelcaller.
@@ -73,19 +73,19 @@ impl RuntimeConfig {
         let auto_download_models = std::env::var("TRIQ_AUTO_DOWNLOAD_MODELS")
             .map(|v| !v.is_empty() && v != "0" && v != "false")
             .unwrap_or(false);
-        // Judge resolution mirrors `Config::judge_artifact_for`: the
-        // co-located `gui_embedders[slug].judge_artifact` wins over the legacy
-        // `gui_judge_artifact.by_embedder`, which wins over the default.
-        let mut judge_artifacts = app_config::gui_judge_artifacts();
+        // Comparator resolution mirrors `Config::comparator_artifact_for`: the
+        // co-located `gui_embedders[slug].comparator_artifact` wins over the legacy
+        // `gui_comparator_artifact.by_embedder`, which wins over the default.
+        let mut comparator_artifacts = app_config::gui_comparator_artifacts();
         for ge in &base_cfg.gui_embedders {
-            if let Some(ja) = &ge.judge_artifact {
-                judge_artifacts.by_embedder.insert(ge.slug.clone(), ja.clone());
+            if let Some(ja) = &ge.comparator_artifact {
+                comparator_artifacts.by_embedder.insert(ge.slug.clone(), ja.clone());
             }
         }
         Self {
             model_dir: app_config::model_dir(),
             model,
-            judge_artifacts,
+            comparator_artifacts,
             gui_idle_unload_secs,
             auto_download_models,
         }
@@ -105,7 +105,7 @@ struct RuntimeInner {
     client: Option<ModelCallerClient>,
     embedder: Option<Arc<ModelCallerEmbedder>>,
     /// Extra embedders by model slug, for models live alongside the current one
-    /// (the cascade's scout). Empty on a plain single-model run.
+    /// (the cascade's quick). Empty on a plain single-model run.
     secondary: HashMap<String, Arc<dyn Embedder>>,
     /// Bumped by every [`EngineRuntime::shutdown`]. A start thread captures
     /// the epoch when it claims the `Stopped → Starting` transition and
@@ -128,15 +128,15 @@ pub struct EngineRuntime {
     /// What the engine is working on right now, for the gui's status line.
     act: Mutex<ActTrack>,
     /// Inspector priority gate: while held, background embeds (cascade waves,
-    /// scout, import) pause between work units so the CV Inspector's own
+    /// quick, import) pause between work units so the CV Inspector's own
     /// embeds run immediately instead of queueing behind a wave.
     gate: Gate,
     /// Arm each model was actually served by (from the load response's own
     /// report, `models` command) — slug → `"ort"` | `"mlx"`. Cached once per
     /// slug per process; nothing re-reads it per status push.
     arms: Mutex<HashMap<String, String>>,
-    /// Judge license (loaded once at startup). `None` = judge disabled.
-    judge_license: Option<License>,
+    /// Comparator license (loaded once at startup). `None` = comparator disabled.
+    comparator_license: Option<License>,
 }
 
 struct ActTrack {
@@ -202,8 +202,8 @@ impl Gate {
 impl EngineRuntime {
     pub fn new(cfg: RuntimeConfig, db_path: PathBuf) -> Arc<Self> {
         let model = cfg.model.clone();
-        // Load judge license once at startup
-        let judge_license = load_judge_license();
+        // Load comparator license once at startup
+        let comparator_license = load_comparator_license();
         Arc::new(Self {
             db_path,
             cfg,
@@ -223,7 +223,7 @@ impl EngineRuntime {
             }),
             gate: Gate::new(),
             arms: Mutex::new(HashMap::new()),
-            judge_license,
+            comparator_license,
         })
     }
 
@@ -273,7 +273,7 @@ impl EngineRuntime {
     }
 
     /// Push a status snapshot because activity changed (the busy flag may not
-    /// have moved — a judge pass never touches the engine).
+    /// have moved — a comparator pass never touches the engine).
     fn push_activity(&self) {
         {
             let mut t = self.act.lock().expect("activity lock poisoned");
@@ -289,7 +289,7 @@ impl EngineRuntime {
         self.gate.hold()
     }
 
-    /// Background-side checkpoint: called by cascade/import/scout embed paths
+    /// Background-side checkpoint: called by cascade/import/quick embed paths
     /// before engine work; returns once no inspector operation holds the gate.
     pub fn gate_wait(&self) {
         self.gate.wait();
@@ -313,10 +313,10 @@ impl EngineRuntime {
 
     /// Record the arm that wrote `model`'s vectors. When it differs from what
     /// was recorded before, every slug-keyed vector artifact is cleared first
-    /// (chunks, embedding cache, centroids, criteria, scout + feedback
+    /// (chunks, embedding cache, centroids, criteria, quick + feedback
     /// vectors) — old-arm vectors must never read as current-model vectors.
-    /// Model-scoped by construction; the scout's slug never flips (it
-    /// declares no mlx variant), so scout rows survive.
+    /// Model-scoped by construction; the quick's slug never flips (it
+    /// declares no mlx variant), so quick rows survive.
     pub fn note_backend(&self, conn: &Connection, model: &str, backend: &str) {
         let recorded: Option<String> = conn
             .query_row(
@@ -401,24 +401,24 @@ impl EngineRuntime {
         self.model.lock().expect("model lock poisoned").clone()
     }
 
-    /// Judge stage artifact for embedder `model` (`None` = no artifact
+    /// Comparator stage artifact for embedder `model` (`None` = no artifact
     /// configured for it — the per-embedder override, else the default).
     /// Config values are app-dir-relative bare filenames, so the returned
     /// path is joined with the app dir (the db path's parent), matching the
     /// serve handlers' `state.app_dir.join(rel)`.
-    pub fn judge_artifact_for(&self, model: &str) -> Option<std::path::PathBuf> {
-        // Gate: if no valid judge license, disable judge for all embedders
-        if self.judge_license.is_none() {
+    pub fn comparator_artifact_for(&self, model: &str) -> Option<std::path::PathBuf> {
+        // Gate: if no valid comparator license, disable comparator for all embedders
+        if self.comparator_license.is_none() {
             return None;
         }
         let artifact_path = self.cfg
-            .judge_artifacts
+            .comparator_artifacts
             .for_embedder(model)?;
         // Check if this specific artifact is authorized by the license
         let artifact_id = artifact_path.file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("");
-        if !self.judge_license.as_ref().unwrap().authorizes_artifact(artifact_id) {
+        if !self.comparator_license.as_ref().unwrap().authorizes_artifact(artifact_id) {
             return None;
         }
         let app_dir = self.db_path.parent()?;
@@ -687,15 +687,15 @@ impl EngineRuntime {
     /// An `Embedder` for a model that is **not** the runtime's current one, so a
     /// second embedder can run over the same in-process engine.
     ///
-    /// The cascade's scout stage needs exactly this: a cheap multilingual model
-    /// scoring every candidate before the heavy embedder is asked to do anything
+    /// The cascade's quick stage needs exactly this: a cheap multilingual model
+    /// scoring every candidate before the deep embedder is asked to do anything
     /// (progressive-ranking design §7). modelcaller keeps one ORT session per
     /// loaded model (`State::loaded`).
     ///
     /// The returned embedder is cached per slug, so repeated embeds reuse the
     /// same object; [`EngineRuntime::unload_secondary`] drops the cache entry
     /// and frees the model's session when a stage is done with it. Requires the
-    /// engine to be `Running` (the scout runs inside a live cascade, which
+    /// engine to be `Running` (the quick runs inside a live cascade, which
     /// already started it).
     pub fn embedder_for(self: &Arc<Self>, model: &str) -> Result<Arc<dyn Embedder>, DomainError> {
         let mut g = self.inner.lock().expect("runtime lock poisoned");
@@ -724,7 +724,7 @@ impl EngineRuntime {
     }
 
     /// Drop a secondary embedder and unload its model from the engine, freeing
-    /// the model's ORT session. The scout uses this to get out of the way once
+    /// the model's ORT session. The quick uses this to get out of the way once
     /// its pass is done: it is fast enough that reloading on the next pass
     /// costs far less than keeping a second session warm, and only one model
     /// is ever resident at a time (design §7). A no-op for the runtime's
@@ -753,7 +753,7 @@ impl EngineRuntime {
 
     /// Load `model` into the engine so its first embed does not pay the load
     /// cost. Best-effort: a failure is logged and surfaces on first real embed.
-    /// Used to warm the scout before its stage begins.
+    /// Used to warm the quick before its stage begins.
     pub fn preload(self: &Arc<Self>, model: &str) -> Result<(), DomainError> {
         self.wait_until_ready(Duration::from_secs(60))?;
         let client = self.client()?;

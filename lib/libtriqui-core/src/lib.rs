@@ -19,16 +19,16 @@ pub mod favs;
 pub mod import;
 pub mod job_ad;
 pub mod job_bundle;
-pub mod judge;
-pub mod judge_cache;
+pub mod comparator;
+pub mod comparator_cache;
 pub mod ranker;
 pub mod results_csv;
  pub mod rescore;
  /// The rubric: a job's ranking inputs and their vectors, per embedding space.
  pub mod rubric;
  pub mod runtime;
- /// Stage-0.5 scout (cheap multilingual gate) for the progressive-ranking cascade.
- pub mod scout;
+ /// Stage-0.5 quick (cheap multilingual gate) for the progressive-ranking cascade.
+ pub mod quick;
  /// System-capacity budget: cascade wave scaling + the `holding` reason code
  /// (libsyscap design §7.3).
  pub mod syscap;

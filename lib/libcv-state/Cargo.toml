@@ -16,6 +16,6 @@ specta = { version = "=2.0.0-rc.22", features = ["derive", "serde_json"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 chrono = { version = "0.4", features = ["serde"] }
 libcv-core = { path = "../libcv-core" }
-libjudge = { path = "../libjudge" }
+libcomparator = { path = "../libcomparator" }
 libtriqui-client = { path = "../libtriqui-client" }
 libtriqui-core = { path = "../libtriqui-core" }

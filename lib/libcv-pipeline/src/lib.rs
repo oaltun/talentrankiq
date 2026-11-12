@@ -20,10 +20,10 @@ pub enum WorkerError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WorkItem {
     TextExtract { cv_id: String },
-    Scout { cv_id: String },
-    Heavy { cv_id: String },
+    Quick { cv_id: String },
+    Deep { cv_id: String },
     Match { cv_id: String, job_id: String },
-    Judge { pair: (String, String) },
+    Comparator { pair: (String, String) },
     ScanDirectory { job_id: String },
 }
 
@@ -67,7 +67,7 @@ impl EffectRunner {
                 // Auto-chaining disabled: Convert is user-triggered.
             }
             Event::ScoutCompleted { .. } => {
-                // Auto-chaining disabled: Scout is user-triggered.
+                // Auto-chaining disabled: Quick is user-triggered.
             }
             Event::HeavyCompleted { cv_id, .. } => {
                 // Match work is enqueued when a job ad version is known.
@@ -95,19 +95,19 @@ impl EffectRunner {
                 }
             }
             Event::HeavyMatched { .. } => {
-                // Ask judge orderer for next pair (handled by caller with state).
+                // Ask comparator orderer for next pair (handled by caller with state).
             }
             Event::ComparisonCompleted { .. } => {}
             _ => {}
         }
-        // Judge scheduling: after HeavyMatched accumulation, consult next_pair.
-        // Delegated to caller; here we leave judge work to explicit enqueue.
+        // Comparator scheduling: after HeavyMatched accumulation, consult next_pair.
+        // Delegated to caller; here we leave comparator work to explicit enqueue.
         out
     }
 
-    /// Decide judge work given current state (call after HeavyMatched/ComparisonCompleted).
-    pub fn next_judge_work(&self, state: &State) -> Option<WorkItem> {
-        use libcv_judge_order::{JudgeOrderState, next_pair};
+    /// Decide comparator work given current state (call after HeavyMatched/ComparisonCompleted).
+    pub fn next_comparator_work(&self, state: &State) -> Option<WorkItem> {
+        use libcv_comparator_order::{ComparatorOrderState, next_pair};
         let mut provisional: Vec<(String, f64)> = state
             .cvs
             .values()
@@ -127,14 +127,14 @@ impl EffectRunner {
             })
             .collect();
         let job_version = state.jobs.values().next().map(|j| j.version).unwrap_or(0);
-        let order_state = JudgeOrderState {
+        let order_state = ComparatorOrderState {
             glicko: state
                 .glicko
                 .iter()
                 .map(|((cv, ver), g)| {
                     (
                         (cv.clone(), *ver),
-                        libjudge::tournament::GlickoState { rating: g.rating, rd: g.rd },
+                        libcomparator::tournament::GlickoState { rating: g.rating, rd: g.rd },
                     )
                 })
                 .collect(),
@@ -143,7 +143,7 @@ impl EffectRunner {
             job_version,
             entitled: state.license.is_some(),
         };
-        next_pair(&order_state).map(|p| WorkItem::Judge { pair: p })
+        next_pair(&order_state).map(|p| WorkItem::Comparator { pair: p })
     }
 }
 
@@ -170,7 +170,7 @@ impl Worker for TextWorker {
 pub struct ScoutWorker;
 pub struct HeavyWorker;
 pub struct MatchWorker;
-pub struct JudgeWorker;
+pub struct ComparatorWorker;
 
 impl TextWorker {
     pub fn new() -> Self { Self }
@@ -196,10 +196,10 @@ impl MatchWorker {
 impl Default for MatchWorker {
     fn default() -> Self { Self }
 }
-impl JudgeWorker {
+impl ComparatorWorker {
     pub fn new() -> Self { Self }
 }
-impl Default for JudgeWorker {
+impl Default for ComparatorWorker {
     fn default() -> Self { Self }
 }
 
@@ -254,7 +254,7 @@ impl Worker for MatchWorker {
     }
 }
 
-impl Worker for JudgeWorker {
+impl Worker for ComparatorWorker {
     type In = (String, String);
     type Out = Event;
     fn process(&mut self, item: Self::In) -> Result<Self::Out, WorkerError> {
@@ -296,11 +296,11 @@ impl Default for MatchContext {
     }
 }
 
-pub struct JudgeContext {
-    pub model: Option<libjudge::JudgeModel>,
+pub struct ComparatorContext {
+    pub model: Option<libcomparator::ComparatorModel>,
 }
 
-impl Default for JudgeContext {
+impl Default for ComparatorContext {
     fn default() -> Self {
         Self { model: None }
     }
@@ -390,8 +390,8 @@ impl MatchWorker {
     }
 }
 
-impl JudgeWorker {
-    pub fn pair_prob(&self, model: &libjudge::JudgeModel, x: Vec<f32>) -> f64 {
+impl ComparatorWorker {
+    pub fn pair_prob(&self, model: &libcomparator::ComparatorModel, x: Vec<f32>) -> f64 {
         model.pair_prob(x)
     }
 
@@ -400,7 +400,7 @@ impl JudgeWorker {
         pair: (String, String),
         job_version: u32,
         model_bundle_version: u32,
-        model: Option<&libjudge::JudgeModel>,
+        model: Option<&libcomparator::ComparatorModel>,
         features: Option<Vec<f32>>,
     ) -> Result<Event, WorkerError> {
         let result = match (model, features) {
@@ -616,8 +616,8 @@ pub mod heavy_worker {
 pub mod match_worker {
     pub use super::{MatchWorker, MatchContext};
 }
-pub mod judge_worker {
-    pub use super::{JudgeWorker, JudgeContext};
+pub mod comparator_worker {
+    pub use super::{ComparatorWorker, ComparatorContext};
 }
 
 #[derive(Clone, Default)]
@@ -682,7 +682,7 @@ impl PipelineRunner {
                 }
                 match &ev {
                     Event::HeavyMatched { .. } | Event::ComparisonCompleted { .. } => {
-                        if let Some(j) = self.effect_runner.next_judge_work(&st) {
+                        if let Some(j) = self.effect_runner.next_comparator_work(&st) {
                             if let Some(e) = self.process_item(j) {
                                 queue.push(e);
                             }
@@ -712,7 +712,7 @@ impl PipelineRunner {
                     .unwrap_or_else(|| cv_id.clone());
                 Some(TextWorker::new().extract(cv_id, &path))
             }
-            WorkItem::Scout { cv_id } => {
+            WorkItem::Quick { cv_id } => {
                 let text = state_handle
                     .as_ref()
                     .and_then(|s| s.lock().ok())
@@ -730,7 +730,7 @@ impl PipelineRunner {
                     .process_with_context(cv_id, &text, &sctx, 0)
                     .ok()
             }
-            WorkItem::Heavy { cv_id } => {
+            WorkItem::Deep { cv_id } => {
                 let text = state_handle
                     .as_ref()
                     .and_then(|s| s.lock().ok())
@@ -774,13 +774,13 @@ impl PipelineRunner {
                     .process_with_vectors(cv_id, job_version, cv_vec, target_vec)
                     .ok()
             }
-            WorkItem::Judge { pair } => {
+            WorkItem::Comparator { pair } => {
                 let job_version = state_handle
                     .as_ref()
                     .and_then(|s| s.lock().ok())
                     .and_then(|st| st.jobs.values().next().map(|j| j.version))
                     .unwrap_or(0);
-                JudgeWorker::new()
+                ComparatorWorker::new()
                     .process_with_model(pair, job_version, 0, None, None)
                     .ok()
             }

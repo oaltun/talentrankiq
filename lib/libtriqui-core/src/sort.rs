@@ -4,7 +4,7 @@
 //! Ranking is no longer a pipeline of its own. It is three things that already
 //! live elsewhere:
 //!
-//! - **stages** — `scout::run_scout`, `cascade::run_wave`, `judge::run_pool` —
+//! - **stages** — `quick::run_scout`, `cascade::run_wave`, `comparator::run_pool` —
 //!   which own all the engine work and all the budgets;
 //! - **one projection** — [`crate::rescore`], which turns stage grades into
 //!   `points` and `rank` and makes no model calls;
@@ -24,10 +24,10 @@ use crate::embeddings::EmbedProgress;
 use crate::runtime::EngineRuntime;
 use crate::types::{DomainError, TriqiItem};
 
-/// Label of the heavy embedder's ad column in the results table.
+/// Label of the deep embedder's ad column in the results table.
 pub const AD_LABEL: &str = "Job fit (embed)";
 
-/// Question id of the heavy embedder's ad grade. It lives in [`crate::rubric`]
+/// Question id of the deep embedder's ad grade. It lives in [`crate::rubric`]
 /// now (the ad is one of the rubric's questions); re-exported here because the
 /// CSV and bundle exporters speak in these ids.
 pub use crate::rescore::JUDGE_Q as JUDGE_QUESTION_ID;
@@ -35,7 +35,7 @@ pub use crate::rubric::AD_Q as AD_QUESTION_ID;
 
 /// Run the whole pipeline to convergence and return the triqui.
 ///
-/// Blocking: it embeds anything missing, judges the pool, and projects. Callers
+/// Blocking: it embeds anything missing, comparators the pool, and projects. Callers
 /// that want it in the background spawn the cascade instead
 /// ([`crate::cascade::run_wave`] in a loop); this is for the paths that genuinely
 /// want to wait — a CLI rank, a bundle import, a test.
@@ -51,8 +51,8 @@ pub fn sort_job_blocking(
     // milliseconds — which is the whole difference between "switching back to the
     // previous embedder costs nothing" and it costing a model load.
     let conn = rt.open_conn().map_err(|e| DomainError::DbError { message: e.to_string() })?;
-    let heavy = rt.model();
-    let missing = crate::rescore::count_needing_embed(&conn, job_id, &heavy)?;
+    let deep = rt.model();
+    let missing = crate::rescore::count_needing_embed(&conn, job_id, &deep)?;
     if missing > 0 {
         crate::embeddings::embed_missing_candidates(rt, &conn, job_id, progress)?;
     }
@@ -60,10 +60,10 @@ pub fn sort_job_blocking(
     // switch every candidate has chunks again but no *grades*, and a grade is what
     // the projection reads. This is a cosine pass over stored vectors — cheap, and
     // the only way a "rank this job" request can be trusted.
-    let rubric = crate::rubric::Rubric::with_vectors(&conn, job_id, &heavy)?;
-    crate::rubric::score_candidates_in_space(&conn, job_id, &heavy, &rubric, None)?;
+    let rubric = crate::rubric::Rubric::with_vectors(&conn, job_id, &deep)?;
+    crate::rubric::score_candidates_in_space(&conn, job_id, &deep, &rubric, None)?;
     drop(conn);
-    // A blocking sort judges *everyone*, which is what "sorted" has always meant
+    // A blocking sort comparators *everyone*, which is what "sorted" has always meant
     // to a caller that waits: pool size = the candidate count.
     let count = {
         let conn = rt.open_conn().map_err(|e| DomainError::DbError { message: e.to_string() })?;
@@ -77,11 +77,11 @@ pub fn sort_job_blocking(
     };
     cascade::prepare_heavy_rubric(rt, job_id)?;
     cascade::freeze_pool(rt, job_id, count)?;
-    // Report what the judge actually did — "cached" when every verdict came from the
+    // Report what the comparator actually did — "cached" when every verdict came from the
     // memoized cache is the whole point of the verdict cache, and the gui and the
     // tests read it. Passing `None` here would report `skipped` for a run that
-    // judged, which is a lie in the direction of "nothing happened".
-    let stats = crate::judge::run_pool(rt, job_id)
+    // comparatord, which is a lie in the direction of "nothing happened".
+    let stats = crate::comparator::run_pool(rt, job_id)
         .map_err(|e| DomainError::DbError { message: e })?;
     cascade::project(rt, job_id)?;
 

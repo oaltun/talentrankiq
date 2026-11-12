@@ -1,7 +1,7 @@
 //! libconfigreader — shared configuration types for the ik toolchain.
 //!
 //! This crate provides the pure-Rust `Config` struct with all model, family,
-//! embedder, engine, syscap, cascade, and judge artifact definitions.
+//! embedder, engine, syscap, cascade, and comparator artifact definitions.
 //! There is no YAML parsing anymore — the configuration is embedded as
 //! typed Rust data in `config.rs`.
 
@@ -13,7 +13,7 @@ pub use config::*;
 pub use config::EngineConfig as EngineSection;
 pub use config::SyscapConfig as SyscapSection;
 pub use config::CascadeConfig as CascadeSection;
-pub use config::GuiJudgeArtifact as GuiJudgeArtifacts;
+pub use config::GuiComparatorArtifact as GuiComparatorArtifacts;
 
 // Types that keep the same name are already exported via `pub use config::*;`
 

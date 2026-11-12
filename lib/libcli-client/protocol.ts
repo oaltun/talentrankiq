@@ -10,7 +10,7 @@
  */
 export type Activity = { 
 /**
- * Stable stage code: `scout` | `embed` | `judge` | `inspect`.
+ * Stable stage code: `quick` | `embed` | `comparator` | `inspect`.
  */
 stage: string; 
 /**
@@ -23,7 +23,7 @@ subject: string;
  */
 detail?: string | null; 
 /**
- * Model slug serving this work (the embedder, the scout, or the judge's
+ * Model slug serving this work (the embedder, the quick, or the comparator's
  * embedder).
  */
 model?: string | null }
@@ -33,18 +33,18 @@ model?: string | null }
  */
 export type AdSource = 
 /**
- * The scout's ad cosine.
+ * The quick's ad cosine.
  */
-"scout" | 
+"quick" | 
 /**
- * The heavy embedder's ad cosine.
+ * The deep embedder's ad cosine.
  */
-"heavy" | 
+"deep" | 
 /**
- * The judge's pairwise win-rate. It replaces the ad slot's *value* and never
+ * The comparator's pairwise win-rate. It replaces the ad slot's *value* and never
  * its weight, so it changes no row's max-points.
  */
-"judge"
+"comparator"
 
 /**
  * Parameters for `add_criterion` command.
@@ -308,7 +308,7 @@ similarity: number }
 /**
  * Payload for the `comparison-completed` event.
  */
-export type ComparisonCompletedEvent = { cv_a_id: string; cv_b_id: string; job_ad_version: number; model_bundle_version: number; result: number; judged_at: number }
+export type ComparisonCompletedEvent = { cv_a_id: string; cv_b_id: string; job_ad_version: number; model_bundle_version: number; result: number; comparatord_at: number }
 
 /**
  * Result of a single pair-wise cosine comparison.
@@ -450,15 +450,15 @@ export type GlickoUpdatedEvent = { cv_id: string; job_ad_version: number; rating
  */
 export type GradeSpace = 
 /**
- * The cheap scout's space — the candidate has not been reached by the heavy
+ * The cheap quick's space — the candidate has not been reached by the deep
  * embedder yet. Every candidate has a complete scorecard here, because the
- * scout scores the whole rubric rather than only the ad.
+ * quick scores the whole rubric rather than only the ad.
  */
-"scout" | 
+"quick" | 
 /**
  * The selected embedder's space.
  */
-"heavy"
+"deep"
 
 /**
  * One ONNX embedder from `triq.yaml` `gui_embedders`, enriched with on-disk state.
@@ -501,9 +501,9 @@ source: string;
  */
 size_bytes: number; 
 /**
- * Judge artifact mapped to this embedder (`None` when unconfigured).
+ * Comparator artifact mapped to this embedder (`None` when unconfigured).
  */
-judge?: JudgeArtifact | null }
+comparator?: ComparatorArtifact | null }
 
 /**
  * Parameters for `import_cv_directory` command.
@@ -580,8 +580,8 @@ created?: boolean }
 export type JobDetail = { job: Job; criteria: Criterion[]; 
 /**
  * The results-table columns, in display order: the cascade's stage grades
- * in pipeline order (lexical, scout, the job-ad cosine the heavy embedder
- * gives, the judge's win-rate), then the rubric the total is made of
+ * in pipeline order (lexical, quick, the job-ad cosine the deep embedder
+ * gives, the comparator's win-rate), then the rubric the total is made of
  * (criteria and the two feedback rows).
  */
 rubric: RubricQuestion[]; 
@@ -630,9 +630,9 @@ rank?: RankState }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
 
 /**
- * Judge artifact info exposed to the GUI.
+ * Comparator artifact info exposed to the GUI.
  */
-export type JudgeArtifact = { 
+export type ComparatorArtifact = { 
 /**
  * Path relative to the app data dir.
  */
@@ -646,7 +646,7 @@ exists: boolean;
  */
 embedder_slug: string; 
 /**
- * Whether the user is entitled to use the judge.
+ * Whether the user is entitled to use the comparator.
  */
 entitled: boolean }
 
@@ -661,7 +661,7 @@ export type LicenseActivateParams = { license_key: string }
 export type LicenseCheckArtifactParams = { artifact_id: string }
 
 /**
- * License status for the judge license.
+ * License status for the comparator license.
  */
 export type LicenseStatus = { kind: "Licensed"; customer: string; expires_at: string; artifacts: string[] } | { kind: "Invalid"; reason: string } | { kind: "NotFound" } | { kind: "Revoked"; reason: string }
 
@@ -681,9 +681,9 @@ export type ListLikedCandidateIdsParams = { job_id: string }
 export type LoadEmergencyDataParams = { filename: string }
 
 /**
- * Parameters for `load_judge_artifact` command.
+ * Parameters for `load_comparator_artifact` command.
  */
-export type LoadJudgeArtifactParams = { source_path: string; embedder_slug?: string | null }
+export type LoadComparatorArtifactParams = { source_path: string; embedder_slug?: string | null }
 
 /**
  * Parameters for `make_default_embedder` command.
@@ -722,17 +722,17 @@ export type ProtocolError = { code: string; message: string; domain?: JsonValue 
  */
 export type QuestionKind = "Ad" | 
 /**
- * "Job fit (judge)" — pairwise-judge win-rate replacing the `Ad` cosine
- * row when the gui judge stage is active (`gui_judge_artifact`).
+ * "Job fit (comparator)" — pairwise-comparator win-rate replacing the `Ad` cosine
+ * row when the gui comparator stage is active (`gui_comparator_artifact`).
  */
-"AdJudge" | "Criterion" | "FeedbackJob" | "FeedbackProfile" | 
+"AdComparator" | "Criterion" | "FeedbackJob" | "FeedbackProfile" | 
 /**
- * Stage-0.5 scout row — the cheap multilingual embedder's similarity to
+ * Stage-0.5 quick row — the cheap multilingual embedder's similarity to
  * the job ad, in the ad row's currency. Scored for *every* candidate, so
- * the results table can show what the scout thought of a CV that the
- * heavy embedder has not reached yet.
+ * the results table can show what the quick thought of a CV that the
+ * deep embedder has not reached yet.
  */
-"Scout"
+"Quick"
 
 /**
  * Payload for the `rank-cancelled` event.
@@ -742,7 +742,7 @@ export type RankCancelledEvent = { job_id: string }
 /**
  * Progress event payload for a running cascade (`rank-progress` event).
  */
-export type RankProgress = { job_id: string; stage: string; wave: number; embedded_done: number; embedded_total: number; judged: number; candidates: number; running: boolean; 
+export type RankProgress = { job_id: string; stage: string; wave: number; embedded_done: number; embedded_total: number; comparatord: number; candidates: number; running: boolean; 
 /**
  * Stable reason code while the run is alive but not making progress:
  * `holding` = the system-capacity budget says hold (low memory).
@@ -778,9 +778,9 @@ embedded_total: number;
  */
 embedded_done: number; 
 /**
- * Candidates in the judge pool so far.
+ * Candidates in the comparator pool so far.
  */
-judged: number; 
+comparatord: number; 
 /**
  * Extracted candidates overall.
  */
@@ -831,9 +831,9 @@ export type ReloadJobAdParams = { job_id: string }
 export type RemoveEmbedderParams = { slug: string }
 
 /**
- * Parameters for `remove_judge_artifact` command.
+ * Parameters for `remove_comparator_artifact` command.
  */
-export type RemoveJudgeArtifactParams = { slug: string }
+export type RemoveComparatorArtifactParams = { slug: string }
 
 export type Request = { id: number; cmd: string; params?: JsonValue; 
 /**
@@ -920,7 +920,7 @@ activity?: Activity | null }
 export type SaveEmergencyDataParams = { filename: string; data: JsonValue }
 
 /**
- * Scout model info exposed to the GUI.
+ * Quick model info exposed to the GUI.
  */
 export type ScoutModel = { 
 /**
@@ -971,9 +971,9 @@ export type SoftDeleteCvParams = { cv_id: string }
 export type SortJobParams = { job_id: string }
 
 /**
- * Read-model of the last rank of a job: what the judge stage actually did.
+ * Read-model of the last rank of a job: what the comparator stage actually did.
  */
-export type SortReport = { job_id: string; judge_mode: string; judge_pairs_fresh: number; judge_pairs_cached: number; 
+export type SortReport = { job_id: string; comparator_mode: string; comparator_pairs_fresh: number; comparator_pairs_cached: number; 
 /**
  * How the last rank ran: `full` (one blocking pass) or `waves`
  * (progressive cascade).

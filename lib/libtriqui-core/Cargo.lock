@@ -1537,7 +1537,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "libjudge"
+name = "libcomparator"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -1696,7 +1696,7 @@ dependencies = [
  "libconfigreader",
  "libcvparser",
  "libembedrank",
- "libjudge",
+ "libcomparator",
  "libmodelcaller",
  "libmodelcallerclient",
  "libmodelstorage",

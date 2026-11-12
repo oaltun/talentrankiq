@@ -56,11 +56,11 @@ fn persist_liked_flags(
 /// before scoring v3:
 ///
 /// - The vectors are learned in *every* space the job has candidate vectors for —
-///   the scout's as well as the heavy embedder's — so a like moves a scout-space
-///   candidate's total too. Learning only in the heavy space meant a CV the heavy
+///   the quick's as well as the deep embedder's — so a like moves a quick-space
+///   candidate's total too. Learning only in the deep space meant a CV the deep
 ///   embedder had not reached was unmoved by feedback.
 /// - The tail is `rescore`, not a blocking sort. No candidate vector changed, so
-///   nothing needs re-embedding and the judge is untouched (it never read the
+///   nothing needs re-embedding and the comparator is untouched (it never read the
 ///   feedback rows); the whole update is a cosine pass. On a 2000-CV job that is
 ///   the difference between milliseconds and hours.
 ///
@@ -147,7 +147,7 @@ pub fn apply_feedback_blocking(
         enable_feedback_weights(&conn, job_id)?;
     }
 
-    // Learn in every space the job has vectors in. The heavy space and the scout's
+    // Learn in every space the job has vectors in. The deep space and the quick's
     // are independent learnings over independent vectors; neither clobbers the other.
     let spaces = learnable_spaces(&conn, job_id, &rt.model())?;
     let mut learned_any = false;
@@ -206,15 +206,15 @@ pub fn apply_feedback_blocking(
         let conn = rt
             .open_conn()
             .map_err(|e| DomainError::DbError { message: e })?;
-        let heavy = rt.model();
-        let scout_space = crate::scout::scout_model_for(&heavy);
-        crate::rescore::score_live_spaces(&conn, job_id, &heavy, scout_space.as_deref())?;
+        let deep = rt.model();
+        let scout_space = crate::quick::scout_model_for(&deep);
+        crate::rescore::score_live_spaces(&conn, job_id, &deep, scout_space.as_deref())?;
     }
     let report = crate::rescore::rescore(rt, job_id)?;
     log::info!(
-        "feedback: job {job_id} rescored ({} candidates, {} judged) across {} space(s)",
+        "feedback: job {job_id} rescored ({} candidates, {} comparatord) across {} space(s)",
         report.scored,
-        report.judged,
+        report.comparatord,
         spaces.len()
     );
     let conn = rt
@@ -224,16 +224,16 @@ pub fn apply_feedback_blocking(
     Ok(triqui)
 }
 
-/// The spaces a job can learn feedback in: the selected embedder plus the scout
+/// The spaces a job can learn feedback in: the selected embedder plus the quick
 /// (when it has graded anything). Both are derived from stored vectors, never from
 /// the engine, so this costs two indexed queries.
 fn learnable_spaces(
     conn: &Connection,
     job_id: &str,
-    heavy: &str,
+    deep: &str,
 ) -> Result<Vec<String>, DomainError> {
-    let mut spaces = vec![heavy.to_string()];
-    // A space is learnable when this job has candidate vectors in it. The scout's
+    let mut spaces = vec![deep.to_string()];
+    // A space is learnable when this job has candidate vectors in it. The quick's
     // chunks live under its own slug, so one job-scoped probe finds it.
     let mut stmt = conn
         .prepare(
@@ -243,7 +243,7 @@ fn learnable_spaces(
         )
         .map_err(db_err)?;
     let others = stmt
-        .query_map(rusqlite::params![job_id, heavy], |r| r.get::<_, String>(0))
+        .query_map(rusqlite::params![job_id, deep], |r| r.get::<_, String>(0))
         .map_err(db_err)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(db_err)?;
@@ -255,7 +255,7 @@ fn learnable_spaces(
     Ok(spaces)
 }
 
-/// The candidates' centroid vectors in one space (the scout has no centroid
+/// The candidates' centroid vectors in one space (the quick has no centroid
 /// column, so it is computed from its chunks).
 fn candidate_vectors_in_space(
     conn: &Connection,

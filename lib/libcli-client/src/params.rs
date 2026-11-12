@@ -162,17 +162,17 @@ params! {
 
     struct TryModelParams { slug: String }
 
-    /// `embedder_slug`: which embedder's judge artifact to load into.
+    /// `embedder_slug`: which embedder's comparator artifact to load into.
     /// `None` = the active embedder (previous behavior).
-    struct LoadJudgeArtifactParams { source_path: String, embedder_slug: Option<String> }
+    struct LoadComparatorArtifactParams { source_path: String, embedder_slug: Option<String> }
 
-    struct RemoveJudgeArtifactParams { slug: String }
+    struct RemoveComparatorArtifactParams { slug: String }
 
     struct SaveEmergencyDataParams { filename: String, data: serde_json::Value }
 
     struct LoadEmergencyDataParams { filename: String }
 
-    /// Activate a judge license with a license key (downloads + saves locally).
+    /// Activate a comparator license with a license key (downloads + saves locally).
     struct LicenseActivateParams { license_key: String }
 
     /// Check whether a license authorizes a given artifact id.

@@ -267,7 +267,7 @@ pub fn update_job(
     // re-project, and let any run in flight carry on. A cascade computes candidate
     // *vectors*, which are text-only and ad-independent, so nothing about this edit
     // invalidates its work — cancelling used to throw away embedding that was still
-    // good. A changed *ad* additionally empties the judge pool, because every
+    // good. A changed *ad* additionally empties the comparator pool, because every
     // memoized verdict is keyed on the ad's content hash.
     if inputs_changed {
         let ad_edited = !ad_lands_first_time;
@@ -277,7 +277,7 @@ pub fn update_job(
             "update_job: {job_id} re-projected — {} candidates, {} rubric vector(s) embedded{}",
             invalidation.rescored,
             invalidation.embedded,
-            if ad_edited { ", judge pool cleared" } else { "" },
+            if ad_edited { ", comparator pool cleared" } else { "" },
         );
     }
     // Re-judging is the only expensive part an edit can leave behind, and only a run
@@ -365,7 +365,7 @@ pub fn update_job_weights(
         weights: vec![ad_weight, fb_job_weight, fb_profile_weight],
     });
     // Weights are rubric too, so they go down the same path as text: re-project,
-    // nothing cancelled. The judge never read a weight — its grade is a win-rate
+    // nothing cancelled. The comparator never read a weight — its grade is a win-rate
     // and `ad_weight` only scales it — so every memoized verdict still holds.
     let invalidation = libtriqui_core::rescore::inputs_changed(&state.runtime, job_id, false)?;
     log::info!(
@@ -579,7 +579,7 @@ pub fn job_ui_state(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Prot
             wave: None,
             embedded_total: 0,
             embedded_done: 0,
-            judged: 0,
+            comparatord: 0,
             candidates: 0,
             converged: false,
             reason: None,

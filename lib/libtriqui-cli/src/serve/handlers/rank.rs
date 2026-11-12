@@ -66,7 +66,7 @@ impl CascadeGens {
 
     /// Whether a runner thread is still alive for `job_id`. The embedder
     /// switch waits on this before wiping vectors: a cancelled wave (or the
-    /// scout stage) persists its vectors when it lands, so the nuke must
+    /// quick stage) persists its vectors when it lands, so the nuke must
     /// follow the *retirement* of the threads, not the cancel flag — a late
     /// write would otherwise re-populate the wiped tables with rows stamped
     /// with the old model, which no later wave overwrites.
@@ -171,7 +171,7 @@ impl CascadeRunner {
 
         let candidate_count = self.count_candidates(&conn).unwrap_or(0);
         let is_small_job = candidate_count <= self.cascade.small_job_threshold() as i64;
-        // The judge pool is frozen once per run and never scaled by the machine:
+        // The comparator pool is frozen once per run and never scaled by the machine:
         // a pool that grew and shrank with the load would move every member's
         // set-relative grade, which is the one thing a win-rate must not do.
         let pool_size = if is_small_job {
@@ -187,16 +187,16 @@ impl CascadeRunner {
             pool_size,
         };
 
-        // Stage 0.5 — the scout. One cheap multilingual pass over every candidate
-        // before the heavy embedder is asked for anything, so the waves that
+        // Stage 0.5 — the quick. One cheap multilingual pass over every candidate
+        // before the deep embedder is asked for anything, so the waves that
         // follow are gated by a language-fair score (design §7/§8).
         self.emit_progress(RankProgress {
             job_id: self.job_id.clone(),
-            stage: "scout".into(),
+            stage: "quick".into(),
             wave: 0,
             embedded_done: 0,
             embedded_total: candidate_count as u32,
-            judged: 0,
+            comparatord: 0,
             candidates: candidate_count as u32,
             running: true,
             reason: None,
@@ -204,7 +204,7 @@ impl CascadeRunner {
         let scout_model = libtriqui_core::cascade::scout_model(&self.runtime);
         if scout_model.is_none() {
             self.events.emit(
-                "job-scout-progress",
+                "job-quick-progress",
                 &EmbeddingProgress {
                     job_id: self.job_id.clone(),
                     done: candidate_count,
@@ -215,7 +215,7 @@ impl CascadeRunner {
             );
         } else {
             self.events.emit(
-                "job-scout-progress",
+                "job-quick-progress",
                 &EmbeddingProgress {
                     job_id: self.job_id.clone(),
                     done: 0,
@@ -225,14 +225,14 @@ impl CascadeRunner {
                 },
             );
         }
-        // A scout with no job ad to score against embeds the corpus and
-        // defers its grading (scout.rs). The waves below catch it up at the
+        // A quick with no job ad to score against embeds the corpus and
+        // defers its grading (quick.rs). The waves below catch it up at the
         // first boundary after an ad lands — one ad embed plus maxsim over
-        // the scout chunks already on disk, no further corpus model calls.
+        // the quick chunks already on disk, no further corpus model calls.
         let mut scout_deferred = false;
         match run_scout_stage(&self.runtime, &self.job_id, &|d, t, _f, _a| {
             self.events.emit(
-                "job-scout-progress",
+                "job-quick-progress",
                 &EmbeddingProgress {
                     job_id: self.job_id.clone(),
                     done: d,
@@ -245,7 +245,7 @@ impl CascadeRunner {
             Ok(Some(outcome)) => {
                 scout_deferred = outcome.deferred;
                 log::info!(
-                    "cascade: scout stage done for {} (model {:?}, embedded {}, graded {}{})",
+                    "cascade: quick stage done for {} (model {:?}, embedded {}, graded {}{})",
                     self.job_id,
                     scout_model,
                     outcome.embedded,
@@ -254,39 +254,39 @@ impl CascadeRunner {
                 );
             }
             Ok(None) => {}
-            // A scout failure must not sink the run: the waves still converge, they
-            // just have nothing to gate them on until the heavy embedder lands. Log
+            // A quick failure must not sink the run: the waves still converge, they
+            // just have nothing to gate them on until the deep embedder lands. Log
             // loudly and carry on.
-            Err(e) => log::warn!("cascade: scout stage failed for {}: {}", self.job_id, e),
+            Err(e) => log::warn!("cascade: quick stage failed for {}: {}", self.job_id, e),
         }
 
-        // The scout has graded the whole corpus, so the sheet can be projected —
+        // The quick has graded the whole corpus, so the sheet can be projected —
         // this is the "ok sorting in front of the user as soon as possible"
         // moment: a complete, if coarse, ranking for every CV.
         match project(&self.runtime, &self.job_id) {
             Ok(report) => log::info!(
-                "cascade: scout pass projected for {} ({} graded, {} still scout-only)",
+                "cascade: quick pass projected for {} ({} graded, {} still quick-only)",
                 self.job_id,
                 report.scored,
                 report.scout_only
             ),
-            Err(e) => log::warn!("cascade: scout projection failed for {}: {}", self.job_id, e),
+            Err(e) => log::warn!("cascade: quick projection failed for {}: {}", self.job_id, e),
         }
 
-        // Freeze the judge pool now, from the projected order. One pool per run.
+        // Freeze the comparator pool now, from the projected order. One pool per run.
         if pool_size > 0 {
             match freeze_pool(&self.runtime, &self.job_id, pool_size) {
-                Ok(n) => log::info!("cascade: judge pool frozen for {} with {n} members", self.job_id),
+                Ok(n) => log::info!("cascade: comparator pool frozen for {} with {n} members", self.job_id),
                 Err(e) => log::warn!("cascade: could not freeze the pool for {}: {}", self.job_id, e),
             }
         }
 
-        // Waves. Each one embeds its K1 slice, judges the top K2, re-sorts and
+        // Waves. Each one embeds its K1 slice, comparators the top K2, re-sorts and
         // persists; the loop ends when nothing is left to embed, which makes the
         // last wave a full pass (the convergence guarantee, design §5).
         if candidate_count > 0 {
             self.events.emit(
-                "job-heavy-progress",
+                "job-deep-progress",
                 &EmbeddingProgress {
                     job_id: self.job_id.clone(),
                     done: 0,
@@ -298,7 +298,7 @@ impl CascadeRunner {
         }
         let mut wave: u32 = 0;
         let mut total_embedded: i64 = 0;
-        let mut total_judged: u32 = 0;
+        let mut total_comparatord: u32 = 0;
         loop {
             // The supersede check comes first: a superseded runner must exit
             // silently even when the DB row (the newer run's) is not
@@ -317,10 +317,10 @@ impl CascadeRunner {
                 return;
             }
 
-            // A scout that deferred its scoring grades the corpus here once an
+            // A quick that deferred its scoring grades the corpus here once an
             // ad exists: this is the "ad lands mid-run" path (design §9 — the
             // landing must not cancel the run, its embeds are ad-independent).
-            // Cheap when it fires: the scout chunks are on disk, so the pass
+            // Cheap when it fires: the quick chunks are on disk, so the pass
             // costs one ad embed plus maxsim, and the wave's sort picks the
             // grades and the refreshed best-current-order up.
             if scout_deferred && self.job_has_ad(&conn) {
@@ -328,7 +328,7 @@ impl CascadeRunner {
                     Ok(Some(outcome)) if outcome.graded > 0 => {
                         scout_deferred = false;
                         log::info!(
-                            "cascade: scout caught up for {} after a query landed ({} graded)",
+                            "cascade: quick caught up for {} after a query landed ({} graded)",
                             self.job_id,
                             outcome.graded
                         );
@@ -336,7 +336,7 @@ impl CascadeRunner {
                     }
                     Ok(_) => {}
                     Err(e) => {
-                        log::warn!("cascade: scout catch-up failed for {}: {}", self.job_id, e)
+                        log::warn!("cascade: quick catch-up failed for {}: {}", self.job_id, e)
                     }
                 }
             }
@@ -350,7 +350,7 @@ impl CascadeRunner {
             let sys = syscap::budget_now(&self.syscap, &self.engine);
             if !sys.verdict.heavy_ok() {
                 log::warn!(
-                    "cascade: system budget holds heavy work for {} (free memory low) — pausing waves",
+                    "cascade: system budget holds deep work for {} (free memory low) — pausing waves",
                     self.job_id
                 );
                 self.events.emit("rank-progress", &RankProgress {
@@ -359,7 +359,7 @@ impl CascadeRunner {
                     wave,
                     embedded_done: total_embedded as u32,
                     embedded_total: candidate_count as u32,
-                    judged: total_judged,
+                    comparatord: total_comparatord,
                     candidates: candidate_count as u32,
                     running: true,
                     reason: syscap::holding_code(&sys),
@@ -385,13 +385,13 @@ impl CascadeRunner {
                         wave,
                         embedded_done: (total_embedded + done) as u32,
                         embedded_total: (total_embedded + total) as u32,
-                        judged: total_judged,
+                        comparatord: total_comparatord,
                         candidates: candidate_count as u32,
                         running: active,
                         reason: None,
                     });
                     self.events.emit(
-                        "job-heavy-progress",
+                        "job-deep-progress",
                         &EmbeddingProgress {
                             job_id: self.job_id.clone(),
                             done: total_embedded + done,
@@ -405,8 +405,8 @@ impl CascadeRunner {
             match run_wave(&self.runtime, &self.job_id, wave, budget, progress) {
                 Ok(outcome) => {
                     total_embedded += outcome.embedded;
-                    if outcome.judge_ran {
-                        total_judged += outcome.judge_pairs_fresh;
+                    if outcome.comparator_ran {
+                        total_comparatord += outcome.comparator_pairs_fresh;
                     }
                     self.events.emit("rank-progress", &RankProgress {
                         job_id: self.job_id.clone(),
@@ -414,13 +414,13 @@ impl CascadeRunner {
                         wave,
                         embedded_done: total_embedded as u32,
                         embedded_total: candidate_count as u32,
-                        judged: total_judged,
+                        comparatord: total_comparatord,
                         candidates: candidate_count as u32,
                         running: !outcome.converged,
                         reason: None,
                     });
                     self.events.emit(
-                        "job-heavy-progress",
+                        "job-deep-progress",
                         &EmbeddingProgress {
                             job_id: self.job_id.clone(),
                             done: total_embedded,
@@ -490,7 +490,7 @@ impl CascadeRunner {
             }
         };
         // Read the report the last wave persisted rather than re-running the
-        // pipeline: a second pass would find every judge pair memoized and
+        // pipeline: a second pass would find every comparator pair memoized and
         // report `fresh = 0`, which is a lie about what happened.
         let reports_json = libtriqui_core::rescore::read_triqui(&conn, &self.job_id)
             .map(|(_, report)| serde_json::to_string(&vec![report]).unwrap_or_default())
@@ -518,7 +518,7 @@ impl CascadeRunner {
             wave: 0,
             embedded_done: 0,
             embedded_total: 0,
-            judged: 0,
+            comparatord: 0,
             candidates: 0,
             running: false,
             reason: None,
@@ -546,7 +546,7 @@ impl CascadeRunner {
             wave: 0,
             embedded_done: 0,
             embedded_total: 0,
-            judged: 0,
+            comparatord: 0,
             candidates: 0,
             running: false,
             reason: None,
@@ -590,8 +590,8 @@ pub fn spawn_cascade(state: &Arc<ServeState>, job_id: &str) -> Result<bool, Stri
     // to embed and nothing to rank.
     //
     // A job with **no job ad** is NOT refused: the embed stages are
-    // ad-independent, so the run extracts scout vectors (stage 0.5, whole corpus)
-    // and heavy chunk vectors (the waves) while the user writes the ad. Scoring
+    // ad-independent, so the run extracts quick vectors (stage 0.5, whole corpus)
+    // and deep chunk vectors (the waves) while the user writes the ad. Scoring
     // needs a query and stays empty until one exists — the waves re-derive stage
     // 0 and re-sort every pass, so grades land as soon as the ad (or positive
     // criteria) does; if the run already converged, setting the ad spawns a
@@ -688,7 +688,7 @@ pub fn spawn_cascade(state: &Arc<ServeState>, job_id: &str) -> Result<bool, Stri
 ///
 /// This is a priority hint: if a cascade is already running, this is a no-op
 /// that returns the current state. If not, it starts one. Ad-less jobs are
-/// allowed — the cascade embeds the corpus (scout + heavy waves) and defers
+/// allowed — the cascade embeds the corpus (quick + deep waves) and defers
 /// scoring until an ad lands (matching the import auto-start behavior).
 pub fn start_rank(state: &Arc<ServeState>, job_id: &str) -> Result<Value, ProtocolError> {
     {
@@ -720,7 +720,7 @@ pub fn start_rank(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Protoc
                 wave: None,
                 embedded_total: 0,
                 embedded_done: 0,
-                judged: 0,
+                comparatord: 0,
                 candidates: 0,
                 converged: false,
                 reason: None,
@@ -737,7 +737,7 @@ pub fn start_rank(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Protoc
         wave: None,
         embedded_total: 0,
         embedded_done: 0,
-        judged: 0,
+        comparatord: 0,
         candidates: 0,
         converged: false,
         reason: None,
@@ -784,7 +784,7 @@ fn sample_budget_for_state() -> (libsyscap::Budget, libsyscap::LoadSnapshot) {
 /// Progress counters are **derived from the data**, not carried in a column that
 /// the background thread has to remember to update: `candidates` is the
 /// extracted candidate count, `embedded_done` counts candidates that actually
-/// hold chunk vectors for the full embedder, and `judged` is the last wave's
+/// hold chunk vectors for the full embedder, and `comparatord` is the last wave's
 /// fresh-verdict count from the sort report. Deriving them means a poll can
 /// never disagree with the sheet, and it costs one indexed count each.
 ///

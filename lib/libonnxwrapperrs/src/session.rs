@@ -1294,7 +1294,7 @@ mod tests {
             let f = std::fs::File::create(&path).expect("create");
             f.set_len(bytes).expect("set_len");
         };
-        // cache-resident weights (the scout's regime) fan out; a
+        // cache-resident weights (the quick's regime) fan out; a
         // bandwidth-bound footprint keeps a single session.
         write("model.onnx", 108 << 20);
         assert_eq!(auto_fan_out(&dir), 8);

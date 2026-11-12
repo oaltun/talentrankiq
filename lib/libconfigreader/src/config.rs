@@ -47,7 +47,7 @@ pub struct Config {
     pub families: Vec<Family>,
     pub models: Vec<Model>,
     pub gui_embedders: Vec<GuiEmbedder>,
-    pub gui_judge_artifact: GuiJudgeArtifact,
+    pub gui_comparator_artifact: GuiComparatorArtifact,
     pub cascade: CascadeConfig,
 }
 
@@ -416,7 +416,7 @@ impl Config {
                     }],
                     multi_vector: false,
                 },
-                // -------- Cascade scout: static-similarity-mrl-multilingual-v1 --------
+                // -------- Cascade quick: static-similarity-mrl-multilingual-v1 --------
                 Model {
                     slug: "static-similarity-mrl-multilingual-v1".into(),
                     family: "static-similarity-mrl".into(),
@@ -443,7 +443,7 @@ impl Config {
                     memory_mb: 600,
                     default: true,
                     chunk_size: 1024,
-                    judge_artifact: Some(PathBuf::from("hth-harrier-270m-v1.json")),
+                    comparator_artifact: Some(PathBuf::from("comparator-harrier-270m-v1.json")),
                 },
                 GuiEmbedder {
                     slug: "harrier-oss-v1-270m-MLX-4bit".into(),
@@ -451,7 +451,7 @@ impl Config {
                     memory_mb: 600,
                     default: false,
                     chunk_size: 1024,
-                    judge_artifact: Some(PathBuf::from("hth-harrier-270m-v1.json")),
+                    comparator_artifact: Some(PathBuf::from("comparator-harrier-270m-v1.json")),
                 },
                 GuiEmbedder {
                     slug: "harrier-oss-v1-0.6b-ONNX-q4".into(),
@@ -459,7 +459,7 @@ impl Config {
                     memory_mb: 2200,
                     default: false,
                     chunk_size: 1024,
-                    judge_artifact: Some(PathBuf::from("hth-harrier-600m-v1.json")),
+                    comparator_artifact: Some(PathBuf::from("comparator-harrier-600m-v1.json")),
                 },
                 GuiEmbedder {
                     slug: "harrier-oss-v1-0.6b-MLX-4bit".into(),
@@ -467,17 +467,17 @@ impl Config {
                     memory_mb: 2200,
                     default: false,
                     chunk_size: 1024,
-                    judge_artifact: Some(PathBuf::from("hth-harrier-600m-v1.json")),
+                    comparator_artifact: Some(PathBuf::from("comparator-harrier-600m-v1.json")),
                 },
             ],
 
-            gui_judge_artifact: GuiJudgeArtifact {
-                default: Some(PathBuf::from("hth-harrier-600m-v1.json")),
+            gui_comparator_artifact: GuiComparatorArtifact {
+                default: Some(PathBuf::from("comparator-harrier-600m-v1.json")),
                 by_embedder: {
                     let mut map = std::collections::BTreeMap::new();
                     map.insert(
                         "harrier-oss-v1-270m-ONNX-q4f16".into(),
-                        PathBuf::from("hth-harrier-270m-v1.json"),
+                        PathBuf::from("comparator-harrier-270m-v1.json"),
                     );
                     map
                 },
@@ -488,8 +488,8 @@ impl Config {
                 scout_enabled: true,
                 scout_chunk_size: 512,
                 k1_embed_per_wave: 100,
-                k2_judge_per_wave: 50,
-                judge_pool_size: 50,
+                k2_comparator_per_wave: 50,
+                comparator_pool_size: 50,
                 small_job_threshold: 300,
                 stage0_static_prior: None,
             },
@@ -515,21 +515,21 @@ impl Config {
         self.gui_embedders.iter().find(|e| e.default)
     }
 
-    /// Resolves which judge-artifact path to use for a given embedder slug.
-    /// Order: the co-located `gui_embedders[slug].judge_artifact` field, then
-    /// the legacy `gui_judge_artifact.by_embedder` override, then
-    /// `gui_judge_artifact.default`. Empty string when nothing is configured.
-    pub fn judge_artifact_for(&self, embedder_slug: &str) -> &str {
+    /// Resolves which comparator-artifact path to use for a given embedder slug.
+    /// Order: the co-located `gui_embedders[slug].comparator_artifact` field, then
+    /// the legacy `gui_comparator_artifact.by_embedder` override, then
+    /// `gui_comparator_artifact.default`. Empty string when nothing is configured.
+    pub fn comparator_artifact_for(&self, embedder_slug: &str) -> &str {
         if let Some(ge) = self.gui_embedders.iter().find(|ge| ge.slug == embedder_slug) {
-            if let Some(p) = &ge.judge_artifact {
+            if let Some(p) = &ge.comparator_artifact {
                 return p.to_str().unwrap_or("");
             }
         }
-        self.gui_judge_artifact
+        self.gui_comparator_artifact
             .by_embedder
             .get(embedder_slug)
             .map(|p| p.to_str().unwrap_or(""))
-            .or(self.gui_judge_artifact.default.as_deref().and_then(|p| p.to_str()))
+            .or(self.gui_comparator_artifact.default.as_deref().and_then(|p| p.to_str()))
             .unwrap_or("")
     }
 
@@ -776,7 +776,7 @@ pub struct SyscapConfig {
     pub reserve_core_frac: f32,
     /// Free-RAM fraction below which the budget drops to Backoff.
     pub min_free_mem_frac: f64,
-    /// Free-RAM fraction below which heavy work pauses (Hold).
+    /// Free-RAM fraction below which deep work pauses (Hold).
     pub hold_free_mem_frac: f64,
     /// 1-minute load average per logical core above which the budget drops to Polite.
     pub load_backoff: f64,
@@ -987,27 +987,27 @@ pub struct GuiEmbedder {
     pub default: bool,
     /// Token chunk size used when ingesting documents.
     pub chunk_size: u32,
-    /// Judge artifact for this embedder, as an app-dir-relative bare
-    /// filename (e.g. `hth-harrier-270m-v1.json`). `None` = no judge
+    /// Comparator artifact for this embedder, as an app-dir-relative bare
+    /// filename (e.g. `comparator-harrier-270m-v1.json`). `None` = no comparator
     /// configured for this embedder.
-    pub judge_artifact: Option<PathBuf>,
+    pub comparator_artifact: Option<PathBuf>,
 }
 
 // ============================================================================
-// Judge artifacts
+// Comparator artifacts
 // ============================================================================
 
-/// Per-embedder judge-artifact path overrides.
-/// This mirrors the old GuiJudgeArtifacts structure for backward compatibility.
+/// Per-embedder comparator-artifact path overrides.
+/// This mirrors the old GuiComparatorArtifacts structure for backward compatibility.
 #[derive(Debug, Clone, Default)]
-pub struct GuiJudgeArtifact {
+pub struct GuiComparatorArtifact {
     /// Fallback path used when no per-slug override matches.
     pub default: Option<PathBuf>,
     /// Embedder slug → artifact path.
     pub by_embedder: std::collections::BTreeMap<String, PathBuf>,
 }
 
-impl GuiJudgeArtifact {
+impl GuiComparatorArtifact {
     /// Artifact for embedder `slug`: the per-embedder override, else the
     /// default (`None` when the entry is empty or has no match).
     pub fn for_embedder(&self, slug: &str) -> Option<&Path> {
@@ -1029,18 +1029,18 @@ impl GuiJudgeArtifact {
 /// Progressive-ranking cascade configuration.
 #[derive(Debug, Clone)]
 pub struct CascadeConfig {
-    /// Slug of the cheap scout model used at stage 0.5.
+    /// Slug of the cheap quick model used at stage 0.5.
     pub scout_model: String,
-    /// Master switch for the scout stage.
+    /// Master switch for the quick stage.
     pub scout_enabled: bool,
-    /// Token chunk size for the scout model.
+    /// Token chunk size for the quick model.
     pub scout_chunk_size: u32,
     /// Top-K candidates kept after stage 1 (per wave).
     pub k1_embed_per_wave: u32,
-    /// Top-K candidates kept after the judge stage (per wave).
-    pub k2_judge_per_wave: u32,
-    /// The frozen judge pool size.
-    pub judge_pool_size: u32,
+    /// Top-K candidates kept after the comparator stage (per wave).
+    pub k2_comparator_per_wave: u32,
+    /// The frozen comparator pool size.
+    pub comparator_pool_size: u32,
     /// Below this document count the cascade collapses to a single pass.
     pub small_job_threshold: u32,
     /// Static (Model2Vec-style) stage-0 semantic prior slug.
@@ -1054,8 +1054,8 @@ impl Default for CascadeConfig {
             scout_enabled: true,
             scout_chunk_size: 512,
             k1_embed_per_wave: 100,
-            k2_judge_per_wave: 50,
-            judge_pool_size: 50,
+            k2_comparator_per_wave: 50,
+            comparator_pool_size: 50,
             small_job_threshold: 300,
             stage0_static_prior: None,
         }
@@ -1067,7 +1067,7 @@ impl CascadeConfig {
         self.k1_embed_per_wave as usize
     }
     pub fn pool_size(&self) -> usize {
-        self.judge_pool_size as usize
+        self.comparator_pool_size as usize
     }
     pub fn small_job_threshold(&self) -> usize {
         self.small_job_threshold as usize
@@ -1078,7 +1078,7 @@ impl CascadeConfig {
     pub fn scout_enabled(&self) -> bool {
         self.scout_enabled
     }
-    pub fn scout(&self) -> Option<&str> {
+    pub fn quick(&self) -> Option<&str> {
         if self.scout_enabled() {
             Some(&self.scout_model)
         } else {
@@ -1213,29 +1213,29 @@ mod tests {
     }
 
     #[test]
-    fn judge_artifact_resolution() {
+    fn comparator_artifact_resolution() {
         let cfg = Config::load();
-        // Each gui_embedders entry carries its own judge artifact.
+        // Each gui_embedders entry carries its own comparator artifact.
         assert_eq!(
-            cfg.judge_artifact_for("harrier-oss-v1-270m-ONNX-q4f16"),
-            "hth-harrier-270m-v1.json"
+            cfg.comparator_artifact_for("harrier-oss-v1-270m-ONNX-q4f16"),
+            "comparator-harrier-270m-v1.json"
         );
         assert_eq!(
-            cfg.judge_artifact_for("harrier-oss-v1-270m-MLX-4bit"),
-            "hth-harrier-270m-v1.json"
+            cfg.comparator_artifact_for("harrier-oss-v1-270m-MLX-4bit"),
+            "comparator-harrier-270m-v1.json"
         );
         assert_eq!(
-            cfg.judge_artifact_for("harrier-oss-v1-0.6b-ONNX-q4"),
-            "hth-harrier-600m-v1.json"
+            cfg.comparator_artifact_for("harrier-oss-v1-0.6b-ONNX-q4"),
+            "comparator-harrier-600m-v1.json"
         );
         assert_eq!(
-            cfg.judge_artifact_for("harrier-oss-v1-0.6b-MLX-4bit"),
-            "hth-harrier-600m-v1.json"
+            cfg.comparator_artifact_for("harrier-oss-v1-0.6b-MLX-4bit"),
+            "comparator-harrier-600m-v1.json"
         );
         // Unknown slug falls back to default.
         assert_eq!(
-            cfg.judge_artifact_for("does-not-exist"),
-            "hth-harrier-600m-v1.json"
+            cfg.comparator_artifact_for("does-not-exist"),
+            "comparator-harrier-600m-v1.json"
         );
     }
 
@@ -1289,8 +1289,8 @@ mod tests {
         let _ = cfg.cascade.scout_enabled;
         let _ = cfg.cascade.scout_chunk_size;
         let _ = cfg.cascade.k1_embed_per_wave;
-        let _ = cfg.cascade.k2_judge_per_wave;
-        let _ = cfg.cascade.judge_pool_size;
+        let _ = cfg.cascade.k2_comparator_per_wave;
+        let _ = cfg.cascade.comparator_pool_size;
         let _ = cfg.cascade.small_job_threshold;
         let _ = cfg.cascade.stage0_static_prior;
     }

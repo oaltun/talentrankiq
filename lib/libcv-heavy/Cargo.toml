@@ -1,5 +1,5 @@
 [package]
-name = "libcv-heavy"
+name = "libcv-deep"
 version = "0.1.0"
 description = "TalentRankIQ crate."
 authors = ["oaltun"]

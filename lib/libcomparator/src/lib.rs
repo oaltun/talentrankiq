@@ -1,17 +1,17 @@
-//! Frozen-embedder judge: artifacts, feature assembly and hand-rolled
-//! inference for the pairwise/pointwise judge methods (bench design step 15,
-//! `bench/bench1/design/15-pairwise-judge.md`).
+//! Frozen-embedder comparator: artifacts, feature assembly and hand-rolled
+//! inference for the pairwise/pointwise comparator methods (bench design step 15,
+//! `bench/bench1/design/15-pairwise-comparator.md`).
 //!
 //! Crate layout follows the contract-lib pattern from `NOAI.md`: both
-//! consumers (`judgetrainer`, which trains with burn and writes artifacts, and
-//! `bench`, which scores with the methods `pointwise-judge` /
-//! `pairwise-judge`) link this crate so the artifact schema, the feature
+//! consumers (`comparatortrainer`, which trains with burn and writes artifacts, and
+//! `bench`, which scores with the methods `pointwise-comparator` /
+//! `pairwise-comparator`) link this crate so the artifact schema, the feature
 //! assembly and the forward pass cannot drift between training and inference.
 //!
 //! burn is deliberately NOT a dependency: training exports plain serde weight
 //! arrays, and this crate reproduces the network with a hand-rolled forward
 //! pass. Burn-to-inference parity is enforced by the fixture vectors embedded
-//! in every artifact (see `JudgeArtifact::verify_parity`).
+//! in every artifact (see `ComparatorArtifact::verify_parity`).
 
 pub mod artifact;
 pub mod datamaker_import;
@@ -21,19 +21,19 @@ pub mod features;
 pub mod forward;
 pub mod tournament;
 
-pub use artifact::{ArtifactMeta, FeatureSpec, JudgeArtifact, LayerWeights, ParityPair};
-pub use datamaker_import::{load_datamaker_export, DatamakerExportConfig, DatamakerJobGroup, DatamakerDoc, JudgeRow};
+pub use artifact::{ArtifactMeta, FeatureSpec, ComparatorArtifact, LayerWeights, ParityPair};
+pub use datamaker_import::{load_datamaker_export, DatamakerExportConfig, DatamakerJobGroup, DatamakerDoc, ComparatorRow};
 pub use extract::{ChunkCache, EvidenceCache, FeatureExtractor, TextEmbedder};
 pub use features::{
     assemble_engineered_pair, assemble_fused_pair, assemble_raw_pair, doc_features, DocFeatures,
     TextPrep,
 };
-pub use forward::JudgeModel;
+pub use forward::ComparatorModel;
 pub use tournament::{bradley_terry, cycle_rate, pairwise_prob_matrix, win_rate_scores};
 
-/// Error type for judge loading / inference / feature building.
+/// Error type for comparator loading / inference / feature building.
 #[derive(thiserror::Error, Debug)]
-pub enum JudgeError {
+pub enum ComparatorError {
     #[error("invalid artifact: {0}")]
     InvalidArtifact(String),
     #[error("dimension mismatch: expected {expected}, got {got}")]

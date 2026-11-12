@@ -1,16 +1,16 @@
-//! Judge verdict memoization (state contract: the judge runs only when
+//! Comparator verdict memoization (state contract: the comparator runs only when
 //! necessary).
 //!
-//! The gui judge stage is a pairwise tournament: with N candidates it
+//! The gui comparator stage is a pairwise tournament: with N candidates it
 //! evaluates N·(N−1)/2 canonical pairs × 2 forward passes each (~4M passes at
 //! 2000 CVs). None of that depends on criteria or feedback — only on the job
-//! ad text, the CV texts, the embedding model, and the judge artifact. A
+//! ad text, the CV texts, the embedding model, and the comparator artifact. A
 //! re-rank that changed none of those must run zero verdicts, and a new
 //! candidate must only pay for its own pairs.
 //!
 //! One row per canonical pair verdict `p(a > b)`, keyed by content hashes
 //! (ad text, both candidate texts) plus the embedding model slug and the
-//! judge artifact content hash. Identical CV texts across jobs share rows, so
+//! comparator artifact content hash. Identical CV texts across jobs share rows, so
 //! the table doubles as a portable verdict store for future consumers.
 
 use rusqlite::{Connection, OptionalExtension};
@@ -42,7 +42,7 @@ pub fn lookup_pair(
         return Ok(None);
     }
     conn.query_row(
-        "SELECT prob FROM judge_pair_verdicts
+        "SELECT prob FROM comparator_pair_verdicts
          WHERE model = ?1 AND artifact_hash = ?2 AND ad_hash = ?3 AND doc_a = ?4 AND doc_b = ?5",
         rusqlite::params![model, artifact_hash, ad_hash, doc_a, doc_b],
         |r| r.get(0),
@@ -63,7 +63,7 @@ pub fn store_pair(
 ) -> rusqlite::Result<()> {
     debug_assert!(doc_a <= doc_b, "canonical (sorted) pair order required");
     conn.execute(
-        "INSERT OR REPLACE INTO judge_pair_verdicts
+        "INSERT OR REPLACE INTO comparator_pair_verdicts
          (model, artifact_hash, ad_hash, doc_a, doc_b, prob) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         rusqlite::params![model, artifact_hash, ad_hash, doc_a, doc_b, prob],
     )

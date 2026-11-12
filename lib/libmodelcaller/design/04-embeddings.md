@@ -10,7 +10,7 @@
 ## 4.1 goal
 
 this is the logic ik5 and bench4 currently duplicate against lemonade.
-the orchestrator becomes the single owner. the heavy ONNX work (and the
+the orchestrator becomes the single owner. the deep ONNX work (and the
 model-specific preprocessing) lives in the wrapper; the orchestrator
 only forwards text and gets vectors back, so inter-process IO stays
 tiny (no giant float tensors cross the pipe).

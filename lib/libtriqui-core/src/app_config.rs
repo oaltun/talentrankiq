@@ -82,16 +82,16 @@ pub fn engine_embed_batch() -> usize {
 }
 
 /// `true` when `engine.no_cache` is set: never serve a
-/// vector-embedding or judge verdict from cache — recompute everything for
+/// vector-embedding or comparator verdict from cache — recompute everything for
 /// honest cold timings. Writes still happen, so a benchmark run leaves the
 /// warm caches intact.
 pub fn engine_no_cache() -> bool {
     load_triq().engine.no_cache.unwrap_or(false)
 }
 
-/// Judge stage artifacts for the gui rubric.
-pub fn gui_judge_artifacts() -> libconfigreader::GuiJudgeArtifact {
-    load_triq().gui_judge_artifact
+/// Comparator stage artifacts for the gui rubric.
+pub fn gui_comparator_artifacts() -> libconfigreader::GuiComparatorArtifact {
+    load_triq().gui_comparator_artifact
 }
 
 /// Default rubric weights for new jobs and new criteria.
@@ -118,7 +118,7 @@ pub fn as_str(p: &Path) -> &str {
 }
 
 /// Chunk size for a given model slug from `gui_embedders`, and
-/// from `cascade.scout_chunk_size` for the cascade's scout (which is not a
+/// from `cascade.scout_chunk_size` for the cascade's quick (which is not a
 /// `gui_embedders` entry — it is a stage, not a user-selectable embedder).
 /// Returns 0 (no chunking) if the model is in neither list.
 pub fn chunk_size_for_model(slug: &str) -> usize {
@@ -126,7 +126,7 @@ pub fn chunk_size_for_model(slug: &str) -> usize {
     if let Some(ge) = cfg.gui_embedders.iter().find(|ge| ge.slug == slug) {
         return ge.chunk_size as usize;
     }
-    if cfg.cascade.scout() == Some(slug) {
+    if cfg.cascade.quick() == Some(slug) {
         return cfg.cascade.scout_chunk_size();
     }
     0

@@ -1032,7 +1032,7 @@ mod tests {
         // bits gives ~−23.8 dB → ~6.5% RMSE in the rotated domain. After
         // inverse rotation and rescaling, fp16 round-off plus the norm
         // correction can push observed per-token error to ~11–13% on real
-        // inputs (the rotation cannot hide all bias when the input has heavy
+        // inputs (the rotation cannot hide all bias when the input has deep
         // structure, which our synthetic data does). 15% is a safe bound that
         // catches gross algorithm bugs without being flaky.
         let hd_usize = head_dim as usize;

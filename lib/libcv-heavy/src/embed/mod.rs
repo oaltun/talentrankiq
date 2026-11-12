@@ -153,7 +153,7 @@ impl Embedder for ModelCallerEmbedder {
     fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, EmbedError> {
         let _busy = self.busy.enter();
         // Lowercase before embedding: this is the preprocessing every gui
-        // vector is produced with, matching bench defaults and the judge
+        // vector is produced with, matching bench defaults and the comparator
         // artifacts' `text_preprocessing: lowercase` training spec.
         let lowered: Vec<String> = texts.iter().map(|t| t.to_lowercase()).collect();
         let refs: Vec<&str> = lowered.iter().map(|s| s.as_str()).collect();
@@ -344,7 +344,7 @@ pub fn bytes_to_vector(bytes: &[u8], expected_dim: Option<usize>) -> Result<Vec<
 /// SHA-256 of the *preprocessed* (lowercased) text as lowercase hex — a stable
 /// id for embedding caching + dedup. Lowercasing here (not just at the embedder)
 /// keeps cache keys in lockstep with the text actually embedded, matching the
-/// judge artifacts' `text_preprocessing: lowercase` training spec. Texts
+/// comparator artifacts' `text_preprocessing: lowercase` training spec. Texts
 /// embedded before this change have old-key cache rows and re-embed once.
 pub fn content_hash(text: &str) -> String {
     use sha2::{Digest, Sha256};

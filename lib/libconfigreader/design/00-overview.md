@@ -142,7 +142,7 @@ binary) resolves the same way everywhere:
 - a leading `~` expands to the home directory (`gui_cv_dir_root`,
   `bench.results_dir`, `bench.cache_dir`)
 - a relative path joins onto the config file's directory (`model_dir`,
-  `logfile`, `binaries.*`, `gui_cv_dir_root`, `gui_judge_artifact.*`,
+  `logfile`, `binaries.*`, `gui_cv_dir_root`, `gui_comparator_artifact.*`,
   `bench.results_dir`, `bench.cache_dir`)
 - everything else is kept verbatim (absolute paths)
 

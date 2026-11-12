@@ -13,7 +13,7 @@ base64 = "0.22"
 libconfigreader = { path = "../libconfigreader" }
 # In-process engine (feature `inprocess`): the libmodelcaller JSONL loop runs
 # inside the host process, so there is no libmodelcaller binary to spawn. Through
-# it (libonnxwrapperrs) this links ONNX Runtime — enabled by bench/judgetrainer,
+# it (libonnxwrapperrs) this links ONNX Runtime — enabled by bench/comparatortrainer,
 # while libtriqui-core constructs the loop itself.
 libmodelcaller = { path = "../libmodelcaller", optional = true }
 
@@ -24,7 +24,7 @@ libmodelcaller = { path = "../libmodelcaller", optional = true }
 test-helpers = []
 # Adds [`ModelCallerClient::spawn_inprocess`]: runs the libmodelcaller JSONL loop
 # on a thread inside the host process. No libmodelcaller binary exists anymore —
-# bench and judgetrainer enable this; libtriqui-core keeps its bespoke engine
+# bench and comparatortrainer enable this; libtriqui-core keeps its bespoke engine
 # wiring and constructs the loop itself.
 inprocess = ["dep:libmodelcaller"]
 

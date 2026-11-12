@@ -1,7 +1,7 @@
 //! CV import operation (no Tauri): walk a directory's supported files, parse each
 //! to text, sequentially (parallelism 1), reporting progress through callbacks.
 //! After extraction it runs a stage-0 lexical (BM25) sort immediately so the
-//! triqui is readable within ~1 s of a 2000-CV import. The embed→cosine→judge
+//! triqui is readable within ~1 s of a 2000-CV import. The embed→cosine→comparator
 //! cascade to full convergence runs later via `start_rank` (gui) or `sort_job_blocking` (cli).
 //! Runs on a background thread with its own SQLite connection (WAL allows
 //! concurrent access); the engine connection is opened via [`EngineRuntime::open_conn`].
@@ -243,8 +243,8 @@ pub fn run_import(
         progress(done, total, failed, true, "extracting");
     }
 
-    // Extraction phase complete. The scout cascade (first ordering + the
-    // embed→cosine→judge waves) runs later via `start_rank` (gui) or
+    // Extraction phase complete. The quick cascade (first ordering + the
+    // embed→cosine→comparator waves) runs later via `start_rank` (gui) or
     // `sort_job_blocking` (cli); import no longer derives a lexical stage-0
     // order (v2, progressive-ranking design §21).
     finish_import(import_state, job_id, done, total, failed, progress);

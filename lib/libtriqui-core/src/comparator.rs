@@ -1,12 +1,12 @@
-//! Gui judge stage (design: thin-gui "Job fit (judge)" rubric row).
+//! Gui comparator stage (design: thin-gui "Job fit (comparator)" rubric row).
 //!
 //! Replaces the rubric's "Job ad" cosine row with a win-rate from a trained
-//! pairwise judge artifact (`libjudge`, design 15). Uses only vectors the gui
+//! pairwise comparator artifact (`libcomparator`, design 15). Uses only vectors the gui
 //! already stores — no modelcaller calls at rank time:
 //! - the job ad's fresh embedding becomes the doc's `a` block;
 //! - each candidate's stored chunk embeddings (or its centroid vector when no
 //!   chunks exist) become `e` (centroid) and `c` (best chunk) via
-//!   [`libjudge::features::doc_features`] — the same structure the artifact
+//!   [`libcomparator::features::doc_features`] — the same structure the artifact
 //!   was trained on.
 //!
 //! The stage is active only when the artifact loads, is pairwise, is not
@@ -16,18 +16,18 @@
 
 use std::path::Path;
 
-use libjudge::artifact::{FeatureSpec, FeatureVariant, JudgeArtifact, JudgeKind};
-use libjudge::features::{doc_features, DocFeatures};
-use libjudge::forward::JudgeModel;
-use libjudge::tournament::{pairwise_prob_matrix, win_rate_scores};
+use libcomparator::artifact::{FeatureSpec, FeatureVariant, ComparatorArtifact, ComparatorKind};
+use libcomparator::features::{doc_features, DocFeatures};
+use libcomparator::forward::ComparatorModel;
+use libcomparator::tournament::{pairwise_prob_matrix, win_rate_scores};
 
 use crate::embed::content_hash;
-use crate::judge_cache::{self, PairVerdictStats};
+use crate::comparator_cache::{self, PairVerdictStats};
 
-/// Loaded pairwise judge + the feature spec it was trained with.
-pub struct JudgeStage {
+/// Loaded pairwise comparator + the feature spec it was trained with.
+pub struct ComparatorStage {
     spec: FeatureSpec,
-    model: JudgeModel,
+    model: ComparatorModel,
     /// SHA-256 of the artifact's canonical JSON — memoization key component:
     /// verdicts are facts about *this* artifact, a retrained one invalidates.
     content_hash: String,
@@ -35,14 +35,14 @@ pub struct JudgeStage {
 
 /// Length floors from the training distribution (cnam train): resumes never
 /// fall below ~900 chars (min 897); ads go down to ~72. Inputs below the
-/// resume floor are out-of-distribution for the judge head — it can return
+/// resume floor are out-of-distribution for the comparator head — it can return
 /// confidently wrong verdicts on short/synthetic CVs (verified: the artifact
 /// prefers an obvious non-fit over a match on 2-sentence CVs while ad cosine
 /// ranks correctly). Jobs below the floors use the cosine ad row instead.
 pub const RESUME_MIN_CHARS: usize = 900;
 pub const AD_MIN_CHARS: usize = 70;
 
-/// Whether the judge stage may score this job: the ad must exist and be at
+/// Whether the comparator stage may score this job: the ad must exist and be at
 /// least `AD_MIN_CHARS`, and every candidate's extracted text must be at
 /// least `RESUME_MIN_CHARS` (`None` = no candidates yet → not eligible).
 pub fn job_eligible(ad_text: Option<&str>, min_resume_chars: Option<usize>) -> bool {
@@ -53,12 +53,12 @@ pub fn job_eligible(ad_text: Option<&str>, min_resume_chars: Option<usize>) -> b
     ad_ok && resumes_ok
 }
 
-impl JudgeStage {
-    /// Wrap a validated pairwise artifact (see [`JudgeArtifact::load`]).
-    pub fn from_artifact(artifact: JudgeArtifact) -> Result<Self, String> {
-        if artifact.kind != JudgeKind::Pairwise {
+impl ComparatorStage {
+    /// Wrap a validated pairwise artifact (see [`ComparatorArtifact::load`]).
+    pub fn from_artifact(artifact: ComparatorArtifact) -> Result<Self, String> {
+        if artifact.kind != ComparatorKind::Pairwise {
             return Err(format!(
-                "artifact is a {:?} model, the gui judge stage needs pairwise",
+                "artifact is a {:?} model, the gui comparator stage needs pairwise",
                 artifact.kind
             ));
         }
@@ -70,14 +70,14 @@ impl JudgeStage {
         let json = artifact.to_json().map_err(|e| e.to_string())?;
         Ok(Self {
             spec: artifact.feature_spec.clone(),
-            model: JudgeModel::from_artifact(&artifact).map_err(|e| e.to_string())?,
+            model: ComparatorModel::from_artifact(&artifact).map_err(|e| e.to_string())?,
             content_hash: content_hash(&json),
         })
     }
 
     /// Load + validate + burn-parity-check an artifact from disk.
     pub fn load(path: &Path) -> Result<Self, String> {
-        let artifact = JudgeArtifact::load(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let artifact = ComparatorArtifact::load(path).map_err(|e| format!("{}: {e}", path.display()))?;
         Self::from_artifact(artifact)
     }
 
@@ -97,7 +97,7 @@ impl JudgeStage {
     }
 
     /// Rubric row label replacing "Job ad" when the stage is active.
-    pub const AD_LABEL: &str = "Job fit (judge)";
+    pub const AD_LABEL: &str = "Job fit (comparator)";
 
     /// SHA-256 of the artifact's canonical JSON (memoization key component).
     pub fn content_hash(&self) -> &str {
@@ -109,8 +109,8 @@ impl JudgeStage {
     /// Same result as [`Self::win_rates`] (bit-identical: fresh pairs run the
     /// same forward passes, cached pairs round-trip f64 exactly), but every
     /// canonical pair `p(a > b)` is looked up in — and stored to — the
-    /// `judge_pair_verdicts` table keyed by `(embedder model, artifact hash,
-    /// ad hash, doc_a, doc_b)`. A re-rank whose judge inputs (ad text, CV
+    /// `comparator_pair_verdicts` table keyed by `(embedder model, artifact hash,
+    /// ad hash, doc_a, doc_b)`. A re-rank whose comparator inputs (ad text, CV
     /// texts, model, artifact) are unchanged runs zero forward passes; a new
     /// candidate only pays for its own pairs.
     ///
@@ -119,7 +119,7 @@ impl JudgeStage {
     /// track exactly the text the vectors were built from). Returns the
     /// win-rates aligned with `cv_chunks` plus what the pass did.
     ///
-    /// `rt` (the cascade passes `Some`) only feeds the status line: the judge
+    /// `rt` (the cascade passes `Some`) only feeds the status line: the comparator
     /// never touches the engine, but the gui wants "judging a.pdf vs b.pdf
     /// pair 210/1120" while tiles run.
     pub fn win_rates_cached(
@@ -166,7 +166,7 @@ impl JudgeStage {
                 };
                 let i_canonical = key_a == &doc_keys[i];
                 let hit =
-                    judge_cache::lookup_pair(conn, model, &artifact_hash, ad_hash, key_a, key_b)
+                    comparator_cache::lookup_pair(conn, model, &artifact_hash, ad_hash, key_a, key_b)
                         .map_err(|e| e.to_string())?;
                 match hit {
                     Some(v) => {
@@ -183,7 +183,7 @@ impl JudgeStage {
             }
         }
 
-        let per_tile = libjudge::tournament::pairs_per_tile(self.spec.input_dim);
+        let per_tile = libcomparator::tournament::pairs_per_tile(self.spec.input_dim);
         // Content hash → file name, for the status line only ("judging a.pdf
         // vs b.pdf"). Hashes are content-derived, so the same text under two
         // names resolves to one of them — fine for a progress subject.
@@ -213,32 +213,32 @@ impl JudgeStage {
                 .unwrap_or_else(|| format!("candidate {i}"))
         };
         let total_pairs = fresh.len();
-        let mut judged_pairs = 0usize;
+        let mut comparatord_pairs = 0usize;
         for chunk in fresh.chunks(per_tile) {
             let (si, sj, _) = chunk[0];
             let subject = format!("{} vs {}", name_of(si), name_of(sj));
             if let Some(rt) = rt {
                 rt.set_activity(
-                    "judge",
+                    "comparator",
                     &subject,
-                    Some(format!("pair {}/{}", judged_pairs + 1, total_pairs)),
+                    Some(format!("pair {}/{}", comparatord_pairs + 1, total_pairs)),
                     Some(model),
                 );
             }
             let pairs: Vec<(usize, usize)> = chunk.iter().map(|&(i, j, _)| (i, j)).collect();
-            let vals = libjudge::tournament::averaged_pair_probs_batch(
+            let vals = libcomparator::tournament::averaged_pair_probs_batch(
                 &self.model,
                 &self.spec,
                 &ad,
                 &pairs,
                 &docs,
             );
-            judged_pairs += chunk.len();
+            comparatord_pairs += chunk.len();
             if let Some(rt) = rt {
                 rt.set_activity(
-                    "judge",
+                    "comparator",
                     &subject,
-                    Some(format!("pair {}/{}", judged_pairs, total_pairs)),
+                    Some(format!("pair {}/{}", comparatord_pairs, total_pairs)),
                     Some(model),
                 );
             }
@@ -252,7 +252,7 @@ impl JudgeStage {
                     (&doc_keys[j], &doc_keys[i])
                 };
                 let canonical = if i_canonical { v } else { 1.0 - v };
-                judge_cache::store_pair(
+                comparator_cache::store_pair(
                     conn,
                     model,
                     &artifact_hash,
@@ -296,61 +296,61 @@ impl JudgeStage {
     }
 }
 
-/// The judge stage usable for the runtime's current embedder, or `None` when no
+/// The comparator stage usable for the runtime's current embedder, or `None` when no
 /// artifact is configured, it fails to load, or it does not match.
-pub fn stage_for(rt: &std::sync::Arc<crate::runtime::EngineRuntime>) -> Option<JudgeStage> {
+pub fn stage_for(rt: &std::sync::Arc<crate::runtime::EngineRuntime>) -> Option<ComparatorStage> {
     let model = rt.model();
-    let path = rt.judge_artifact_for(&model)?;
-    match JudgeStage::load(&path) {
+    let path = rt.comparator_artifact_for(&model)?;
+    match ComparatorStage::load(&path) {
         Ok(stage) => Some(stage),
         Err(e) => {
-            log::warn!("judge: artifact {path:?} failed to load, stage disabled: {e}");
+            log::warn!("comparator: artifact {path:?} failed to load, stage disabled: {e}");
             None
         }
     }
 }
 
-/// One pass of the judge over a job's frozen pool.
+/// One pass of the comparator over a job's frozen pool.
 ///
-/// The pool is read from `judge_pool` — never re-picked — because a win-rate is
+/// The pool is read from `comparator_pool` — never re-picked — because a win-rate is
 /// set-relative: with a pool that changed every wave, a CV's grade would move for
-/// reasons that have nothing to do with the CV. Members the heavy embedder has not
+/// reasons that have nothing to do with the CV. Members the deep embedder has not
 /// reached are skipped (there are no vectors to compare), and members that already
-/// have a grade are left alone, so a wave's judge pass costs nothing once the
+/// have a grade are left alone, so a wave's comparator pass costs nothing once the
 /// tournament is memoized.
 ///
 /// The result is one `candidate_scores` row per member (`question_id =
-/// 'ad_judge'`), which is the judge's only write in the system: rescore reads those
+/// 'ad_comparator'`), which is the comparator's only write in the system: rescore reads those
 /// rows as the ad slot's value and never touches them.
 pub fn run_pool(
     rt: &std::sync::Arc<crate::runtime::EngineRuntime>,
     job_id: &str,
-) -> Result<Option<crate::judge_cache::PairVerdictStats>, String> {
+) -> Result<Option<crate::comparator_cache::PairVerdictStats>, String> {
     let model = rt.model();
     let Some(stage) = stage_for(rt) else {
         return Ok(None);
     };
     let conn = rt.open_conn().map_err(|e| e.to_string())?;
 
-    let pool = crate::db::judge_pool_ids(&conn, job_id)?;
+    let pool = crate::db::comparator_pool_ids(&conn, job_id)?;
     if pool.is_empty() {
         // A pool of nobody is a configuration, not a failure: `pool_size: 0`
-        // turns the judge off and reads as "did nothing" — never as "no limit",
+        // turns the comparator off and reads as "did nothing" — never as "no limit",
         // which is what a `0` budget used to mean here.
         return Ok(None);
     }
 
     // Every member goes through the tournament, graded or not: `win_rates_cached`
     // memoizes per pair, so an unchanged pool costs one indexed lookup per pair and
-    // no forward pass — and it keeps `judge_pairs_cached` a truthful count of *pair
+    // no forward pass — and it keeps `comparator_pairs_cached` a truthful count of *pair
     // verdicts* rather than of members. Short-circuiting the already-graded members
     // would report `cached: 0` for a pool whose verdicts are all in the cache, which
-    // reads as "the judge did nothing" instead of "it ran and found nothing new".
-    let mut stats = crate::judge_cache::PairVerdictStats::default();
+    // reads as "the comparator did nothing" instead of "it ran and found nothing new".
+    let mut stats = crate::comparator_cache::PairVerdictStats::default();
     let pending: Vec<&String> = pool.iter().collect();
 
-    // The ad, in the heavy space. Its dimension is also the artifact match check:
-    // a judge trained for another embedder's dimension must not score here.
+    // The ad, in the deep space. Its dimension is also the artifact match check:
+    // a comparator trained for another embedder's dimension must not score here.
     let ad_hash = {
         let ad_text: Option<String> = conn
             .query_row(
@@ -362,7 +362,7 @@ pub fn run_pool(
             .flatten();
         if !job_eligible(ad_text.as_deref(), min_resume_chars(&conn, job_id)?) {
             log::info!(
-                "judge: pool of {} not eligible (ad >= {AD_MIN_CHARS} chars, every CV >= {RESUME_MIN_CHARS}) — using the embedder's cosine",
+                "comparator: pool of {} not eligible (ad >= {AD_MIN_CHARS} chars, every CV >= {RESUME_MIN_CHARS}) — using the embedder's cosine",
                 pending.len()
             );
             return Ok(None);
@@ -375,7 +375,7 @@ pub fn run_pool(
     };
     if !stage.matches(&model, ead.len()) {
         log::info!(
-            "judge: artifact trained for embedder '{}' (dim {}), selected is '{model}' (dim {}) — using the cosine ad row",
+            "comparator: artifact trained for embedder '{}' (dim {}), selected is '{model}' (dim {}) — using the cosine ad row",
             stage.spec_embedder(),
             stage.spec_dim(),
             ead.len()
@@ -426,7 +426,7 @@ pub fn run_pool(
     stats.cached += pass_stats.cached;
     if wins.len() != ids.len() {
         return Err(format!(
-            "judge: win-rates cover {} of {} pool members",
+            "comparator: win-rates cover {} of {} pool members",
             wins.len(),
             ids.len()
         ));
@@ -436,7 +436,7 @@ pub fn run_pool(
 }
 
 
-/// The shortest extracted CV in the job — the judge's resume-length floor.
+/// The shortest extracted CV in the job — the comparator's resume-length floor.
 fn min_resume_chars(conn: &rusqlite::Connection, job_id: &str) -> Result<Option<usize>, String> {
     conn.query_row(
         "SELECT MIN(length(extracted_text)) FROM candidates
@@ -447,7 +447,7 @@ fn min_resume_chars(conn: &rusqlite::Connection, job_id: &str) -> Result<Option<
     .map_err(|e| e.to_string())
 }
 
-/// The job ad's vector in the heavy space, from `rubric_vectors`.
+/// The job ad's vector in the deep space, from `rubric_vectors`.
 fn rubric_ad_vector(
     conn: &rusqlite::Connection,
     job_id: &str,
@@ -469,7 +469,7 @@ fn rubric_ad_vector(
     }
 }
 
-/// Write one `ad_judge` row per pool member, in one transaction.
+/// Write one `ad_comparator` row per pool member, in one transaction.
 ///
 /// `points / max_points` is the win-rate itself, so rescore can read the grade
 /// straight off the row without a second column to keep in sync.
@@ -499,12 +499,12 @@ fn write_grades(
         tx.execute(
             "INSERT INTO candidate_scores
                (id, candidate_id, question_id, kind, label, points, max_points, sign)
-             VALUES (?1, ?2, ?3, 'AdJudge', ?4, ?5, ?6, 'Positive')",
+             VALUES (?1, ?2, ?3, 'AdComparator', ?4, ?5, ?6, 'Positive')",
             rusqlite::params![
                 format!("cs_{}", uuid::Uuid::new_v4()),
                 cid,
                 crate::rescore::JUDGE_Q,
-                JudgeStage::AD_LABEL,
+                ComparatorStage::AD_LABEL,
                 ad_weight * wins[i],
                 ad_weight
             ],
@@ -517,26 +517,26 @@ fn write_grades(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use libjudge::artifact::{Architecture, ArtifactMeta, ChunkingMode, Contextual, LayerWeights};
+    use libcomparator::artifact::{Architecture, ArtifactMeta, ChunkingMode, Contextual, LayerWeights};
 
     /// Single-layer linear pairwise artifact over a raw 5·4 pair input:
     /// logit = a0 + e1_0 − e2_0 (blocks: [a; e1; e2; c1; c2]).
-    fn linear_stage() -> JudgeStage {
+    fn linear_stage() -> ComparatorStage {
         let spec = FeatureSpec::raw_pair(
             "fake",
             4,
             ChunkingMode::None,
             None,
             Contextual::Off,
-            libjudge::features::TextPrep::Lowercase,
+            libcomparator::features::TextPrep::Lowercase,
         );
         let mut w = vec![0.0f32; spec.input_dim];
         w[0] = 1.0; // a
         w[4] = 1.0; // e1
         w[8] = -1.0; // e2
-        let artifact = JudgeArtifact {
-            spec_version: libjudge::artifact::SPEC_VERSION,
-            kind: JudgeKind::Pairwise,
+        let artifact = ComparatorArtifact {
+            spec_version: libcomparator::artifact::SPEC_VERSION,
+            kind: ComparatorKind::Pairwise,
             architecture: Architecture::Linear,
             feature_spec: spec,
             layers: vec![LayerWeights {
@@ -572,18 +572,18 @@ mod tests {
             },
             parity: vec![],
         };
-        JudgeStage::from_artifact(artifact).expect("linear artifact is valid")
+        ComparatorStage::from_artifact(artifact).expect("linear artifact is valid")
     }
 
     fn unit(v: &[f32]) -> Vec<f64> {
         let mut v: Vec<f64> = v.iter().map(|&x| x as f64).collect();
-        libjudge::l2_normalize(&mut v);
+        libcomparator::l2_normalize(&mut v);
         v
     }
 
     #[test]
     fn job_eligibility_needs_ad_and_long_resumes() {
-        let ad = "a valid job ad that is definitely long enough for the judge stage to engage";
+        let ad = "a valid job ad that is definitely long enough for the comparator stage to engage";
         assert!(ad.chars().count() >= AD_MIN_CHARS);
         assert!(job_eligible(Some(ad), Some(900)));
         assert!(!job_eligible(Some("short ad"), Some(5000)));
@@ -643,10 +643,10 @@ mod tests {
         assert!(s[0] > s[1], "centroid-aligned {s:?} must beat orthogonal");
     }
 
-    // --- state-contract: judge verdicts are memoized per (ad, cv_i, cv_j) ---
+    // --- state-contract: comparator verdicts are memoized per (ad, cv_i, cv_j) ---
     //
-    // The judge tournament is O(N²) pairwise forward passes (2 per pair). A
-    // re-rank that changed nothing the judge reads (e.g. a criterion was
+    // The comparator tournament is O(N²) pairwise forward passes (2 per pair). A
+    // re-rank that changed nothing the comparator reads (e.g. a criterion was
     // added) must run ZERO new verdicts; a new candidate must only pay for
     // its own pairs; a changed ad must invalidate everything.
 

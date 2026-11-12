@@ -48,15 +48,15 @@ pub fn embed_job(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Protoco
                 // that left the sheet unranked would make the button look broken
                 // (scoring v3 — the projection reads `stage_scores`, which a
                 // backfill alone does not touch).
-                let heavy = st.runtime.model();
-                match libtriqui_core::rubric::Rubric::with_vectors(&conn, &jid, &heavy)
+                let deep = st.runtime.model();
+                match libtriqui_core::rubric::Rubric::with_vectors(&conn, &jid, &deep)
                     .and_then(|rubric| {
                         libtriqui_core::rubric::score_candidates_in_space(
-                            &conn, &jid, &heavy, &rubric, None,
+                            &conn, &jid, &deep, &rubric, None,
                         )
                     }) {
                     Ok(scored) => {
-                        log::info!("embed_job {jid}: {scored} candidates graded under {heavy}");
+                        log::info!("embed_job {jid}: {scored} candidates graded under {deep}");
                     }
                     Err(e) => log::warn!("embed_job {jid}: grading failed: {e}"),
                 }

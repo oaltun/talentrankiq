@@ -13,7 +13,7 @@ use sha2::{Digest, Sha256};
 use crate::artifact::{ChunkingMode, Contextual, FeatureSpec, FeatureVariant};
 use crate::evidence::{ad_terms, build_vocabulary, compute_features, today_utc, x_block};
 use crate::features::{doc_features, DocFeatures, TextPrep};
-use crate::JudgeError;
+use crate::ComparatorError;
 
 /// Contextual prefixes — must match bench step 14 byte-for-byte.
 pub const RESUME_PREFIX: &str = "This is a chunk from a CV of an applicant applying for a position. ";
@@ -22,7 +22,7 @@ pub const JOB_PREFIX: &str = "This is a chunk from a job advertisement describin
 /// Embedding backend seam. `libmodelcallerclient`'s client adapts into this
 /// at the consumer side; tests can plug a fake embedder.
 pub trait TextEmbedder: Send + Sync {
-    fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f64>>, JudgeError>;
+    fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f64>>, ComparatorError>;
 }
 
 /// File cache with bench step-14's exact on-disk contract:
@@ -34,9 +34,9 @@ pub struct ChunkCache {
 }
 
 impl ChunkCache {
-    pub fn new(dir: &str) -> Result<Self, JudgeError> {
+    pub fn new(dir: &str) -> Result<Self, ComparatorError> {
         std::fs::create_dir_all(dir)
-            .map_err(|e| JudgeError::Other(format!("failed to create cache dir '{dir}': {e}")))?;
+            .map_err(|e| ComparatorError::Other(format!("failed to create cache dir '{dir}': {e}")))?;
         Ok(Self {
             dir: PathBuf::from(dir),
         })
@@ -111,9 +111,9 @@ pub struct EvidenceCache {
 }
 
 impl EvidenceCache {
-    pub fn new(dir: &str) -> Result<Self, JudgeError> {
+    pub fn new(dir: &str) -> Result<Self, ComparatorError> {
         std::fs::create_dir_all(dir)
-            .map_err(|e| JudgeError::Other(format!("failed to create evidence cache dir '{dir}': {e}")))?;
+            .map_err(|e| ComparatorError::Other(format!("failed to create evidence cache dir '{dir}': {e}")))?;
         Ok(Self { dir: PathBuf::from(dir) })
     }
 
@@ -179,7 +179,7 @@ pub struct FeatureExtractor {
     /// each cv (stage-a, evidence-cached) and fills `DocFeatures::x`.
     pub fused: bool,
     /// Evidence cache for the fused variant; disabled by default, set by
-    /// the consumer (bench context / judgetrainer) after construction.
+    /// the consumer (bench context / comparatortrainer) after construction.
     pub evidence_cache: EvidenceCache,
 }
 
@@ -236,7 +236,7 @@ impl FeatureExtractor {
     }
 
     /// Pre-prefixed chunk texts for one document.
-    fn chunk_texts(&self, text: &str, is_job: bool) -> Result<Vec<String>, JudgeError> {
+    fn chunk_texts(&self, text: &str, is_job: bool) -> Result<Vec<String>, ComparatorError> {
         let preprocessed = self.preprocess(text);
         let prefix = self.prefix(is_job);
         match self.chunking {
@@ -256,11 +256,11 @@ impl FeatureExtractor {
                 let tokenizer = self
                     .tokenizer
                     .as_ref()
-                    .ok_or_else(|| JudgeError::Other("chunking requested but no tokenizer loaded".into()))?;
+                    .ok_or_else(|| ComparatorError::Other("chunking requested but no tokenizer loaded".into()))?;
                 let (cs, overlap) = chunk_params(self.chunking, self.max_ctx, self.chunk_size);
                 let chunks = tokenizer
                     .chunk_text(&preprocessed, cs, overlap)
-                    .map_err(|e| JudgeError::Other(format!("chunking failed: {e}")))?;
+                    .map_err(|e| ComparatorError::Other(format!("chunking failed: {e}")))?;
                 Ok(chunks
                     .into_iter()
                     .map(|c| format!("{prefix}{}", c.text))
@@ -271,7 +271,7 @@ impl FeatureExtractor {
 
     /// Embed one (pre-prefixed) text with cache read/write. Use only for
     /// one-off texts; prefer [`extract`](Self::extract) for observations.
-    pub fn embed_cached(&mut self, text: &str) -> Result<Vec<f64>, JudgeError> {
+    pub fn embed_cached(&mut self, text: &str) -> Result<Vec<f64>, ComparatorError> {
         if let Some(emb) = self.cache.get(&self.model, text) {
             self.cache_hits += 1;
             return Ok(emb);
@@ -283,7 +283,7 @@ impl FeatureExtractor {
                 self.cache.put(&self.model, text, &emb);
                 Ok(emb)
             }
-            None => Err(JudgeError::Other("embedding returned empty or zero vector".into())),
+            None => Err(ComparatorError::Other("embedding returned empty or zero vector".into())),
         }
     }
 
@@ -294,7 +294,7 @@ impl FeatureExtractor {
     pub fn extract(
         &mut self,
         texts: ObservationTexts<'_>,
-    ) -> Result<Vec<DocFeatures>, JudgeError> {
+    ) -> Result<Vec<DocFeatures>, ComparatorError> {
         let job_chunk_texts = self.chunk_texts(texts.job_text, true)?;
         let resume_chunk_texts: Vec<Vec<String>> = texts
             .resume_texts
@@ -332,7 +332,7 @@ impl FeatureExtractor {
             self.cache_misses += batch.len();
             let embs = self.embedder.embed(batch)?;
             if embs.len() != batch.len() {
-                return Err(JudgeError::Other(format!(
+                return Err(ComparatorError::Other(format!(
                     "embedder returned {} vectors for {} texts",
                     embs.len(),
                     batch.len()
@@ -340,21 +340,21 @@ impl FeatureExtractor {
             }
             for (t, emb) in batch.iter().zip(embs.into_iter()) {
                 if emb.iter().all(|&v| v == 0.0) {
-                    return Err(JudgeError::Other("embedding returned empty or zero vector".into()));
+                    return Err(ComparatorError::Other("embedding returned empty or zero vector".into()));
                 }
                 self.cache.put(&self.model, t, &emb);
                 emb_by_text.insert(t.clone(), emb);
             }
         }
 
-        let resolve = |texts: &[String]| -> Result<Vec<Vec<f64>>, JudgeError> {
+        let resolve = |texts: &[String]| -> Result<Vec<Vec<f64>>, ComparatorError> {
             texts
                 .iter()
                 .map(|t| {
                     emb_by_text
                         .get(t)
                         .cloned()
-                        .ok_or_else(|| JudgeError::Other("internal: missing embedding".into()))
+                        .ok_or_else(|| ComparatorError::Other("internal: missing embedding".into()))
                 })
                 .collect()
         };
@@ -382,7 +382,7 @@ fn fill_evidence_blocks(
     extractor: &mut FeatureExtractor,
     texts: ObservationTexts<'_>,
     docs: &mut [DocFeatures],
-) -> Result<(), JudgeError> {
+) -> Result<(), ComparatorError> {
     let resume_texts: Vec<String> = texts.resume_texts.iter().map(|t| (*t).to_string()).collect();
     let vocabulary = build_vocabulary(&resume_texts, 1500);
     let terms = ad_terms(texts.job_text, &vocabulary);
@@ -393,7 +393,7 @@ fn fill_evidence_blocks(
     };
 
     if docs.len() != texts.resume_texts.len() {
-        return Err(JudgeError::Other("internal: doc/chunk count mismatch".into()));
+        return Err(ComparatorError::Other("internal: doc/chunk count mismatch".into()));
     }
     for (i, text) in texts.resume_texts.iter().enumerate() {
         let key = EvidenceCache::key("stage-a", "-", "schema-1", text);
@@ -420,7 +420,7 @@ mod tests {
 
     struct ConstEmbedder;
     impl TextEmbedder for ConstEmbedder {
-        fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f64>>, JudgeError> {
+        fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f64>>, ComparatorError> {
             Ok(texts
                 .iter()
                 .map(|t| {

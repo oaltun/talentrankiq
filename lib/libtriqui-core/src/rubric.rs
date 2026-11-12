@@ -14,15 +14,15 @@
 //! # Spaces
 //!
 //! Every question holds one vector **per space** (a space is a model slug). The
-//! scout has its own space, the heavy embedder its own, and the two are never
+//! quick has its own space, the deep embedder its own, and the two are never
 //! mixed. A candidate's usable scorecard is the one in the best space it has:
-//! the scout's until the heavy embedder reaches it, the heavy embedder's after.
+//! the quick's until the deep embedder reaches it, the deep embedder's after.
 //!
 //! That is why vectors live in one `rubric_vectors` table instead of per-column
-//! slots: the scout can score the *whole* rubric — ad, criteria and both feedback
+//! slots: the quick can score the *whole* rubric — ad, criteria and both feedback
 //! rows — only if it can hold a vector per question in its own space. Scoring the
 //! whole rubric is what makes every candidate's total complete from the first
-//! minute, instead of only its ad similarity while the heavy embedder catches up.
+//! minute, instead of only its ad similarity while the deep embedder catches up.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -191,7 +191,7 @@ impl Rubric {
 
     /// `Σ max_points` over the questions a total is made of — the "Total /N"
     /// caption. The ad slot is one question whichever stage backs its *value*, so
-    /// it is counted exactly once and the judge never changes this number.
+    /// it is counted exactly once and the comparator never changes this number.
     pub fn capacity(&self) -> f32 {
         self.ad_weight + self.questions.iter().map(|q| q.max_points).sum::<f32>()
     }
@@ -200,7 +200,7 @@ impl Rubric {
     /// candidate's total is reported against.
     ///
     /// Narrower than [`Rubric::capacity`] on purpose: a feedback row with no learned
-    /// vector is not a question the row was measured on, and a criterion the heavy
+    /// vector is not a question the row was measured on, and a criterion the deep
     /// embedder has not reached is not one either. Counting them would advertise
     /// capacity the ranking never used.
     pub fn capacity_for(&self, graded: &[&str]) -> f32 {
@@ -215,10 +215,10 @@ impl Rubric {
 
     /// A candidate's total from one space's scorecard.
     ///
-    /// `fit` is the ad slot's value (a judge's win-rate when the candidate has
+    /// `fit` is the ad slot's value (a comparator's win-rate when the candidate has
     /// one, otherwise that space's ad cosine); `sims` are the feedback/criterion
     /// similarities in the same space. Both are [0,1], which is what lets a
-    /// scout-space total and a heavy-space total sit in one ranking.
+    /// quick-space total and a deep-space total sit in one ranking.
     pub fn total(&self, fit: f64, sims: &HashMap<String, f64>) -> f64 {
         let mut total = self.ad_weight as f64 * fit;
         for q in &self.questions {
@@ -236,8 +236,8 @@ impl Rubric {
 /// changed. The two learned feedback rows are not embedded at all: they are means
 /// of candidate vectors, already stored per model, so they are copied across.
 ///
-/// `embedder` lets the caller pass the space's own session (the scout's) instead
-/// of having the runtime start its own model. Pass `None` for the heavy space.
+/// `embedder` lets the caller pass the space's own session (the quick's) instead
+/// of having the runtime start its own model. Pass `None` for the deep space.
 ///
 /// This is the **only** function in the scoring path that calls a model, which is
 /// what lets [`crate::rescore`] be a pure projection of the database: a criteria
@@ -374,9 +374,9 @@ pub fn ensure_vectors(
 /// `embedding_cache` for that space are stored, and anything else is left for the
 /// stage that owns the space to embed.
 ///
-/// This is what a request thread uses for the *scout's* space. Loading the scout's
-/// session from a request would evict the heavy embedder a running cascade is
-/// using, and the scout pass will pick the rest up at its next boundary anyway.
+/// This is what a request thread uses for the *quick's* space. Loading the quick's
+/// session from a request would evict the deep embedder a running cascade is
+/// using, and the quick pass will pick the rest up at its next boundary anyway.
 pub fn ensure_vectors_cache_only(
     conn: &Connection,
     rubric: &Rubric,
@@ -424,7 +424,7 @@ pub fn ensure_vectors_cache_only(
 /// `stage_scores` row per (candidate, question).
 ///
 /// `ids` restricts the pass to a slice (a wave's K1 candidates); `None` scores
-/// everything, which is what the scout does once over the whole corpus.
+/// everything, which is what the quick does once over the whole corpus.
 ///
 /// A candidate with no chunks in `space` is skipped: there is nothing to compare
 /// against, and a space it has not reached is a space it has no grades in. That is
@@ -500,7 +500,7 @@ fn candidate_ids(
 
 /// A candidate's centroid vector in one space, for a model without chunking.
 /// Chunked models read `candidate_chunks` instead; this is the fallback so the
-/// judge and the fit score still work for a plain whole-text model.
+/// comparator and the fit score still work for a plain whole-text model.
 pub fn centroid_in_space(
     conn: &Connection,
     candidate_id: &str,

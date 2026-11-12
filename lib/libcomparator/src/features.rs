@@ -1,4 +1,4 @@
-//! Judge input assembly (design 15.4).
+//! Comparator input assembly (design 15.4).
 //!
 //! Per (job, cv) document, from cached chunk embeddings:
 //! - `a` = L2-normalized centroid of the job ad's chunk embeddings
@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::artifact::{Block, FeatureSpec, FeatureVariant};
 use crate::evidence::X_BLOCK_LEN;
-use crate::{cosine, l2_normalize, JudgeError};
+use crate::{cosine, l2_normalize, ComparatorError};
 
 /// Text preprocessing applied before chunking/embedding (mirrors bench).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -46,16 +46,16 @@ pub struct DocFeatures {
 /// Build the per-document blocks `a`/`e`/`c` from raw chunk embeddings.
 /// `job_chunks` are the ad's chunk embeddings (already the preprocessed,
 /// prefixed strings' embeddings); `cv_chunks` the cv's.
-pub fn doc_features(job_chunks: &[Vec<f64>], cv_chunks: &[Vec<f64>]) -> Result<DocFeatures, JudgeError> {
+pub fn doc_features(job_chunks: &[Vec<f64>], cv_chunks: &[Vec<f64>]) -> Result<DocFeatures, ComparatorError> {
     let dim = cv_chunks
         .first()
         .map(|c| c.len())
-        .ok_or_else(|| JudgeError::Other("cv has no chunks".into()))?;
+        .ok_or_else(|| ComparatorError::Other("cv has no chunks".into()))?;
     if job_chunks.is_empty() {
-        return Err(JudgeError::Other("job ad has no chunks".into()));
+        return Err(ComparatorError::Other("job ad has no chunks".into()));
     }
     if job_chunks.iter().chain(cv_chunks.iter()).any(|c| c.len() != dim) {
-        return Err(JudgeError::DimMismatch {
+        return Err(ComparatorError::DimMismatch {
             expected: dim,
             got: 0,
         });

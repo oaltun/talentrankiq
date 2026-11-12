@@ -134,7 +134,7 @@ impl ServeState {
                             job_ad_version: *job_version,
                             model_bundle_version: *model_bundle_version,
                             result: *result,
-                            judged_at: 0,
+                            comparatord_at: 0,
                         },
                     );
                 }
@@ -249,7 +249,7 @@ impl ServeState {
                 active: conv_active,
             },
         );
-        // Scout.
+        // Quick.
         let scout_configured = libtriqui_core::cascade::scout_model(&self.runtime).is_some();
         let (scout_done, scout_active, scout_failed) = if scout_configured {
             let d = cvs
@@ -262,7 +262,7 @@ impl ServeState {
         };
         let _ = scout_failed;
         self.events.emit(
-            "job-scout-progress",
+            "job-quick-progress",
             &libtriqui_client::types::EmbeddingProgress {
                 job_id: job_id.to_string(),
                 done: scout_done,
@@ -271,14 +271,14 @@ impl ServeState {
                 active: scout_active,
             },
         );
-        // Heavy.
+        // Deep.
         let heavy_done = cvs
             .iter()
             .filter(|c| c.heavy_vector.is_some())
             .count() as i64;
         let heavy_active = heavy_done < total;
         self.events.emit(
-            "job-heavy-progress",
+            "job-deep-progress",
             &libtriqui_client::types::EmbeddingProgress {
                 job_id: job_id.to_string(),
                 done: heavy_done,
@@ -419,7 +419,7 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
         Some(Arc::clone(&state.cv_state)),
         libcv_pipeline::RunnerContext {
             runtime: Some(Arc::clone(&state.runtime)),
-            scout_model: libconfigreader::Config::load().cascade.scout().map(str::to_string),
+            scout_model: libconfigreader::Config::load().cascade.quick().map(str::to_string),
             db_path: Some(state.db_path.clone()),
         },
     );

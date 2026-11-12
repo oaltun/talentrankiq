@@ -3,7 +3,7 @@
 //! There is no `modelcaller` binary: every consumer runs the JSONL loop
 //! in-process via [`run_stdio_over`] on a dedicated thread — triqui-core
 //! and `libmodelcallerclient::ModelCallerClient::spawn_inprocess` (bench,
-//! judgetrainer) behind the gui (thin gui pattern, `gui/design/app1/thin-gui.md`).
+//! comparatortrainer) behind the gui (thin gui pattern, `gui/design/app1/thin-gui.md`).
 //! The wire protocol contract lives in `libmodelcallerclient` on the client
 //! side.
 //!

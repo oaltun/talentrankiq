@@ -1,5 +1,5 @@
 [package]
-name = "libjudge"
+name = "libcomparator"
 version = "0.1.0"
 edition = "2024"
 

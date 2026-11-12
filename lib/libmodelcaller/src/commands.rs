@@ -32,8 +32,8 @@ pub struct State {
     /// for models that declare one; `ort` pins the CPU floor.
     backend: libconfigreader::Backend,
     /// One wrapper per runtime, spawned on first use. Both can be alive at
-    /// once because the *models* are not: the cascade loads the scout, embeds,
-    /// unloads it, and only then loads the heavy embedder, so at most one arm
+    /// once because the *models* are not: the cascade loads the quick, embeds,
+    /// unloads it, and only then loads the deep embedder, so at most one arm
     /// ever holds weights.
     wrappers: HashMap<Runtime, Wrapper>,
     loaded: HashMap<String, LoadedModel>,
@@ -42,9 +42,9 @@ pub struct State {
     /// Session handles are only unique *per arm*: each wrapper numbers from 1.
     /// modelcaller hands callers a global id and rewrites it to the arm's own
     /// handle on the way out. Keying a single global `session -> runtime` map
-    /// instead is a silent-corruption bug: with the scout on one arm and the
-    /// heavy embedder on the other, both can hold handle 2, and the heavy
-    /// embedder's embed gets routed to the scout's session — which is how a
+    /// instead is a silent-corruption bug: with the quick on one arm and the
+    /// deep embedder on the other, both can hold handle 2, and the deep
+    /// embedder's embed gets routed to the quick's session — which is how a
     /// 640-dim model came back 1024-dim.
     sessions: HashMap<u64, (Runtime, u64)>,
     /// Next global session id. Distinct from every arm's own counter.
@@ -192,7 +192,7 @@ impl State {
     /// Which runtime serves `record`, and why.
     ///
     /// The order of the checks is the contract: a model without an MLX
-    /// artifact stays on ONNX even on a Mac (that is the scout, and no port
+    /// artifact stays on ONNX even on a Mac (that is the quick, and no port
     /// changes it), a build without the arm stays on ONNX, and `backend: mlx`
     /// refuses to serve anything rather than quietly handing back CPU
     /// vectors labelled as Metal.
@@ -876,8 +876,8 @@ fn cmd_load(state: &mut State, payload: &Value) -> Result<Value> {
 
 fn cmd_unload(state: &mut State, payload: &Value) -> Result<Value> {
     let model = require_model(payload)?;
-    // Unload from the arm that loaded it — the cascade's scout/heavy handoff
-    // depends on this: the scout's weights must leave the GPU before the heavy
+    // Unload from the arm that loaded it — the cascade's quick/deep handoff
+    // depends on this: the quick's weights must leave the GPU before the deep
     // embedder's arrive, or both are resident at once.
     let loaded = state.loaded.get(model).map(|lm| (lm.runtime, lm.session));
     let (runtime, global) = match loaded {
@@ -1571,9 +1571,9 @@ mod tests {
     }
 
     /// Session ids must be unique ACROSS arms, because each arm numbers its
-    /// own handles from 1 and the scout and the heavy embedder routinely land on
-    /// the same number. Before this was modelled, the heavy embedder's embed was
-    /// routed to the scout's session on the other arm and returned 1024-dim
+    /// own handles from 1 and the quick and the deep embedder routinely land on
+    /// the same number. Before this was modelled, the deep embedder's embed was
+    /// routed to the quick's session on the other arm and returned 1024-dim
     /// vectors for a 640-dim model — silent corruption with no error anywhere.
     #[test]
     fn a_session_id_from_one_arm_never_resolves_to_another() {
@@ -1584,16 +1584,16 @@ mod tests {
             Default::default(),
             false,
         );
-        // Both arms hand out handle 2: the scout on ort, the heavy model on mlx.
-        let scout = state.alloc_session(Runtime::Ort, 2);
-        let heavy = state.alloc_session(Runtime::Mlx, 2);
+        // Both arms hand out handle 2: the quick on ort, the deep model on mlx.
+        let quick = state.alloc_session(Runtime::Ort, 2);
+        let deep = state.alloc_session(Runtime::Mlx, 2);
         assert_ne!(
-            scout, heavy,
+            quick, deep,
             "global ids must differ even when arm handles match"
         );
 
-        assert_eq!(state.arm_session(scout).expect("scout"), (Runtime::Ort, 2));
-        assert_eq!(state.arm_session(heavy).expect("heavy"), (Runtime::Mlx, 2));
+        assert_eq!(state.arm_session(quick).expect("quick"), (Runtime::Ort, 2));
+        assert_eq!(state.arm_session(deep).expect("deep"), (Runtime::Mlx, 2));
     }
 
     #[test]

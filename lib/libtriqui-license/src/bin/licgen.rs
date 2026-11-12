@@ -106,7 +106,7 @@ fn generate_license(
 
     let payload = SignedPayload {
         format: LICENSE_FORMAT,
-        feature: "judge".to_string(),
+        feature: "comparator".to_string(),
         customer: customer.clone(),
         issued_at,
         expires_at: expires.clone(),
@@ -119,7 +119,7 @@ fn generate_license(
 
     let license = License {
         format: LICENSE_FORMAT,
-        feature: "judge".to_string(),
+        feature: "comparator".to_string(),
         customer,
         issued_at,
         expires_at: expires,

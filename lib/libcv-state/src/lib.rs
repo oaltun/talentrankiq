@@ -12,8 +12,8 @@ pub use libtriqui_client::types::{
 use libtriqui_client::types::ExtractionStatus as ClientExtractionStatus;
 use libtriqui_core::candidates;
 use libtriqui_core::db::rank_state_for_job;
-use libtriqui_core::judge::JudgeStage;
-use libtriqui_core::scout::{SCOUT_LABEL, SCOUT_QUESTION_ID};
+use libtriqui_core::comparator::ComparatorStage;
+use libtriqui_core::quick::{SCOUT_LABEL, SCOUT_QUESTION_ID};
 use libtriqui_core::syscap;
 use libtriqui_core::runtime::EngineRuntime;
 use libtriqui_core::chunk_match as cm_core;
@@ -262,13 +262,13 @@ pub fn reduce(mut state: State, event: &Event) -> State {
                 .get(&(b.clone(), *job_version))
                 .copied()
                 .unwrap_or_default();
-            let new_a = libjudge::tournament::glicko_update(
-                libjudge::tournament::GlickoState { rating: g_a.rating, rd: g_a.rd },
-                &[(libjudge::tournament::GlickoState { rating: g_b.rating, rd: g_b.rd }, score_min)],
+            let new_a = libcomparator::tournament::glicko_update(
+                libcomparator::tournament::GlickoState { rating: g_a.rating, rd: g_a.rd },
+                &[(libcomparator::tournament::GlickoState { rating: g_b.rating, rd: g_b.rd }, score_min)],
             );
-            let new_b = libjudge::tournament::glicko_update(
-                libjudge::tournament::GlickoState { rating: g_b.rating, rd: g_b.rd },
-                &[(libjudge::tournament::GlickoState { rating: g_a.rating, rd: g_a.rd }, score_max)],
+            let new_b = libcomparator::tournament::glicko_update(
+                libcomparator::tournament::GlickoState { rating: g_b.rating, rd: g_b.rd },
+                &[(libcomparator::tournament::GlickoState { rating: g_a.rating, rd: g_a.rd }, score_max)],
             );
             state.glicko.insert(
                 (a.clone(), *job_version),
@@ -400,7 +400,7 @@ pub fn compute_ranking(state: &State, job_id: &str) -> Vec<RankedCandidate> {
         let ga = a
             .glicko_rating
             .map(|r| {
-                libjudge::tournament::glicko_to_score(libjudge::tournament::GlickoState {
+                libcomparator::tournament::glicko_to_score(libcomparator::tournament::GlickoState {
                     rating: r,
                     rd: 350.0,
                 })
@@ -409,7 +409,7 @@ pub fn compute_ranking(state: &State, job_id: &str) -> Vec<RankedCandidate> {
         let gb = b
             .glicko_rating
             .map(|r| {
-                libjudge::tournament::glicko_to_score(libjudge::tournament::GlickoState {
+                libcomparator::tournament::glicko_to_score(libcomparator::tournament::GlickoState {
                     rating: r,
                     rd: 350.0,
                 })
@@ -634,7 +634,7 @@ fn build_rubric(job: &Job, criteria: &[Criterion]) -> Vec<RubricQuestion> {
         max_points: job.ad_weight as f32,
     };
     let mut out = vec![
-        stage(SCOUT_QUESTION_ID, SCOUT_LABEL, QuestionKind::Scout),
+        stage(SCOUT_QUESTION_ID, SCOUT_LABEL, QuestionKind::Quick),
         RubricQuestion {
             question_id: libtriqui_core::sort::AD_QUESTION_ID.into(),
             label: "Job fit (embed)".into(),
@@ -643,8 +643,8 @@ fn build_rubric(job: &Job, criteria: &[Criterion]) -> Vec<RubricQuestion> {
         },
         stage(
             libtriqui_core::sort::JUDGE_QUESTION_ID,
-            JudgeStage::AD_LABEL,
-            QuestionKind::AdJudge,
+            ComparatorStage::AD_LABEL,
+            QuestionKind::AdComparator,
         ),
     ];
     for c in criteria {
@@ -744,7 +744,7 @@ pub fn compute_rank_state(
         wave: last.filter(|r| r.waves > 0).map(|r| r.waves),
         embedded_total: candidates as u32,
         embedded_done: embedded_done as u32,
-        judged: last.map(|r| r.judge_pairs_fresh).unwrap_or(0),
+        comparatord: last.map(|r| r.comparator_pairs_fresh).unwrap_or(0),
         candidates: candidates as u32,
         converged,
         reason,
@@ -758,15 +758,15 @@ pub fn compute_sort_report(
 ) -> Option<SortReport> {
     let _ = state;
     conn.query_row(
-        "SELECT job_id, judge_mode, judge_pairs_fresh, judge_pairs_cached, mode, waves, complete, cancelled, created_at
+        "SELECT job_id, comparator_mode, comparator_pairs_fresh, comparator_pairs_cached, mode, waves, complete, cancelled, created_at
          FROM sort_reports WHERE job_id = ?1",
         rusqlite::params![job_id],
         |r| {
             Ok(SortReport {
                 job_id: r.get(0)?,
-                judge_mode: r.get(1)?,
-                judge_pairs_fresh: r.get(2)?,
-                judge_pairs_cached: r.get(3)?,
+                comparator_mode: r.get(1)?,
+                comparator_pairs_fresh: r.get(2)?,
+                comparator_pairs_cached: r.get(3)?,
                 mode: r.get(4)?,
                 waves: r.get(5)?,
                 complete: r.get(6)?,
@@ -1203,7 +1203,7 @@ mod more_tests {
         });
         let r = compute_ranking(&s, "j1");
         assert_eq!(r.len(), 2);
-        // c1 has scout 0.7 > c2 heavy 0.5, so c1 ranks first
+        // c1 has quick 0.7 > c2 deep 0.5, so c1 ranks first
         assert_eq!(r[0].cv_id, "c1");
         assert_eq!(r[0].scout_similarity, Some(0.7));
         assert_eq!(r[1].cv_id, "c2");

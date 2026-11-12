@@ -49,7 +49,7 @@ where model files are found:
   the wrapper (`../onnxwrapperrs/design/01-wrapper.md`) is built with **every ONNX Runtime EP
   feature enabled** (see `12-implementation.md`), so it can use
   **whatever accelerator the host exposes — GPU, TPU, or NPU**. models
-  are CPU-heavy, so at load time the wrapper **probes the host and picks
+  are CPU-deep, so at load time the wrapper **probes the host and picks
   the strongest accelerator available**, registering EPs in this priority
   order and falling back:
 

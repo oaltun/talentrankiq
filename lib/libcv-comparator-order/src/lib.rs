@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 pub use libcv_core::{CvId, PairKey};
-use libjudge::tournament::GlickoState;
+use libcomparator::tournament::GlickoState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum H2HStatus {
@@ -12,7 +12,7 @@ pub enum H2HStatus {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct JudgeOrderState {
+pub struct ComparatorOrderState {
     pub glicko: HashMap<(CvId, u32), GlickoState>,
     pub comparisons: HashSet<PairKey>,
     pub provisional_sim_rank: Vec<(CvId, f64)>,
@@ -97,7 +97,7 @@ pub fn exploration_opponents(
     out
 }
 
-pub fn next_pair(state: &JudgeOrderState) -> Option<PairKey> {
+pub fn next_pair(state: &ComparatorOrderState) -> Option<PairKey> {
     // Priority (a): new CVs (no comparisons yet) needing first comparison.
     for (cv, _) in &state.provisional_sim_rank {
         let has = state.comparisons.iter().any(|(a, b)| a == cv || b == cv);
@@ -149,7 +149,7 @@ pub fn next_pair(state: &JudgeOrderState) -> Option<PairKey> {
     None
 }
 
-pub fn h2h_status(cv: CvId, state: &JudgeOrderState) -> H2HStatus {
+pub fn h2h_status(cv: CvId, state: &ComparatorOrderState) -> H2HStatus {
     let has_comparison = state.comparisons.iter().any(|(a, b)| a == &cv || b == &cv);
     let entitled = state.entitled;
     if entitled && has_comparison {
@@ -196,7 +196,7 @@ mod tests {
 
     #[test]
     fn next_pair_prioritizes_uncompared() {
-        let state = JudgeOrderState {
+        let state = ComparatorOrderState {
             glicko: HashMap::new(),
             comparisons: HashSet::new(),
             provisional_sim_rank: vec![("a".to_string(), 0.9), ("b".to_string(), 0.8)],
@@ -209,7 +209,7 @@ mod tests {
 
     #[test]
     fn h2h_status_variants() {
-        let mut state = JudgeOrderState {
+        let mut state = ComparatorOrderState {
             glicko: HashMap::new(),
             comparisons: HashSet::new(),
             provisional_sim_rank: vec![],
@@ -220,7 +220,7 @@ mod tests {
         state.comparisons.insert(("a".to_string(), "b".to_string()));
         assert_eq!(h2h_status("a".into(), &state), H2HStatus::Live);
 
-        let mut state2 = JudgeOrderState {
+        let mut state2 = ComparatorOrderState {
             glicko: HashMap::new(),
             comparisons: HashSet::new(),
             provisional_sim_rank: vec![],

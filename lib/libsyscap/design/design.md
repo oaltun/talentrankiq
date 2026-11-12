@@ -122,7 +122,7 @@ deviation 10:
   (1.0 ..= 2.0) × logical → half the threads/batch, wave_scale 0.5.
 - Backoff: free RAM < 20 % or loadavg1m > 2.0 × logical (`load_stall`) → floor
   values (1 thread, batch 1, wave_scale 0.25).
-- Hold: free RAM < 5 % → verdict Hold; consumers defer heavy work (waves pause,
+- Hold: free RAM < 5 % → verdict Hold; consumers defer deep work (waves pause,
   expensive tests skip). Hold is the ONLY gear the user must see: the gui
   receives a `holding` reason code and shows a visible "paused: system low on
   memory" notice. Polite/Backoff adapt silently — no noise for the user.
@@ -162,7 +162,7 @@ syscap:
   count/names, `recommended_max_working_set_size()` (= practical memory budget on
   unified memory), `is_low_power`/`is_headless`. Zero subprocesses, milliseconds.
   ANE is not directly queryable: inferred `ane_present` from Apple-Silicon brand.
-- `serde` (DTOs), `log`. No tokio, no new heavy deps.
+- `serde` (DTOs), `log`. No tokio, no new deep deps.
 
 **Hard rule: the lib never spawns a process.** `nvidia-smi`/`system_profiler`
 subprocess tricks from probe.rs are not carried over (gui invariant). On this Mac
@@ -270,7 +270,7 @@ that loses nothing: Metal covers GPU enumeration.
    consumer that actually batches (shortlist-core `EMBED_BATCH`) applies it
    in M5c.
 5. **M5c**: the `system_budget` DTO carries `verdict` as the snake_case
-   code string (contract-lib style, like `judge_mode`) plus a `holding`
+   code string (contract-lib style, like `comparator_mode`) plus a `holding`
    bool mirror; the load sample rides along for provenance/phase-2 badge.
    Small jobs (≤ `small_job_threshold`) skip wave *scaling* (one wave of
    everything anyway) but not the `hold` pause — low memory stops every

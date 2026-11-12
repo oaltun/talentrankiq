@@ -161,7 +161,7 @@ OPEN SOURCE CONTRIBUTIONS & COMMUNITY INVOLVEMENT
 - Regular contributor to CNCF projects including Envoy Proxy, OpenTelemetry, and Jaeger tracing
 - Volunteer technical mentor at CodePath education nonprofit, mentoring 50+ underrepresented students annually
 - Co-founder of local CTO meetup group with 500+ members focused on engineering leadership topics
-- Judge for Major League Hacking (MLH) hackathons evaluating student projects in emerging technologies
+- Comparator for Major League Hacking (MLH) hackathons evaluating student projects in emerging technologies
 
 PROFESSIONAL MEMBERSHIPS & AFFILIATIONS
 - Association for Computing Machinery (ACM) - Senior Member since 2010

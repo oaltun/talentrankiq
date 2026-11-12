@@ -6,7 +6,7 @@ use crate::budget::{budget, Verdict};
 use crate::inventory::Inventory;
 use crate::load::LoadSampler;
 
-/// True when the machine is already busy enough that heavy work should be
+/// True when the machine is already busy enough that deep work should be
 /// skipped: the default-config budget verdicts `Backoff` or `Hold` (another
 /// job is eating the box — datamaker, kilo, a bench run, the gui).
 ///

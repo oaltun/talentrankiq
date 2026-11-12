@@ -514,7 +514,7 @@ void gemm_grouped_conv(
 
   // Depthwise 1D convolution with channel multiplier 1 (C == O == groups)
   // is a common decode-time pattern (e.g. Qwen3-Next linear attention).
-  // Running it through unfold + per-group GEMMs is very launch-heavy.
+  // Running it through unfold + per-group GEMMs is very launch-deep.
   // Use a direct kernel in this configuration.
   if (conv_ndim == 1 && in.shape(-1) == groups && wt.shape(0) == groups &&
       out.shape(-1) == groups && wt.shape(-1) == 1) {

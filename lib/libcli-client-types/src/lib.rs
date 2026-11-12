@@ -304,17 +304,17 @@ pub struct TriqiItem {
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq, schemars::JsonSchema)]
 pub enum QuestionKind {
     Ad,
-    /// "Job fit (judge)" — pairwise-judge win-rate replacing the `Ad` cosine
-    /// row when the gui judge stage is active (`gui_judge_artifact`).
-    AdJudge,
+    /// "Job fit (comparator)" — pairwise-comparator win-rate replacing the `Ad` cosine
+    /// row when the gui comparator stage is active (`gui_comparator_artifact`).
+    AdComparator,
     Criterion,
     FeedbackJob,
     FeedbackProfile,
-    /// Stage-0.5 scout row — the cheap multilingual embedder's similarity to
+    /// Stage-0.5 quick row — the cheap multilingual embedder's similarity to
     /// the job ad, in the ad row's currency. Scored for *every* candidate, so
-    /// the results table can show what the scout thought of a CV that the
-    /// heavy embedder has not reached yet.
-    Scout,
+    /// the results table can show what the quick thought of a CV that the
+    /// deep embedder has not reached yet.
+    Quick,
 }
 
 /// Which embedding space a candidate's *criteria and feedback* similarities were
@@ -322,32 +322,32 @@ pub enum QuestionKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Type, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum GradeSpace {
-    /// The cheap scout's space — the candidate has not been reached by the heavy
+    /// The cheap quick's space — the candidate has not been reached by the deep
     /// embedder yet. Every candidate has a complete scorecard here, because the
-    /// scout scores the whole rubric rather than only the ad.
-    Scout,
+    /// quick scores the whole rubric rather than only the ad.
+    Quick,
     /// The selected embedder's space.
-    Heavy,
+    Deep,
 }
 
 /// What backs the ad slot of a candidate's total.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Type, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum AdSource {
-    /// The scout's ad cosine.
-    Scout,
-    /// The heavy embedder's ad cosine.
-    Heavy,
-    /// The judge's pairwise win-rate. It replaces the ad slot's *value* and never
+    /// The quick's ad cosine.
+    Quick,
+    /// The deep embedder's ad cosine.
+    Deep,
+    /// The comparator's pairwise win-rate. It replaces the ad slot's *value* and never
     /// its weight, so it changes no row's max-points.
-    Judge,
+    Comparator,
 }
 
 impl GradeSpace {
     /// The space that backs a candidate's rubric scores, from its score rows.
     pub fn from_scores(scores: &[RubricScore]) -> Option<GradeSpace> {
         if scores.iter().any(|s| s.kind == QuestionKind::Ad) {
-            Some(GradeSpace::Heavy)
+            Some(GradeSpace::Deep)
         } else {
             None
         }
@@ -355,8 +355,8 @@ impl GradeSpace {
 
     pub fn as_str(&self) -> &'static str {
         match self {
-            GradeSpace::Scout => "scout",
-            GradeSpace::Heavy => "heavy",
+            GradeSpace::Quick => "quick",
+            GradeSpace::Deep => "deep",
         }
     }
 }
@@ -365,12 +365,12 @@ impl AdSource {
     /// What backs the ad slot, from a candidate's score rows.
     pub fn from_scores(scores: &[RubricScore]) -> Option<AdSource> {
         let has = |kind: QuestionKind| scores.iter().any(|s| s.kind == kind);
-        if has(QuestionKind::AdJudge) {
-            Some(AdSource::Judge)
+        if has(QuestionKind::AdComparator) {
+            Some(AdSource::Comparator)
         } else if has(QuestionKind::Ad) {
-            Some(AdSource::Heavy)
-        } else if has(QuestionKind::Scout) {
-            Some(AdSource::Scout)
+            Some(AdSource::Deep)
+        } else if has(QuestionKind::Quick) {
+            Some(AdSource::Quick)
         } else {
             None
         }
@@ -378,9 +378,9 @@ impl AdSource {
 
     pub fn as_str(&self) -> &'static str {
         match self {
-            AdSource::Scout => "scout",
-            AdSource::Heavy => "heavy",
-            AdSource::Judge => "judge",
+            AdSource::Quick => "quick",
+            AdSource::Deep => "deep",
+            AdSource::Comparator => "comparator",
         }
     }
 }
@@ -389,21 +389,21 @@ impl QuestionKind {
     pub fn as_str(&self) -> &'static str {
         match self {
             QuestionKind::Ad => "Ad",
-            QuestionKind::AdJudge => "AdJudge",
+            QuestionKind::AdComparator => "AdComparator",
             QuestionKind::Criterion => "Criterion",
             QuestionKind::FeedbackJob => "FeedbackJob",
             QuestionKind::FeedbackProfile => "FeedbackProfile",
-            QuestionKind::Scout => "Scout",
+            QuestionKind::Quick => "Quick",
         }
     }
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         match s {
-            "AdJudge" => QuestionKind::AdJudge,
+            "AdComparator" => QuestionKind::AdComparator,
             "Criterion" => QuestionKind::Criterion,
             "FeedbackJob" => QuestionKind::FeedbackJob,
             "FeedbackProfile" => QuestionKind::FeedbackProfile,
-            "Scout" => QuestionKind::Scout,
+            "Quick" => QuestionKind::Quick,
             _ => QuestionKind::Ad,
         }
     }
@@ -411,7 +411,7 @@ impl QuestionKind {
     /// Whether rows of this kind are stage grades *outside* the rubric the
     /// total is made of.
     pub fn is_stage(&self) -> bool {
-        matches!(self, QuestionKind::Scout | QuestionKind::AdJudge)
+        matches!(self, QuestionKind::Quick | QuestionKind::AdComparator)
     }
 }
 
@@ -506,8 +506,8 @@ pub struct JobDetail {
     pub job: Job,
     pub criteria: Vec<Criterion>,
     /// The results-table columns, in display order: the cascade's stage grades
-    /// in pipeline order (lexical, scout, the job-ad cosine the heavy embedder
-    /// gives, the judge's win-rate), then the rubric the total is made of
+    /// in pipeline order (lexical, quick, the job-ad cosine the deep embedder
+    /// gives, the comparator's win-rate), then the rubric the total is made of
     /// (criteria and the two feedback rows).
     pub rubric: Vec<RubricQuestion>,
     /// Σ |max_points| over the questions that count towards `points` — the
@@ -606,7 +606,7 @@ pub struct CandidateNeighbors {
 /// What the engine is working on right now — one human-readable status line.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct Activity {
-    /// Stable stage code: `scout` | `embed` | `judge` | `inspect`.
+    /// Stable stage code: `quick` | `embed` | `comparator` | `inspect`.
     pub stage: String,
     /// The thing being worked on — a CV file name, or `a.pdf vs b.pdf`.
     pub subject: String,
@@ -615,7 +615,7 @@ pub struct Activity {
     #[serde(default)]
     #[specta(optional)]
     pub detail: Option<String>,
-    /// Model slug serving this work (the embedder, the scout, or the judge's
+    /// Model slug serving this work (the embedder, the quick, or the comparator's
     /// embedder).
     #[serde(default)]
     #[specta(optional)]
@@ -693,20 +693,20 @@ fn default_rank_state() -> RankState {
         wave: None,
         embedded_total: 0,
         embedded_done: 0,
-        judged: 0,
+        comparatord: 0,
         candidates: 0,
         converged: false,
         reason: None,
     }
 }
 
-/// Read-model of the last rank of a job: what the judge stage actually did.
+/// Read-model of the last rank of a job: what the comparator stage actually did.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct SortReport {
     pub job_id: String,
-    pub judge_mode: String,
-    pub judge_pairs_fresh: u32,
-    pub judge_pairs_cached: u32,
+    pub comparator_mode: String,
+    pub comparator_pairs_fresh: u32,
+    pub comparator_pairs_cached: u32,
     /// How the last rank ran: `full` (one blocking pass) or `waves`
     /// (progressive cascade).
     #[serde(default)]
@@ -739,8 +739,8 @@ pub struct RankState {
     pub embedded_total: u32,
     /// Candidates embedded with the current model so far.
     pub embedded_done: u32,
-    /// Candidates in the judge pool so far.
-    pub judged: u32,
+    /// Candidates in the comparator pool so far.
+    pub comparatord: u32,
     /// Extracted candidates overall.
     pub candidates: u32,
     /// The last completed rank covers every candidate and inputs are clean.
@@ -758,7 +758,7 @@ pub struct RankProgress {
     pub wave: u32,
     pub embedded_done: u32,
     pub embedded_total: u32,
-    pub judged: u32,
+    pub comparatord: u32,
     pub candidates: u32,
     pub running: bool,
     /// Stable reason code while the run is alive but not making progress:
@@ -857,7 +857,7 @@ pub struct ModelDownloadComplete {
     pub path: String,
 }
 
-/// Scout model info exposed to the GUI.
+/// Quick model info exposed to the GUI.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 pub struct ScoutModel {
     /// Model slug (also the cache directory name).
@@ -870,16 +870,16 @@ pub struct ScoutModel {
     pub size_bytes: u64,
 }
 
-/// Judge artifact info exposed to the GUI.
+/// Comparator artifact info exposed to the GUI.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
-pub struct JudgeArtifact {
+pub struct ComparatorArtifact {
     /// Path relative to the app data dir.
     pub path: String,
     /// True when the artifact file exists on disk.
     pub exists: bool,
     /// Active embedder slug this artifact applies to.
     pub embedder_slug: String,
-    /// Whether the user is entitled to use the judge.
+    /// Whether the user is entitled to use the comparator.
     pub entitled: bool,
 }
 
@@ -904,10 +904,10 @@ pub struct GuiEmbedder {
     pub source: String,
     /// On-disk size of the cached model, in bytes (0 when not downloaded).
     pub size_bytes: u64,
-    /// Judge artifact mapped to this embedder (`None` when unconfigured).
+    /// Comparator artifact mapped to this embedder (`None` when unconfigured).
     #[serde(default)]
     #[specta(optional)]
-    pub judge: Option<JudgeArtifact>,
+    pub comparator: Option<ComparatorArtifact>,
 }
 
 /// Result of a single pair-wise cosine comparison.
@@ -963,7 +963,7 @@ pub struct VettedEmbeddersResponse {
     pub recommended_slug: String,
 }
 
-/// License status for the judge license.
+/// License status for the comparator license.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
 #[serde(tag = "kind")]
 pub enum LicenseStatus {
@@ -1008,7 +1008,7 @@ pub struct ComparisonCompletedEvent {
     pub job_ad_version: u32,
     pub model_bundle_version: u32,
     pub result: f64,
-    pub judged_at: i64,
+    pub comparatord_at: i64,
 }
 
 /// Payload for the `glicko-updated` event.
@@ -1367,17 +1367,17 @@ pub struct TryModelParams {
     pub slug: String,
 }
 
-/// Parameters for `load_judge_artifact` command.
+/// Parameters for `load_comparator_artifact` command.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
-pub struct LoadJudgeArtifactParams {
+pub struct LoadComparatorArtifactParams {
     pub source_path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub embedder_slug: Option<String>,
 }
 
-/// Parameters for `remove_judge_artifact` command.
+/// Parameters for `remove_comparator_artifact` command.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, schemars::JsonSchema)]
-pub struct RemoveJudgeArtifactParams {
+pub struct RemoveComparatorArtifactParams {
     pub slug: String,
 }
 

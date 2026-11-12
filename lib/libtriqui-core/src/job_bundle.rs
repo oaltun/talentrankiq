@@ -78,12 +78,12 @@ pub struct BundleJob {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BundleScore {
-    /// `"ad"` (the embedder's job-fit cosine), `"ad_judge"` (the judge's
-    /// win-rate, judge mode only), or the original criterion id (feedback
+    /// `"ad"` (the embedder's job-fit cosine), `"ad_comparator"` (the comparator's
+    /// win-rate, comparator mode only), or the original criterion id (feedback
     /// questions are never exported).
     pub question_id: String,
-    /// `"Ad" | "AdJudge" | "Criterion"` (as stored in `candidate_scores` —
-    /// `AdJudge` is the judge-mode job-ad row, also carrying `question_id: "ad"`).
+    /// `"Ad" | "AdComparator" | "Criterion"` (as stored in `candidate_scores` —
+    /// `AdComparator` is the comparator-mode job-ad row, also carrying `question_id: "ad"`).
     pub kind: String,
     pub sign: String,
     pub label: String,
@@ -229,7 +229,7 @@ pub fn export_job(
             .prepare(
                 "SELECT s.candidate_id, s.question_id, s.kind, s.sign, s.label, s.points, s.max_points
                  FROM candidate_scores s JOIN candidates c ON c.id = s.candidate_id
-                 WHERE c.job_id = ?1 AND s.kind IN ('Ad', 'AdJudge', 'Criterion')",
+                 WHERE c.job_id = ?1 AND s.kind IN ('Ad', 'AdComparator', 'Criterion')",
             )
             .map_err(|e| e.to_string())?;
         let rows: Vec<(String, String, String, String, String, f64, f64)> = stmt
@@ -250,7 +250,7 @@ pub fn export_job(
         for (cid, question_id, kind, sign, label, points, max_points) in rows {
             // Keep only questions the bundle manifest actually carries: the
             // ad rows when the ad is included (the embedder's cosine and, in
-            // judge mode, the judge's win-rate), criterion rows for the selected
+            // comparator mode, the comparator's win-rate), criterion rows for the selected
             // criteria only — an excluded criterion's label (its text) must
             // not leak through the scores.
             let included = if question_id == crate::sort::AD_QUESTION_ID
@@ -646,7 +646,7 @@ pub fn apply_bundle_results(
             for s in &row.scores {
                 // Map to the imported rubric; drop questions that did not make it.
                 // The ad stage grades keep their own ids: the embedder's cosine
-                // (`ad`) and the judge's win-rate (`ad_judge`) are distinct rows.
+                // (`ad`) and the comparator's win-rate (`ad_comparator`) are distinct rows.
                 let question_id = if s.question_id == crate::sort::AD_QUESTION_ID
                     || s.question_id == crate::sort::JUDGE_QUESTION_ID
                 {

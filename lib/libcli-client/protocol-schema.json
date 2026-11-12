@@ -18,7 +18,7 @@
           ]
         },
         "model": {
-          "description": "Model slug serving this work (the embedder, the scout, or the judge's embedder).",
+          "description": "Model slug serving this work (the embedder, the quick, or the comparator's embedder).",
           "default": null,
           "type": [
             "string",
@@ -26,7 +26,7 @@
           ]
         },
         "stage": {
-          "description": "Stable stage code: `scout` | `embed` | `judge` | `inspect`.",
+          "description": "Stable stage code: `quick` | `embed` | `comparator` | `inspect`.",
           "type": "string"
         },
         "subject": {
@@ -40,24 +40,24 @@
       "description": "What backs the ad slot of a candidate's total.",
       "oneOf": [
         {
-          "description": "The scout's ad cosine.",
+          "description": "The quick's ad cosine.",
           "type": "string",
           "enum": [
-            "scout"
+            "quick"
           ]
         },
         {
-          "description": "The heavy embedder's ad cosine.",
+          "description": "The deep embedder's ad cosine.",
           "type": "string",
           "enum": [
-            "heavy"
+            "deep"
           ]
         },
         {
-          "description": "The judge's pairwise win-rate. It replaces the ad slot's *value* and never its weight, so it changes no row's max-points.",
+          "description": "The comparator's pairwise win-rate. It replaces the ad slot's *value* and never its weight, so it changes no row's max-points.",
           "type": "string",
           "enum": [
-            "judge"
+            "comparator"
           ]
         }
       ]
@@ -1278,17 +1278,17 @@
       "description": "Which embedding space a candidate's *criteria and feedback* similarities were computed in (scoring v3).",
       "oneOf": [
         {
-          "description": "The cheap scout's space — the candidate has not been reached by the heavy embedder yet. Every candidate has a complete scorecard here, because the scout scores the whole rubric rather than only the ad.",
+          "description": "The cheap quick's space — the candidate has not been reached by the deep embedder yet. Every candidate has a complete scorecard here, because the quick scores the whole rubric rather than only the ad.",
           "type": "string",
           "enum": [
-            "scout"
+            "quick"
           ]
         },
         {
           "description": "The selected embedder's space.",
           "type": "string",
           "enum": [
-            "heavy"
+            "deep"
           ]
         }
       ]
@@ -1323,12 +1323,12 @@
           "description": "True when this is the active default embedder (per saved preferences).",
           "type": "boolean"
         },
-        "judge": {
-          "description": "Judge artifact mapped to this embedder (`None` when unconfigured).",
+        "comparator": {
+          "description": "Comparator artifact mapped to this embedder (`None` when unconfigured).",
           "default": null,
           "anyOf": [
             {
-              "$ref": "#/definitions/JudgeArtifact"
+              "$ref": "#/definitions/ComparatorArtifact"
             },
             {
               "type": "null"
@@ -1589,7 +1589,7 @@
           "$ref": "#/definitions/Job"
         },
         "rubric": {
-          "description": "The results-table columns, in display order: the cascade's stage grades in pipeline order (lexical, scout, the job-ad cosine the heavy embedder gives, the judge's win-rate), then the rubric the total is made of (criteria and the two feedback rows).",
+          "description": "The results-table columns, in display order: the cascade's stage grades in pipeline order (lexical, quick, the job-ad cosine the deep embedder gives, the comparator's win-rate), then the rubric the total is made of (criteria and the two feedback rows).",
           "type": "array",
           "items": {
             "$ref": "#/definitions/RubricQuestion"
@@ -1702,7 +1702,7 @@
             "converged": false,
             "embedded_done": 0,
             "embedded_total": 0,
-            "judged": 0,
+            "comparatord": 0,
             "ranking": false,
             "reason": null,
             "running": false,
@@ -1732,8 +1732,8 @@
         }
       }
     },
-    "JudgeArtifact": {
-      "description": "Judge artifact info exposed to the GUI.",
+    "ComparatorArtifact": {
+      "description": "Comparator artifact info exposed to the GUI.",
       "type": "object",
       "required": [
         "embedder_slug",
@@ -1747,7 +1747,7 @@
           "type": "string"
         },
         "entitled": {
-          "description": "Whether the user is entitled to use the judge.",
+          "description": "Whether the user is entitled to use the comparator.",
           "type": "boolean"
         },
         "exists": {
@@ -1788,7 +1788,7 @@
     },
     "LicenseStatus": {
       "title": "LicenseStatus",
-      "description": "License status for the judge license.",
+      "description": "License status for the comparator license.",
       "oneOf": [
         {
           "type": "object",
@@ -1938,9 +1938,9 @@
         }
       }
     },
-    "LoadJudgeArtifactParams": {
-      "title": "LoadJudgeArtifactParams",
-      "description": "Parameters for `load_judge_artifact` command.",
+    "LoadComparatorArtifactParams": {
+      "title": "LoadComparatorArtifactParams",
+      "description": "Parameters for `load_comparator_artifact` command.",
       "type": "object",
       "required": [
         "source_path"
@@ -2083,17 +2083,17 @@
           ]
         },
         {
-          "description": "\"Job fit (judge)\" — pairwise-judge win-rate replacing the `Ad` cosine row when the gui judge stage is active (`gui_judge_artifact`).",
+          "description": "\"Job fit (comparator)\" — pairwise-comparator win-rate replacing the `Ad` cosine row when the gui comparator stage is active (`gui_comparator_artifact`).",
           "type": "string",
           "enum": [
-            "AdJudge"
+            "AdComparator"
           ]
         },
         {
-          "description": "Stage-0.5 scout row — the cheap multilingual embedder's similarity to the job ad, in the ad row's currency. Scored for *every* candidate, so the results table can show what the scout thought of a CV that the heavy embedder has not reached yet.",
+          "description": "Stage-0.5 quick row — the cheap multilingual embedder's similarity to the job ad, in the ad row's currency. Scored for *every* candidate, so the results table can show what the quick thought of a CV that the deep embedder has not reached yet.",
           "type": "string",
           "enum": [
-            "Scout"
+            "Quick"
           ]
         }
       ]
@@ -2107,7 +2107,7 @@
         "embedded_done",
         "embedded_total",
         "job_id",
-        "judged",
+        "comparatord",
         "running",
         "stage",
         "wave"
@@ -2131,7 +2131,7 @@
         "job_id": {
           "type": "string"
         },
-        "judged": {
+        "comparatord": {
           "type": "integer",
           "format": "uint32",
           "minimum": 0.0
@@ -2166,7 +2166,7 @@
         "converged",
         "embedded_done",
         "embedded_total",
-        "judged",
+        "comparatord",
         "running"
       ],
       "properties": {
@@ -2192,8 +2192,8 @@
           "format": "uint32",
           "minimum": 0.0
         },
-        "judged": {
-          "description": "Candidates in the judge pool so far.",
+        "comparatord": {
+          "description": "Candidates in the comparator pool so far.",
           "type": "integer",
           "format": "uint32",
           "minimum": 0.0
@@ -2357,9 +2357,9 @@
         }
       }
     },
-    "RemoveJudgeArtifactParams": {
-      "title": "RemoveJudgeArtifactParams",
-      "description": "Parameters for `remove_judge_artifact` command.",
+    "RemoveComparatorArtifactParams": {
+      "title": "RemoveComparatorArtifactParams",
+      "description": "Parameters for `remove_comparator_artifact` command.",
       "type": "object",
       "required": [
         "slug"
@@ -2697,14 +2697,14 @@
     },
     "SortReport": {
       "title": "SortReport",
-      "description": "Read-model of the last rank of a job: what the judge stage actually did.",
+      "description": "Read-model of the last rank of a job: what the comparator stage actually did.",
       "type": "object",
       "required": [
         "created_at",
         "job_id",
-        "judge_mode",
-        "judge_pairs_cached",
-        "judge_pairs_fresh"
+        "comparator_mode",
+        "comparator_pairs_cached",
+        "comparator_pairs_fresh"
       ],
       "properties": {
         "cancelled": {
@@ -2723,15 +2723,15 @@
         "job_id": {
           "type": "string"
         },
-        "judge_mode": {
+        "comparator_mode": {
           "type": "string"
         },
-        "judge_pairs_cached": {
+        "comparator_pairs_cached": {
           "type": "integer",
           "format": "uint32",
           "minimum": 0.0
         },
-        "judge_pairs_fresh": {
+        "comparator_pairs_fresh": {
           "type": "integer",
           "format": "uint32",
           "minimum": 0.0

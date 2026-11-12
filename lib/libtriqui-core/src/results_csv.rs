@@ -50,7 +50,7 @@ pub fn export_results_csv(
             .prepare(
                 "SELECT s.candidate_id, s.question_id, s.points, s.max_points
                  FROM candidate_scores s JOIN candidates c ON c.id = s.candidate_id
-                 WHERE c.job_id = ?1 AND s.kind IN ('Ad', 'AdJudge', 'Criterion')",
+                 WHERE c.job_id = ?1 AND s.kind IN ('Ad', 'AdComparator', 'Criterion')",
             )
             .map_err(|e| e.to_string())?;
         let rows: Vec<(String, String, f64, f64)> = stmt
@@ -61,15 +61,15 @@ pub fn export_results_csv(
             .collect::<Result<_, _>>()
             .map_err(|e| e.to_string())?;
         drop(stmt);
-        // The judge's win-rate and the embedder's cosine both answer "how well
+        // The comparator's win-rate and the embedder's cosine both answer "how well
         // does this CV fit the ad", so they share the Job ad column — and the
-        // judge wins when both are present, because that is the grade the
+        // comparator wins when both are present, because that is the grade the
         // ranking used. Whichever row is read first must not decide it, so a
         // written cell records which grade it holds.
         let mut written: HashMap<(String, usize), u8> = HashMap::new();
         for (candidate_id, question_id, pts, max) in rows {
-            let is_judge = question_id == crate::sort::JUDGE_QUESTION_ID;
-            let Some(&i) = column.get(if is_judge {
+            let is_comparator = question_id == crate::sort::JUDGE_QUESTION_ID;
+            let Some(&i) = column.get(if is_comparator {
                 crate::sort::AD_QUESTION_ID
             } else {
                 question_id.as_str()
@@ -79,7 +79,7 @@ pub fn export_results_csv(
             let key = (candidate_id.clone(), i);
             let already = written
                 .get(&key)
-                .is_some_and(|&rank| rank >= is_judge as u8);
+                .is_some_and(|&rank| rank >= is_comparator as u8);
             if already {
                 continue;
             }
@@ -91,7 +91,7 @@ pub fn export_results_csv(
             if questions[i].2.is_none() {
                 questions[i].2 = Some(max);
             }
-            written.insert(key, is_judge as u8);
+            written.insert(key, is_comparator as u8);
         }
     }
 
@@ -315,11 +315,11 @@ mod tests {
         let _ = std::fs::remove_file(&out);
     }
 
-    /// With the judge stage active the job-ad row is stored as `kind =
-    /// 'AdJudge'` (win-rate), not `'Ad'` — it must still land in the "Job ad"
+    /// With the comparator stage active the job-ad row is stored as `kind =
+    /// 'AdComparator'` (win-rate), not `'Ad'` — it must still land in the "Job ad"
     /// column instead of silently leaving it empty.
     #[test]
-    fn judge_mode_ad_row_fills_the_job_ad_column() {
+    fn comparator_mode_ad_row_fills_the_job_ad_column() {
         let conn = test_conn();
         conn.execute(
             "INSERT INTO jobs (id, title, triqui_size) VALUES ('job_1', 'Rust Engineer', 1)",
@@ -334,7 +334,7 @@ mod tests {
         .unwrap();
         conn.execute(
             "INSERT INTO candidate_scores (id, candidate_id, question_id, kind, sign, label, points, max_points)
-             VALUES ('score_1', 'cand_1', 'ad', 'AdJudge', 'Positive', 'Job fit (judge)', 37.5, 50.0)",
+             VALUES ('score_1', 'cand_1', 'ad', 'AdComparator', 'Positive', 'Job fit (comparator)', 37.5, 50.0)",
             [],
         )
         .unwrap();
@@ -348,20 +348,20 @@ mod tests {
         assert_eq!(
             csv.lines().nth(1),
             Some("1,jane.pdf,Pdf,Extracted,42.5,65,false,37.5"),
-            "the AdJudge win-rate must fill the Job ad column"
+            "the AdComparator win-rate must fill the Job ad column"
         );
 
         let _ = std::fs::remove_file(&out);
     }
 
-    /// Judge mode stores *two* job-ad grades: the embedder's cosine (`ad`, kept
-    /// for the results table's stage column) and the judge's win-rate
-    /// (`ad_judge`, the grade the rank actually used). Both answer the same
-    /// question, so they share the "Job ad" column — and the judge's must win
+    /// Comparator mode stores *two* job-ad grades: the embedder's cosine (`ad`, kept
+    /// for the results table's stage column) and the comparator's win-rate
+    /// (`ad_comparator`, the grade the rank actually used). Both answer the same
+    /// question, so they share the "Job ad" column — and the comparator's must win
     /// whichever order SQLite hands the rows back in.
     #[test]
-    fn judge_grade_outranks_the_embed_cosine_in_the_job_ad_column() {
-        for judge_first in [true, false] {
+    fn comparator_grade_outranks_the_embed_cosine_in_the_job_ad_column() {
+        for comparator_first in [true, false] {
             let conn = test_conn();
             conn.execute(
                 "INSERT INTO jobs (id, title, triqui_size) VALUES ('job_1', 'Rust Engineer', 1)",
@@ -376,7 +376,7 @@ mod tests {
             .unwrap();
             let stored = [
                 ("ad", "Ad", 21.0, "s1"),
-                ("ad_judge", "AdJudge", 40.0, "s2"),
+                ("ad_comparator", "AdComparator", 40.0, "s2"),
             ];
             for (qid, kind, pts, sid) in stored {
                 conn.execute(
@@ -386,7 +386,7 @@ mod tests {
                 )
                 .unwrap();
             }
-            if judge_first {
+            if comparator_first {
                 // Flip the physical row order: `rowid` follows insertion.
                 conn.execute("UPDATE candidate_scores SET rowid = 9 WHERE id = 's2'", [])
                     .unwrap();
@@ -401,7 +401,7 @@ mod tests {
             assert_eq!(
                 csv.lines().nth(1),
                 Some("1,jane.pdf,Pdf,Extracted,40,50,false,40"),
-                "the judge grade fills the Job ad column (judge_first={judge_first})"
+                "the comparator grade fills the Job ad column (comparator_first={comparator_first})"
             );
 
             let _ = std::fs::remove_file(&out);

@@ -39,7 +39,7 @@ pub fn vector_is_sane(v: &[f32]) -> bool {
 
 /// Replace a candidate's stored chunk vectors **for `model` only** with `chunks`
 /// (one transaction). Scoped by `vector_model` so a second model (the cascade's
-/// scout embedder) keeps its own chunks for the same candidate: two embedders
+/// quick embedder) keeps its own chunks for the same candidate: two embedders
 /// are live at once during a cascade run, and they must not evict each other.
 pub fn store_candidate_chunks(
     conn: &Connection,
@@ -499,11 +499,11 @@ pub fn prewarm_all_rubric_inputs(rt: &Arc<EngineRuntime>, job_ids: Vec<String>) 
 /// Scoring v3 stores a question's vector in `rubric_vectors (job, question, model)`,
 /// so this is a thin wrapper over [`crate::rubric::ensure_vectors`]:
 ///
-/// - the **heavy** space gets a real fill — cache-only first, and only a genuine
+/// - the **deep** space gets a real fill — cache-only first, and only a genuine
 ///   cache miss waits out (and starts) the engine;
-/// - the **scout's** space is filled from the embedding cache only, because loading
-///   the scout's session here would evict the heavy embedder whatever is running,
-///   and the scout pass picks up anything left at its next boundary.
+/// - the **quick's** space is filled from the embedding cache only, because loading
+///   the quick's session here would evict the deep embedder whatever is running,
+///   and the quick pass picks up anything left at its next boundary.
 ///
 /// Called after an embedder switch (every job's vectors were just wiped) and
 /// wherever a warm cache is worth having before a wave.
@@ -512,10 +512,10 @@ pub fn prewarm_job_blocking(rt: &Arc<EngineRuntime>, job_id: &str) -> Result<(),
         .open_conn()
         .map_err(|e| DomainError::DbError { message: e })?;
     let rubric = crate::rubric::Rubric::load(&conn, job_id)?;
-    let heavy = rt.model();
-    crate::rubric::ensure_vectors(rt, &conn, &rubric, &heavy, None)?;
-    if let Some(scout) = crate::scout::scout_model_for(&heavy) {
-        crate::rubric::ensure_vectors_cache_only(&conn, &rubric, &scout)?;
+    let deep = rt.model();
+    crate::rubric::ensure_vectors(rt, &conn, &rubric, &deep, None)?;
+    if let Some(quick) = crate::quick::scout_model_for(&deep) {
+        crate::rubric::ensure_vectors_cache_only(&conn, &rubric, &quick)?;
     }
     Ok(())
 }
@@ -582,13 +582,13 @@ pub fn embed_selected_candidates(
 }
 
 /// Embed candidates with a model **other than** the runtime's current one, using
-/// an explicit embedder — the cascade's scout stage (`cascade.scout_model`).
+/// an explicit embedder — the cascade's quick stage (`cascade.scout_model`).
 ///
-/// The scout scores every candidate in one cheap multilingual space before the
-/// heavy embedder touches anything, so it must not wait on the runtime's model
-/// (which is the heavy one, and may not even be loaded). `embedder` is the
-/// scout's own `Embedder` over the shared engine client; `write_centroid` is
-/// false so the scout stores only its own model-scoped chunks and leaves
+/// The quick scores every candidate in one cheap multilingual space before the
+/// deep embedder touches anything, so it must not wait on the runtime's model
+/// (which is the deep one, and may not even be loaded). `embedder` is the
+/// quick's own `Embedder` over the shared engine client; `write_centroid` is
+/// false so the quick stores only its own model-scoped chunks and leaves
 /// `candidates.vector` (the full embedder's centroid) untouched.
 ///
 /// `ids` restricts the set (a wave embeds a slice); `None` means all candidates.
@@ -609,7 +609,7 @@ pub fn embed_candidates_with(
         Some(embedder),
         false,
         ids,
-        "scout",
+        "quick",
         progress,
     )
 }
@@ -723,7 +723,7 @@ fn embed_missing_candidates_filtered(
 
     // Pass 2 — only the uncached leftovers need the engine (this starts it
     // when it was idle-unloaded or never started). A caller-supplied embedder
-    // (the scout) is already live, so only resolve the runtime's own when none
+    // (the quick) is already live, so only resolve the runtime's own when none
     // was passed.
     if !deferred.is_empty() {
         let embedder = match embedder {
@@ -796,9 +796,9 @@ fn embed_missing_candidates_filtered(
 /// `Ok(false)` when validation failed.
 ///
 /// `write_centroid` is false for a second embedder sharing the store (the
-/// cascade's scout): it stores only its own model-scoped chunks and leaves
+/// cascade's quick): it stores only its own model-scoped chunks and leaves
 /// `candidates.vector` alone, because that column is the *full* embedder's
-/// centroid and the scout must never clobber it.
+/// centroid and the quick must never clobber it.
 fn persist_chunked_candidate(
     conn: &Connection,
     model: &str,
@@ -1092,7 +1092,7 @@ mod tests {
         assert!(vector_is_sane(&[-0.5]));
     }
 
-    /// The cascade keeps the scout and the full embedder resident at the same
+    /// The cascade keeps the quick and the full embedder resident at the same
     /// time, so their chunk rows must coexist instead of evicting each other.
     /// `store_candidate_chunks` used to delete by candidate alone, which made the
     /// table single-model and silently lost one side's vectors.
@@ -1108,7 +1108,7 @@ mod tests {
         };
 
         store_candidate_chunks(&conn, "c1", "scout_m", &[chunk(0, 0.1), chunk(1, 0.2)])
-            .expect("store scout chunks");
+            .expect("store quick chunks");
         store_candidate_chunks(&conn, "c1", "full_m", &[chunk(0, 0.9), chunk(1, 0.8)])
             .expect("store full chunks");
 
@@ -1134,7 +1134,7 @@ mod tests {
 
         // Re-storing one model replaces only that model's rows.
         store_candidate_chunks(&conn, "c1", "scout_m", &[chunk(0, 0.5)])
-            .expect("restage scout chunks");
+            .expect("restage quick chunks");
         let count = |model: &str| -> i64 {
             conn.query_row(
                 "SELECT COUNT(*) FROM candidate_chunks WHERE candidate_id = 'c1' AND vector_model = ?1",
@@ -1143,7 +1143,7 @@ mod tests {
             )
             .unwrap()
         };
-        assert_eq!(count("scout_m"), 1, "scout's own rows were replaced");
+        assert_eq!(count("scout_m"), 1, "quick's own rows were replaced");
         assert_eq!(count("full_m"), 2, "the full embedder's rows are untouched");
     }
 

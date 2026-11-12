@@ -253,15 +253,15 @@ fn dispatch(state: &Arc<ServeState>, cmd: &str, params: &Value) -> Result<Value,
         // Models
         "list_embedders" => models::list_embedders(state),
         "get_scout_model" => models::get_scout_model(state),
-        "get_judge_artifact" => models::get_judge_artifact(state),
-        "load_judge_artifact" => {
-            let p: LoadJudgeArtifactParams = from_params(params)?;
-            models::load_judge_artifact(state, &p.source_path, p.embedder_slug.as_deref())
+        "get_comparator_artifact" => models::get_comparator_artifact(state),
+        "load_comparator_artifact" => {
+            let p: LoadComparatorArtifactParams = from_params(params)?;
+            models::load_comparator_artifact(state, &p.source_path, p.embedder_slug.as_deref())
                 .map(|_| Value::Null)
         }
-        "remove_judge_artifact" => {
-            let p: RemoveJudgeArtifactParams = from_params(params)?;
-            models::remove_judge_artifact(state, &p.slug).map(|_| Value::Null)
+        "remove_comparator_artifact" => {
+            let p: RemoveComparatorArtifactParams = from_params(params)?;
+            models::remove_comparator_artifact(state, &p.slug).map(|_| Value::Null)
         }
         "model_variants" => {
             let p: ModelVariantsParams = from_params(params)?;
@@ -314,7 +314,7 @@ fn dispatch(state: &Arc<ServeState>, cmd: &str, params: &Value) -> Result<Value,
         }
         "cleanup_old_recovery_files" => recovery::cleanup_old_recovery_files(state),
 
-        // License (judge license commands)
+        // License (comparator license commands)
         "license_activate" => {
             let p: LicenseActivateParams = from_params(params)?;
             license::license_activate(state, p).map_err(string_err)
@@ -331,9 +331,9 @@ fn dispatch(state: &Arc<ServeState>, cmd: &str, params: &Value) -> Result<Value,
             let p: LicenseCheckArtifactParams = from_params(params)?;
             license::license_check_artifact(state, p).map_err(string_err)
         }
-        "judge_license_status" => {
+        "comparator_license_status" => {
             let _p: () = from_params(params)?;
-            license::judge_license_status(state, _p).map_err(string_err)
+            license::comparator_license_status(state, _p).map_err(string_err)
         }
 
         other => Err(ProtocolError::internal(format!(

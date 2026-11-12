@@ -18,7 +18,7 @@ use serde_json::Value;
 
 use libtriqui_client::protocol::ProtocolError;
 use libtriqui_client::types::{
-    CosinePair, GuiEmbedder, JudgeArtifact, ModelDownloadProgress, ModelKind, ScoutModel, TryModelProgress, TryModelResult,
+    CosinePair, GuiEmbedder, ComparatorArtifact, ModelDownloadProgress, ModelKind, ScoutModel, TryModelProgress, TryModelResult,
 };
 use libtriqui_core::app_config;
 use libtriqui_core::embed::Embedder;
@@ -30,7 +30,7 @@ use crate::serve::handlers::{ok_json, string_err};
 use crate::serve::ServeState;
 
 /// Bounded wait for cancelled cascade runners to retire during an embedder
-/// switch. A cancel lands at the next wave boundary, and the scout stage runs
+/// switch. A cancel lands at the next wave boundary, and the quick stage runs
 /// before the first check, so a wave in flight persists its vectors when it
 /// lands — the vector nuke must wait for the threads, not just the flag.
 const CASCADE_RETIRE_WAIT: std::time::Duration = std::time::Duration::from_secs(120);
@@ -77,15 +77,15 @@ pub fn list_embedders(state: &Arc<ServeState>) -> Result<serde_json::Value, Prot
         } else {
             0
         };
-        // Per-embedder judge mapping: same resolution as the runtime
-        // (`Config::judge_artifact_for`), exposed so the GUI card and the
+        // Per-embedder comparator mapping: same resolution as the runtime
+        // (`Config::comparator_artifact_for`), exposed so the GUI card and the
         // runtime agree on one source of truth.
-        let judge = {
-            let rel = cfg.judge_artifact_for(&ge.slug);
+        let comparator = {
+            let rel = cfg.comparator_artifact_for(&ge.slug);
             if rel.is_empty() {
                 None
             } else {
-                Some(JudgeArtifact {
+                Some(ComparatorArtifact {
                     path: rel.to_string(),
                     exists: state.app_dir.join(rel).exists(),
                     embedder_slug: ge.slug.clone(),
@@ -107,7 +107,7 @@ pub fn list_embedders(state: &Arc<ServeState>) -> Result<serde_json::Value, Prot
                 .map(|a| a.source.clone())
                 .unwrap_or_default(),
             size_bytes: size,
-            judge,
+            comparator,
         });
     }
     ok_json(out)
@@ -224,10 +224,10 @@ fn file_label(path: &str) -> String {
 /// Which ONNX/MLX artifacts are present for an embedder slug, and which arm
 /// `backend: auto` would resolve to. Engine-free (registry-side resolve +
 /// on-disk presence), so the gui can ask before it consents to a download.
-/// Expose scout model info to the GUI.
+/// Expose quick model info to the GUI.
 pub fn get_scout_model(state: &Arc<ServeState>) -> Result<serde_json::Value, ProtocolError> {
     let cfg = app_config::load_triq();
-    let scout_slug = match cfg.cascade.scout() {
+    let scout_slug = match cfg.cascade.quick() {
         Some(s) => s.to_string(),
         None => return ok_json(Option::<ScoutModel>::None),
     };
@@ -257,33 +257,33 @@ pub fn get_scout_model(state: &Arc<ServeState>) -> Result<serde_json::Value, Pro
     } else {
         0
     };
-    let scout = ScoutModel {
+    let quick = ScoutModel {
         slug: scout_slug.clone(),
         name: scout_slug.clone(),
         downloaded,
         size_bytes: size,
     };
-    ok_json(Some(scout))
+    ok_json(Some(quick))
 }
 
-/// Expose judge artifact info to the GUI.
-pub fn get_judge_artifact(state: &Arc<ServeState>) -> Result<serde_json::Value, ProtocolError> {
+/// Expose comparator artifact info to the GUI.
+pub fn get_comparator_artifact(state: &Arc<ServeState>) -> Result<serde_json::Value, ProtocolError> {
     let cfg = app_config::load_triq();
-    let ja = app_config::gui_judge_artifacts();
+    let ja = app_config::gui_comparator_artifacts();
     if ja.is_empty() {
-        return ok_json(Option::<JudgeArtifact>::None);
+        return ok_json(Option::<ComparatorArtifact>::None);
     }
     let prefs = load_app_preferences(state).embedding_model;
     let active_slug = prefs
         .as_deref()
         .or_else(|| cfg.gui_embedders.iter().find(|ge| ge.default).map(|ge| ge.slug.as_str()))
         .unwrap_or("");
-    let rel = cfg.judge_artifact_for(active_slug);
+    let rel = cfg.comparator_artifact_for(active_slug);
     if rel.is_empty() {
-        return ok_json(Option::<JudgeArtifact>::None);
+        return ok_json(Option::<ComparatorArtifact>::None);
     }
     let exists = state.app_dir.join(rel).exists();
-    let artifact = JudgeArtifact {
+    let artifact = ComparatorArtifact {
         path: rel.to_string(),
         exists,
         embedder_slug: active_slug.to_string(),
@@ -292,10 +292,10 @@ pub fn get_judge_artifact(state: &Arc<ServeState>) -> Result<serde_json::Value, 
     ok_json(Some(artifact))
 }
 
-/// Copy a judge artifact from disk into the expected app-dir location.
+/// Copy a comparator artifact from disk into the expected app-dir location.
 /// `embedder_slug` selects which embedder's mapped artifact is the
 /// destination; `None` = the active embedder (previous behavior).
-pub fn load_judge_artifact(
+pub fn load_comparator_artifact(
     state: &Arc<ServeState>,
     source_path: &str,
     embedder_slug: Option<&str>,
@@ -313,17 +313,17 @@ pub fn load_judge_artifact(
         }
     };
     // Gate 1: an explicitly requested slug must be a curated gui embedder —
-    // `judge_artifact_for` falls back to the default artifact for unknown
+    // `comparator_artifact_for` falls back to the default artifact for unknown
     // slugs, which would silently accept a pick for the wrong embedder.
     if let Some(s) = embedder_slug {
         if !cfg.gui_embedders.iter().any(|ge| ge.slug == s) {
             return Err(string_err(format!("unknown embedder '{s}'")));
         }
     }
-    let rel = cfg.judge_artifact_for(&target_slug);
+    let rel = cfg.comparator_artifact_for(&target_slug);
     if rel.is_empty() {
         return Err(string_err(format!(
-            "judge artifact not configured for '{target_slug}'"
+            "comparator artifact not configured for '{target_slug}'"
         )));
     }
     // Gate 2: the picked file's name must equal the configured artifact name
@@ -340,19 +340,19 @@ pub fn load_judge_artifact(
         .unwrap_or(source_path);
     if src_name != rel_name {
         return Err(string_err(format!(
-            "judge artifact for '{target_slug}' must be named '{rel_name}', picked '{src_name}'"
+            "comparator artifact for '{target_slug}' must be named '{rel_name}', picked '{src_name}'"
         )));
     }
     // Gate 3: `feature_spec.dim` in the artifact must match the embedder's
     // registry dim (dim is the reliable discriminator within a family).
-    // `JudgeStage::load` re-validates the full artifact at rank time.
+    // `ComparatorStage::load` re-validates the full artifact at rank time.
     if let Some(model_def) = cfg.find_model(&target_slug) {
         let expected_dim = model_def.dim as usize;
         let actual_dim =
-            probe_judge_artifact_dim(Path::new(source_path)).map_err(string_err)?;
+            probe_comparator_artifact_dim(Path::new(source_path)).map_err(string_err)?;
         if actual_dim != expected_dim {
             return Err(string_err(format!(
-                "judge artifact dim mismatch for '{target_slug}': '{src_name}' has feature_spec.dim {actual_dim}, embedder expects dim {expected_dim}"
+                "comparator artifact dim mismatch for '{target_slug}': '{src_name}' has feature_spec.dim {actual_dim}, embedder expects dim {expected_dim}"
             )));
         }
     }
@@ -364,52 +364,52 @@ pub fn load_judge_artifact(
     Ok(())
 }
 
-/// Partial view of a judge artifact JSON — just enough to read
+/// Partial view of a comparator artifact JSON — just enough to read
 /// `feature_spec.dim` without fully validating the artifact (unknown fields
-/// ignored; the judge stage does full validation at rank time).
+/// ignored; the comparator stage does full validation at rank time).
 #[derive(Deserialize)]
-struct JudgeArtifactProbe {
-    feature_spec: Option<JudgeFeatureSpecProbe>,
+struct ComparatorArtifactProbe {
+    feature_spec: Option<ComparatorFeatureSpecProbe>,
 }
 
 #[derive(Deserialize)]
-struct JudgeFeatureSpecProbe {
+struct ComparatorFeatureSpecProbe {
     dim: Option<usize>,
 }
 
-/// Read `feature_spec.dim` from a judge artifact file. Every failure message
+/// Read `feature_spec.dim` from a comparator artifact file. Every failure message
 /// mentions `dim` so a malformed artifact surfaces as a dim problem.
-fn probe_judge_artifact_dim(path: &Path) -> Result<usize, String> {
+fn probe_comparator_artifact_dim(path: &Path) -> Result<usize, String> {
     let content = fs::read_to_string(path)
-        .map_err(|e| format!("cannot read judge artifact {}: {e}", path.display()))?;
-    let probe: JudgeArtifactProbe = serde_json::from_str(&content).map_err(|e| {
+        .map_err(|e| format!("cannot read comparator artifact {}: {e}", path.display()))?;
+    let probe: ComparatorArtifactProbe = serde_json::from_str(&content).map_err(|e| {
         format!(
-            "invalid judge artifact {}: unparseable JSON, cannot read feature_spec.dim ({e})",
+            "invalid comparator artifact {}: unparseable JSON, cannot read feature_spec.dim ({e})",
             path.display()
         )
     })?;
     probe.feature_spec.and_then(|f| f.dim).ok_or_else(|| {
         format!(
-            "invalid judge artifact {}: missing feature_spec.dim",
+            "invalid comparator artifact {}: missing feature_spec.dim",
             path.display()
         )
     })
 }
 
-/// Delete the app-dir copy of the judge artifact mapped to `slug`. The
+/// Delete the app-dir copy of the comparator artifact mapped to `slug`. The
 /// source file the user originally picked is untouched.
-pub fn remove_judge_artifact(state: &Arc<ServeState>, slug: &str) -> Result<(), ProtocolError> {
+pub fn remove_comparator_artifact(state: &Arc<ServeState>, slug: &str) -> Result<(), ProtocolError> {
     let cfg = app_config::load_triq();
-    let rel = cfg.judge_artifact_for(slug);
+    let rel = cfg.comparator_artifact_for(slug);
     if rel.is_empty() {
         return Err(string_err(format!(
-            "judge artifact not configured for '{slug}'"
+            "comparator artifact not configured for '{slug}'"
         )));
     }
     let dest = state.app_dir.join(rel);
     if !dest.exists() {
         return Err(string_err(format!(
-            "judge artifact not present at {}",
+            "comparator artifact not present at {}",
             dest.display()
         )));
     }
@@ -1112,7 +1112,7 @@ pub fn set_embedding_model(state: &Arc<ServeState>, slug: &str) -> Result<(), Pr
     // Switching the embedder invalidates every in-flight ranking (it is scoring
     // in the old space), so stop the cascades BEFORE the nuke below — and wait
     // for the runners to retire, not just for the cancel flag to be set: a
-    // wave in flight (or the scout stage, which runs before the first cancel
+    // wave in flight (or the quick stage, which runs before the first cancel
     // check) persists its chunk vectors when it lands, and that write would
     // re-populate the table we are about to wipe with old-model rows no later
     // wave would ever overwrite.
@@ -1143,15 +1143,15 @@ pub fn set_embedding_model(state: &Arc<ServeState>, slug: &str) -> Result<(), Pr
         .map_err(|e| string_err(format!("failed to clear chunk vectors: {e}")))?;
     conn.execute("DELETE FROM candidate_scores", [])
         .map_err(|e| string_err(format!("failed to clear rubric scores: {e}")))?;
-    // The scout's space is untouched (its slug never changes on a switch), but the
-    // heavy space's rubric vectors and every space's grades for this job's
+    // The quick's space is untouched (its slug never changes on a switch), but the
+    // deep space's rubric vectors and every space's grades for this job's
     // candidates go: they are cosines of the vectors we just wiped.
     conn.execute("DELETE FROM rubric_vectors", [])
         .map_err(|e| string_err(format!("failed to clear rubric vectors: {e}")))?;
     conn.execute("DELETE FROM stage_scores", [])
         .map_err(|e| string_err(format!("failed to clear stage scores: {e}")))?;
-    conn.execute("DELETE FROM judge_pool", [])
-        .map_err(|e| string_err(format!("failed to clear the judge pool: {e}")))?;
+    conn.execute("DELETE FROM comparator_pool", [])
+        .map_err(|e| string_err(format!("failed to clear the comparator pool: {e}")))?;
     conn.execute(
         "UPDATE candidates SET vector = NULL, vector_model = NULL,
          rank = NULL, ranked_at = NULL, points = NULL, points_max = NULL",
@@ -1294,12 +1294,12 @@ mod progress_tests {
 }
 
 #[cfg(test)]
-mod judge_probe_tests {
+mod comparator_probe_tests {
     use super::*;
 
     fn write_tmp(case: &str, body: &str) -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!(
-            "triq-judge-probe-{}-{case}",
+            "triq-comparator-probe-{}-{case}",
             std::process::id()
         ));
         fs::create_dir_all(&dir).unwrap();
@@ -1311,7 +1311,7 @@ mod judge_probe_tests {
     #[test]
     fn probe_reads_dim() {
         let p = write_tmp("ok", r#"{"feature_spec":{"dim":640}}"#);
-        assert_eq!(probe_judge_artifact_dim(&p).unwrap(), 640);
+        assert_eq!(probe_comparator_artifact_dim(&p).unwrap(), 640);
     }
 
     #[test]
@@ -1320,20 +1320,20 @@ mod judge_probe_tests {
             "extra",
             r#"{"schema":"x","feature_spec":{"embedder":"harrier","dim":1024}}"#,
         );
-        assert_eq!(probe_judge_artifact_dim(&p).unwrap(), 1024);
+        assert_eq!(probe_comparator_artifact_dim(&p).unwrap(), 1024);
     }
 
     #[test]
     fn probe_rejects_missing_dim() {
         let p = write_tmp("missing", r#"{"feature_spec":{}}"#);
-        let err = probe_judge_artifact_dim(&p).unwrap_err();
+        let err = probe_comparator_artifact_dim(&p).unwrap_err();
         assert!(err.contains("dim"), "error must mention dim, got: {err}");
     }
 
     #[test]
     fn probe_rejects_unparseable_json() {
         let p = write_tmp("garbage", "this is not json");
-        let err = probe_judge_artifact_dim(&p).unwrap_err();
+        let err = probe_comparator_artifact_dim(&p).unwrap_err();
         assert!(err.contains("dim"), "error must mention dim, got: {err}");
     }
 }

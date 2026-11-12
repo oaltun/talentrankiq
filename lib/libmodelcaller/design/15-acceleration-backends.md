@@ -8,7 +8,7 @@
   dedicated thread, pipe pair, ORT sessions)
 - `../../../lib/libsyscap/design/design.md` (the live budget: capacity,
   thread caps, verdicts)
-- `../../../bench/bench1/design/15-pairwise-judge.md` §15.7 (the pairwise
+- `../../../bench/bench1/design/15-pairwise-comparator.md` §15.7 (the pairwise
   tournament — the second hot path this design accelerates)
 
 ## 15.1 purpose
@@ -28,13 +28,13 @@ The motivation is measured, not assumed (this box, M5 Pro 6 P + 12 E):
 - during the heaviest storm we could produce (4 concurrent full-graph LTO
   rebuilds + the 39-test engine suite, CPU 87 % user), `ioreg` reported
   AGX `Device Utilization % = 8..15` — the desktop compositor, nothing else.
-  **The GPU and the 16-core ANE are idle in every embed, rerank and judge
+  **The GPU and the 16-core ANE are idle in every embed, rerank and comparator
   pass.**
 
 ## 15.2 what is already in place (and what is therefore *not* the win)
 
 - **Quantization is banked.** The zoo is community-quantized already
-  (`q4f16`, `quint8`, `int8`, `q4` slugs; the scout is a distilled MRL
+  (`q4f16`, `quint8`, `int8`, `q4` slugs; the quick is a distilled MRL
   model). A pre-converted 8-bit MLX checkpoint of the same 270 M model is
   the *same quantization decision in another container* — MLX's marginal
   value is Metal execution, not the bit width.
@@ -220,16 +220,16 @@ hope).
 
 ### 15.5.2 the CoreML rung, measured negative at both ends
 
-With the ladder in place (§15.8 step 2), the scout was probed too, because
+With the ladder in place (§15.8 step 2), the quick was probed too, because
 the failure could have been specific to the 0.6 B:
 
-| model (108 MB scout, 1500 texts, batch 16) | 1 session | 8 sessions |
+| model (108 MB quick, 1500 texts, batch 16) | 1 session | 8 sessions |
 |---|---|---|
 | cpu | 851 ms (1762 texts/s) | 631 ms (2379 texts/s) — **1.35×** |
 | coreml | 847 ms (1771 texts/s) | 630 ms (2379 texts/s) |
 
 `bitwise_identical = true` for **every** coreml run: the placement gate fires
-and CoreML placed **nothing** on the scout — identical timings because it *is*
+and CoreML placed **nothing** on the quick — identical timings because it *is*
 the CPU. So CoreML EP is now measured at both ends of our size range: a
 total no-op on the small model, **11.9× slower** on the 0.6 B (partial
 placement). It is dead for our zoo. The config knob, the reporting and the
@@ -585,9 +585,9 @@ Two design points that are not obvious:
 
 **The bug the wiring exposed, and why it is worth writing down.** Session
 handles are numbered per arm — each wrapper starts at 1. The first version of
-this routed by a single global `session -> runtime` map, and with the scout on
-ONNX and the heavy embedder on MLX both holding handle 2, the 640-dim 270M's
-embed was routed to the scout's session and came back **1024-dimensional**. No
+this routed by a single global `session -> runtime` map, and with the quick on
+ONNX and the deep embedder on MLX both holding handle 2, the 640-dim 270M's
+embed was routed to the quick's session and came back **1024-dimensional**. No
 error, no warning, a plausible vector of the wrong width. It surfaced only
 because six serve-contract tests asserted on grades the cascade produces.
 
@@ -686,12 +686,12 @@ Consequences that follow from the measurement, not from taste:
   batches amortize the weight streaming (measured separately, §15.8 step 1b);
   past that, only a different runtime (CoreML/MLX — weights resident on the
   accelerator) or a smaller/distilled model changes the number. Note the
-  270 M variant is ~4× smaller and the scout is 108 MB — model choice is a
+  270 M variant is ~4× smaller and the quick is 108 MB — model choice is a
   bigger lever than any thread count on this box.
 - Fan-out is *not* a general speedup, so it must not be sold as one, and it
   must stay off for big models (8 × 600 MB would be 4.8 GB of sessions for
   nothing).
-- The scout, which every cascade runs first, is in the winning regime: it
+- The quick, which every cascade runs first, is in the winning regime: it
   gets 1.36× for free.
 
 **The harness is gone** — the question above is answered, so the A/B test was
@@ -736,13 +736,13 @@ result yaml (runtime/provider/precision/threads in the metadata).
 past ~2 do nothing (1×16 ≈ 8×2), splitting the batch does nothing (1.00×),
 and bigger batches hurt (0.68× at 128). The harrier 0.6 B q4 sits at
 **~1.5 texts/s** on this box — about 22 minutes to embed 2000 CVs — while
-the 108 MB scout does **2463 texts/s** on the same texts. Two consequences,
+the 108 MB quick does **2463 texts/s** on the same texts. Two consequences,
 in order of how much they actually matter:
 
 1. **Model size is the dominant lever** (orders of magnitude), and it is a
    bench/quality decision, not an engineering one: the 270 M variant is ~4×
    smaller, a distilled embedder is smaller still, and the cascade already
-   starts from the cheap scout ordering. Any "make embedding fast" work
+   starts from the cheap quick ordering. Any "make embedding fast" work
    should start by measuring quality at a smaller model.
 2. **Silicon is the remaining engineering lever** — weights resident on the
    GPU/ANE is the one thing that changes the 1.5 texts/s number, which is

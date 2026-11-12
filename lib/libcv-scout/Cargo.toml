@@ -1,5 +1,5 @@
 [package]
-name = "libcv-scout"
+name = "libcv-quick"
 version = "0.1.0"
 description = "TalentRankIQ crate."
 authors = ["oaltun"]

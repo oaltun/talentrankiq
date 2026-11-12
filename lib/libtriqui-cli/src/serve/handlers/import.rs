@@ -213,8 +213,8 @@ pub fn spawn_dir_import(
 /// to rank or a cascade is already in flight.
 ///
 /// This runs even when the job has **no job ad**: the embed stages are
-/// ad-independent, so the run extracts scout vectors (stage 0.5, whole corpus)
-/// and heavy chunk vectors (the waves) while the user writes the ad. Scoring
+/// ad-independent, so the run extracts quick vectors (stage 0.5, whole corpus)
+/// and deep chunk vectors (the waves) while the user writes the ad. Scoring
 /// needs a query and stays empty until one exists — the waves re-derive stage
 /// 0 and re-sort every pass, so grades land as soon as the ad (or positive
 /// criteria) does; if the run already converged, setting the ad spawns a
@@ -453,7 +453,7 @@ pub fn scout_pending(
             )
             .unwrap_or(0);
         state.events.emit(
-            "job-scout-progress",
+            "job-quick-progress",
             &libtriqui_client::types::EmbeddingProgress {
                 job_id: job_id.to_string(),
                 done: total,
@@ -466,9 +466,9 @@ pub fn scout_pending(
     }
     let st = Arc::clone(state);
     let jid = job_id.to_string();
-    let _ = libtriqui_core::scout::run_scout(&state.runtime, job_id, &|d, t, f, a| {
+    let _ = libtriqui_core::quick::run_scout(&state.runtime, job_id, &|d, t, f, a| {
         st.events.emit(
-            "job-scout-progress",
+            "job-quick-progress",
             &libtriqui_client::types::EmbeddingProgress {
                 job_id: jid.clone(),
                 done: d,
@@ -495,7 +495,7 @@ pub fn heavy_pending(
         job_id,
         &|d, t, f, a| {
             st.events.emit(
-                "job-heavy-progress",
+                "job-deep-progress",
                 &libtriqui_client::types::EmbeddingProgress {
                     job_id: jid.clone(),
                     done: d,

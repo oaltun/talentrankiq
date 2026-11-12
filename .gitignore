@@ -11,7 +11,7 @@ dist-ssr
 *.local.*
 jscpd-report
 
-# Models / artifacts (never ship purchased judge artifacts here)
+# Models / artifacts (never ship purchased comparator artifacts here)
 *.onnx
 *.safe
 

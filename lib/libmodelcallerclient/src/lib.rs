@@ -8,7 +8,7 @@
 //!
 //! The crate is a thin protocol/transport layer with two transports:
 //! [`ModelCallerClient::spawn_inprocess`] runs the modelcaller loop on a
-//! thread inside the host process (bench, judgetrainer — there is no
+//! thread inside the host process (bench, comparatortrainer — there is no
 //! modelcaller binary anymore), while [`ModelCallerClient::over`] attaches to
 //! an already-running loop over arbitrary readers/writers — triqui-core
 //! uses it to run modelcaller in-process behind the gui (thin gui pattern).

@@ -159,21 +159,21 @@ CREATE TABLE IF NOT EXISTS embedding_cache (
 -- the two arms are NOT interchangeable (the 270m MLX/ONNX cosine agreement is
 -- ~0.94, not 1.0), so when the recorded arm differs from the arm about to
 -- serve, every slug-keyed vector artifact is cleared before any of it is
--- read. The scout's slug never flips (it declares no mlx variant), which is
--- what keeps scout rows safe by construction.
+-- read. The quick's slug never flips (it declares no mlx variant), which is
+-- what keeps quick rows safe by construction.
 CREATE TABLE IF NOT EXISTS model_runtime (
   model      TEXT PRIMARY KEY,
   backend    TEXT NOT NULL,
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- Judge verdict memoization: one row per pairwise tournament verdict
+-- Comparator verdict memoization: one row per pairwise tournament verdict
 -- p(doc_a > doc_b | ad, artifact, embedder). Keys are content hashes (the ad
--- text, the two candidate texts) plus the embedding model and the judge
+-- text, the two candidate texts) plus the embedding model and the comparator
 -- artifact content hash, so identical CVs across jobs share verdicts and any
 -- input change misses. Sorted pairs are stored canonically (doc_a < doc_b);
 -- the reverse orientation is 1 - prob.
-CREATE TABLE IF NOT EXISTS judge_pair_verdicts (
+CREATE TABLE IF NOT EXISTS comparator_pair_verdicts (
   model         TEXT NOT NULL,
   artifact_hash TEXT NOT NULL,
   ad_hash       TEXT NOT NULL,
@@ -188,9 +188,9 @@ CREATE TABLE IF NOT EXISTS judge_pair_verdicts (
 -- for the state contract: tests and the gui assert on reported behavior.
 CREATE TABLE IF NOT EXISTS sort_reports (
   job_id              TEXT PRIMARY KEY,
-  judge_mode          TEXT NOT NULL,
-  judge_pairs_fresh   INTEGER NOT NULL DEFAULT 0,
-  judge_pairs_cached  INTEGER NOT NULL DEFAULT 0,
+  comparator_mode          TEXT NOT NULL,
+  comparator_pairs_fresh   INTEGER NOT NULL DEFAULT 0,
+  comparator_pairs_cached  INTEGER NOT NULL DEFAULT 0,
   created_at          TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -214,7 +214,7 @@ CREATE TABLE IF NOT EXISTS rank_state (
 -- `content_hash` keys the chunk text into `embedding_cache`. The candidate
 -- centroid is still stored in `candidates.vector` as a fallback for models
 -- without a tokenizer (non-chunked path).
--- Keyed by (candidate, MODEL, index): the cascade's scout embedder and the
+-- Keyed by (candidate, MODEL, index): the cascade's quick embedder and the
 -- full embedder each keep their own chunks for the same candidate side by side
 -- (progressive-ranking design §7), so the key must include `vector_model`.
 CREATE TABLE IF NOT EXISTS candidate_chunks (
@@ -261,7 +261,7 @@ CREATE TABLE IF NOT EXISTS profile_vectors (
 --
 -- This replaces four single-space slots (jobs.ead, criteria.vector,
 -- job_feedback_vectors.ejobfeedback, profile_vectors.eprofile) with one
--- multi-space store, which is what lets the cheap scout score the WHOLE rubric
+-- multi-space store, which is what lets the cheap quick score the WHOLE rubric
 -- and not just the ad. Keyed by space so swapping models never mixes two
 -- embeddings.
 CREATE TABLE IF NOT EXISTS rubric_vectors (
@@ -276,9 +276,9 @@ CREATE TABLE IF NOT EXISTS rubric_vectors (
 -- One grade per (candidate, space, question): the cosine of the question's
 -- vector against the candidate's best chunk in that space. The 'ad' row of a
 -- space is that space's fit score — the ad slot of the total, unless the
--- judge has produced a win-rate for the candidate.
+-- comparator has produced a win-rate for the candidate.
 --
--- Replaces scout_scores (which could only hold the scout's ad similarity) so
+-- Replaces scout_scores (which could only hold the quick's ad similarity) so
 -- there is exactly one place a stage grade lives. Rescore reads this table and
 -- never writes it; each stage writes only its own space.
 CREATE TABLE IF NOT EXISTS stage_scores (
@@ -291,11 +291,11 @@ CREATE TABLE IF NOT EXISTS stage_scores (
 );
 CREATE INDEX IF NOT EXISTS idx_stage_question ON stage_scores(model, question_id);
 
--- The judge pool: the candidates a run compares against each other. Frozen when
--- the run opens it, because judge win-rates are SET-RELATIVE — a pool that
+-- The comparator pool: the candidates a run compares against each other. Frozen when
+-- the run opens it, because comparator win-rates are SET-RELATIVE — a pool that
 -- re-picked itself every wave would move a candidate's grade for reasons that
 -- have nothing to do with the candidate.
-CREATE TABLE IF NOT EXISTS judge_pool (
+CREATE TABLE IF NOT EXISTS comparator_pool (
   job_id       TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
   candidate_id TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
   position     INTEGER NOT NULL,
@@ -309,7 +309,7 @@ CREATE TABLE IF NOT EXISTS comparisons (
   job_ad_version INTEGER NOT NULL,
   model_bundle_version INTEGER NOT NULL,
   result REAL NOT NULL,
-  judged_at INTEGER NOT NULL,
+  comparatord_at INTEGER NOT NULL,
   PRIMARY KEY (cv_a_id, cv_b_id, job_ad_version, model_bundle_version)
 );
 CREATE INDEX IF NOT EXISTS comparisons_by_job ON comparisons(job_ad_version, cv_a_id);
@@ -432,7 +432,7 @@ fn unique_index_columns(conn: &Connection, table: &str) -> Result<Vec<Vec<String
 /// Make `candidate_chunks` multi-model.
 ///
 /// The table shipped `UNIQUE (candidate_id, chunk_index)`, which silently makes
-/// it single-model: the cascade's scout embedder cannot store its own chunks for
+/// it single-model: the cascade's quick embedder cannot store its own chunks for
 /// a candidate that already has full-embedder chunks (progressive-ranking
 /// design §7 has both live at once). SQLite cannot drop a UNIQUE constraint
 /// with ALTER, so rebuild the table with `(candidate_id, vector_model,
@@ -478,7 +478,7 @@ fn migrate_candidate_chunks_multimodel(conn: &Connection) -> Result<(), String> 
 /// `gui/design/app1/cascade-simple.md`).
 ///
 /// Four single-space slots become one multi-space table (`rubric_vectors`), and
-/// `scout_scores` — which could only ever hold the scout's ad similarity —
+/// `scout_scores` — which could only ever hold the quick's ad similarity —
 /// becomes a `(candidate, space, question)` row of `stage_scores`.
 ///
 /// Every statement is `INSERT OR IGNORE` off an existing value, so the whole
@@ -519,7 +519,7 @@ fn migrate_scoring_v3(conn: &Connection) -> Result<(), String> {
         [],
     )
     .map_err(|e| e.to_string())?;
-    // The scout's ad similarity, as a stage grade of the scout space.
+    // The quick's ad similarity, as a stage grade of the quick space.
     if conn
         .query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='scout_scores'",
@@ -693,19 +693,19 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
 
     // Canonicalize legacy comparison rows into the `comparisons` table.
     let _ = conn.execute(
-        "INSERT OR IGNORE INTO comparisons (cv_a_id, cv_b_id, job_ad_version, model_bundle_version, result, judged_at) \
+        "INSERT OR IGNORE INTO comparisons (cv_a_id, cv_b_id, job_ad_version, model_bundle_version, result, comparatord_at) \
          SELECT CASE WHEN doc_a <= doc_b THEN doc_a ELSE doc_b END, \
                 CASE WHEN doc_a <= doc_b THEN doc_b ELSE doc_a END, \
                 0, 0, \
                 CASE WHEN doc_a <= doc_b THEN prob ELSE 1.0 - prob END, \
                 strftime('%s','now') \
-         FROM judge_pair_verdicts",
+         FROM comparator_pair_verdicts",
         [],
     );
 
-    // Optional migration from a legacy `judge_cache` table (if present).
+    // Optional migration from a legacy `comparator_cache` table (if present).
     let cols: Vec<String> = conn
-        .prepare("PRAGMA table_info(judge_cache)")
+        .prepare("PRAGMA table_info(comparator_cache)")
         .ok()
         .map(|mut stmt| {
             stmt.query_map([], |r| r.get::<_, String>(1))
@@ -732,23 +732,23 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
         } else {
             "0.5"
         };
-        let judged_col = if cols.iter().any(|c| c == "judged_at") {
-            "judged_at"
+        let comparatord_col = if cols.iter().any(|c| c == "comparatord_at") {
+            "comparatord_at"
         } else {
             "strftime('%s','now')"
         };
         let sql = format!(
-            "INSERT OR IGNORE INTO comparisons (cv_a_id, cv_b_id, job_ad_version, model_bundle_version, result, judged_at) \
+            "INSERT OR IGNORE INTO comparisons (cv_a_id, cv_b_id, job_ad_version, model_bundle_version, result, comparatord_at) \
              SELECT CASE WHEN cv_a_id <= cv_b_id THEN cv_a_id ELSE cv_b_id END, \
                     CASE WHEN cv_a_id <= cv_b_id THEN cv_b_id ELSE cv_a_id END, \
                     COALESCE({job_col},0), COALESCE({model_col},0), \
                     CASE WHEN cv_a_id <= cv_b_id THEN {result_col} ELSE {result_col} END, \
-                    COALESCE({judged_col}, strftime('%s','now')) \
-             FROM judge_cache",
+                    COALESCE({comparatord_col}, strftime('%s','now')) \
+             FROM comparator_cache",
             job_col = job_col,
             model_col = model_col,
             result_col = result_col,
-            judged_col = judged_col,
+            comparatord_col = comparatord_col,
         );
         let _ = conn.execute(&sql, []);
     }
@@ -872,7 +872,7 @@ pub struct RankStateRow {
 /// wave boundary.
 ///
 /// Called when a ranking input changes (criterion, weights, ad, CV set, embedder,
-/// judge artifact). A running cascade is computing a ranking for inputs that no
+/// comparator artifact). A running cascade is computing a ranking for inputs that no
 /// longer exist, so the result would be stale the moment it landed; cancelling
 /// is strictly better than finishing work nobody wants. The stored vectors and
 /// stage scores are untouched — they stay valid and cache-keyed, so the
@@ -917,15 +917,15 @@ pub fn last_sort_report(
 ) -> Result<Option<crate::types::SortReport>, String> {
     let conn = rt.open_conn()?;
     conn.query_row(
-        "SELECT judge_mode, judge_pairs_fresh, judge_pairs_cached, mode, waves, complete, cancelled, created_at
+        "SELECT comparator_mode, comparator_pairs_fresh, comparator_pairs_cached, mode, waves, complete, cancelled, created_at
          FROM sort_reports WHERE job_id = ?1",
         rusqlite::params![job_id],
         |r| {
             Ok(crate::types::SortReport {
                 job_id: job_id.to_string(),
-                judge_mode: r.get(0)?,
-                judge_pairs_fresh: r.get(1)?,
-                judge_pairs_cached: r.get(2)?,
+                comparator_mode: r.get(0)?,
+                comparator_pairs_fresh: r.get(1)?,
+                comparator_pairs_cached: r.get(2)?,
                 mode: r.get(3)?,
                 waves: r.get(4)?,
                 complete: r.get(5)?,
@@ -940,7 +940,7 @@ pub fn last_sort_report(
 
 
 // ---------------------------------------------------------------------------
-// Scoring v3 accessors. `rubric_vectors` / `stage_scores` / `judge_pool` are the
+// Scoring v3 accessors. `rubric_vectors` / `stage_scores` / `comparator_pool` are the
 // three facts rescore and the stages read; each has exactly one writer.
 // ---------------------------------------------------------------------------
 
@@ -1009,7 +1009,7 @@ pub fn put_stage_score(
 }
 
 /// Bulk upsert of stage grades, in one transaction. A stage's whole pass is one
-/// call, so a 2000-candidate × 5-question scout pass is 10 000 upserts in a
+/// call, so a 2000-candidate × 5-question quick pass is 10 000 upserts in a
 /// single commit rather than 10 000 round trips.
 pub fn put_stage_scores(
     conn: &Connection,
@@ -1086,15 +1086,15 @@ pub fn delete_space(conn: &Connection, model: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Freeze the judge pool: the top `size` candidates by current total, in rank
+/// Freeze the comparator pool: the top `size` candidates by current total, in rank
 /// order. Replacing the pool is the *only* thing that changes it — a run never
 /// re-picks it mid-flight, which is what keeps a win-rate meaning the same thing
-/// at two different moments. `size == 0` is a pool of nobody, which the judge
+/// at two different moments. `size == 0` is a pool of nobody, which the comparator
 /// stage reads as "do nothing" (not "no limit").
-pub fn freeze_judge_pool(conn: &Connection, job_id: &str, size: usize) -> Result<usize, String> {
+pub fn freeze_comparator_pool(conn: &Connection, job_id: &str, size: usize) -> Result<usize, String> {
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
     tx.execute(
-        "DELETE FROM judge_pool WHERE job_id = ?1",
+        "DELETE FROM comparator_pool WHERE job_id = ?1",
         rusqlite::params![job_id],
     )
     .map_err(|e| e.to_string())?;
@@ -1102,7 +1102,7 @@ pub fn freeze_judge_pool(conn: &Connection, job_id: &str, size: usize) -> Result
         0
     } else {
         tx.execute(
-            "INSERT INTO judge_pool (job_id, candidate_id, position)
+            "INSERT INTO comparator_pool (job_id, candidate_id, position)
              SELECT job_id, id, ROW_NUMBER() OVER (ORDER BY points DESC, file_name, id) - 1
              FROM candidates
              WHERE job_id = ?1 AND extraction_status = 'Extracted'
@@ -1118,9 +1118,9 @@ pub fn freeze_judge_pool(conn: &Connection, job_id: &str, size: usize) -> Result
 }
 
 /// The frozen pool's candidate ids, in pool order.
-pub fn judge_pool_ids(conn: &Connection, job_id: &str) -> Result<Vec<String>, String> {
+pub fn comparator_pool_ids(conn: &Connection, job_id: &str) -> Result<Vec<String>, String> {
     let mut stmt = conn
-        .prepare("SELECT candidate_id FROM judge_pool WHERE job_id = ?1 ORDER BY position")
+        .prepare("SELECT candidate_id FROM comparator_pool WHERE job_id = ?1 ORDER BY position")
         .map_err(|e| e.to_string())?;
     let ids = stmt
         .query_map(rusqlite::params![job_id], |r| r.get::<_, String>(0))
@@ -1131,9 +1131,9 @@ pub fn judge_pool_ids(conn: &Connection, job_id: &str) -> Result<Vec<String>, St
 }
 
 /// How big a job's frozen pool is.
-pub fn judge_pool_size(conn: &Connection, job_id: &str) -> Result<i64, String> {
+pub fn comparator_pool_size(conn: &Connection, job_id: &str) -> Result<i64, String> {
     conn.query_row(
-        "SELECT COUNT(*) FROM judge_pool WHERE job_id = ?1",
+        "SELECT COUNT(*) FROM comparator_pool WHERE job_id = ?1",
         rusqlite::params![job_id],
         |r| r.get(0),
     )
@@ -1142,9 +1142,9 @@ pub fn judge_pool_size(conn: &Connection, job_id: &str) -> Result<i64, String> {
 
 /// Empty a job's pool — the ad changed, so every cached verdict (whose key
 /// includes the ad hash) is stale and the pool has to be chosen again.
-pub fn clear_judge_pool(conn: &Connection, job_id: &str) -> Result<(), String> {
+pub fn clear_comparator_pool(conn: &Connection, job_id: &str) -> Result<(), String> {
     conn.execute(
-        "DELETE FROM judge_pool WHERE job_id = ?1",
+        "DELETE FROM comparator_pool WHERE job_id = ?1",
         rusqlite::params![job_id],
     )
     .map_err(|e| e.to_string())?;
@@ -1152,7 +1152,7 @@ pub fn clear_judge_pool(conn: &Connection, job_id: &str) -> Result<(), String> {
 }
 
 /// Candidates of a job that hold a centroid vector in `space`, with the content
-/// hash the judge memoizes on. `ids` restricts the set.
+/// hash the comparator memoizes on. `ids` restricts the set.
 pub fn candidates_with_centroids(
     conn: &Connection,
     job_id: &str,

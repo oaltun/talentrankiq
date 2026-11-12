@@ -217,7 +217,7 @@ fn main() {
     mlxcel_core::eval(&y);
     let post_k = excess_kurtosis(&y);
     println!("synthetic-K shape={kshape:?}");
-    println!("  excess kurtosis pre  WHT: {pre_k:.4}  (should be high — heavy-tailed input)");
+    println!("  excess kurtosis pre  WHT: {pre_k:.4}  (should be high — deep-tailed input)");
     println!("  excess kurtosis post WHT: {post_k:.4}  (should be near 0 — Gaussian)");
     println!();
 

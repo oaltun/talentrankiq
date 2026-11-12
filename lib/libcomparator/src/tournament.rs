@@ -4,16 +4,16 @@
 
 use crate::artifact::FeatureSpec;
 use crate::features::{assemble_pair, DocFeatures};
-use crate::forward::JudgeModel;
+use crate::forward::ComparatorModel;
 use rayon::prelude::*;
 
 /// Oriented pair probability p(i > j) with both orders evaluated and
 /// averaged (15.7 symmetry): `p = (f(i,j) + 1 - f(j,i)) / 2` where
-/// `f` is the judge's pair probability. Public because it IS the memoizable
+/// `f` is the comparator's pair probability. Public because it IS the memoizable
 /// verdict unit: consumers may cache `p(i > j)` per (ad, candidate pair,
 /// artifact) and assemble matrices from cached verdicts.
 pub fn averaged_pair_prob(
-    model: &JudgeModel,
+    model: &ComparatorModel,
     spec: &FeatureSpec,
     ad: &DocFeatures,
     i: &DocFeatures,
@@ -46,7 +46,7 @@ pub fn pairs_per_tile(dim: usize) -> usize {
 /// every pair through it, and the gui's cached path collects its fresh pairs
 /// and runs them in chunks of [`pairs_per_tile`].
 pub fn averaged_pair_probs_batch(
-    model: &JudgeModel,
+    model: &ComparatorModel,
     spec: &FeatureSpec,
     ad: &DocFeatures,
     pairs: &[(usize, usize)],
@@ -71,7 +71,7 @@ pub fn averaged_pair_probs_batch(
 /// stays flat no matter how wide the feature row is. Values are unchanged —
 /// bitwise identical to the scalar loop.
 pub fn pairwise_prob_matrix(
-    model: &JudgeModel,
+    model: &ComparatorModel,
     spec: &FeatureSpec,
     ad: &DocFeatures,
     docs: &[DocFeatures],
@@ -296,12 +296,12 @@ pub fn glicko_to_score(state: GlickoState) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::artifact::{Architecture, ChunkingMode, Contextual, JudgeKind, LayerWeights};
+    use crate::artifact::{Architecture, ChunkingMode, Contextual, ComparatorKind, LayerWeights};
     use crate::features::TextPrep;
 
-    /// A synthetic pairwise judge over `dim`-wide raw-pair features with one
+    /// A synthetic pairwise comparator over `dim`-wide raw-pair features with one
     /// hidden layer — the shape the gui actually loads.
-    fn judge(dim: usize) -> (JudgeModel, FeatureSpec) {
+    fn comparator(dim: usize) -> (ComparatorModel, FeatureSpec) {
         let mut spec = FeatureSpec::raw_pair(
             "m",
             dim,
@@ -326,9 +326,9 @@ mod tests {
             },
         ];
         let _ = &mut spec;
-        let artifact = crate::artifact::JudgeArtifact {
+        let artifact = crate::artifact::ComparatorArtifact {
             spec_version: crate::artifact::SPEC_VERSION,
-            kind: JudgeKind::Pairwise,
+            kind: ComparatorKind::Pairwise,
             architecture: Architecture::Mlp1,
             feature_spec: spec.clone(),
             layers,
@@ -362,7 +362,7 @@ mod tests {
             parity: vec![],
         };
         (
-            JudgeModel::from_artifact(&artifact).expect("synthetic artifact is valid"),
+            ComparatorModel::from_artifact(&artifact).expect("synthetic artifact is valid"),
             spec,
         )
     }
@@ -387,7 +387,7 @@ mod tests {
     #[test]
     fn batched_matrix_is_bitwise_identical_to_the_scalar_reference() {
         let dim = 24;
-        let (model, spec) = judge(dim);
+        let (model, spec) = comparator(dim);
         let ad = doc(0, dim);
         let docs: Vec<DocFeatures> = (1..=40).map(|s| doc(s, dim)).collect();
 
@@ -415,11 +415,11 @@ mod tests {
 
     /// The point of design 15.13: print the scalar vs batched tournament
     /// times on a 300-doc synthetic job so the win is visible in the test
-    /// log (`cargo test --release -p libjudge -- --nocapture`).
+    /// log (`cargo test --release -p libcomparator -- --nocapture`).
     #[test]
     fn batched_tournament_is_faster_than_the_scalar_loop() {
         let dim = 128; // wide enough that the MLP is not the only cost
-        let (model, spec) = judge(dim);
+        let (model, spec) = comparator(dim);
         let ad = doc(0, dim);
         let docs: Vec<DocFeatures> = (1..=300).map(|s| doc(s, dim)).collect();
 
@@ -455,7 +455,7 @@ mod tests {
     #[test]
     fn single_and_empty_tournaments_are_well_formed() {
         let dim = 8;
-        let (model, spec) = judge(dim);
+        let (model, spec) = comparator(dim);
         let ad = doc(0, dim);
         assert!(pairwise_prob_matrix(&model, &spec, &ad, &[]).is_empty());
         let one = pairwise_prob_matrix(&model, &spec, &ad, &[doc(1, dim)]);

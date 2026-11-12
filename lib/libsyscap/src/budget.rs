@@ -23,7 +23,7 @@ pub enum Verdict {
     Polite,
     /// Overloaded or low on RAM: floor values, barely-visible progress.
     Backoff,
-    /// Nearly out of RAM: defer heavy work entirely. The ONLY verdict the gui
+    /// Nearly out of RAM: defer deep work entirely. The ONLY verdict the gui
     /// must surface to the user (a `holding` reason code + visible notice);
     /// Polite/Backoff adapt silently.
     Hold,
@@ -42,7 +42,7 @@ impl Verdict {
         }
     }
 
-    /// `false` only for [`Verdict::Hold`] (pause heavy work).
+    /// `false` only for [`Verdict::Hold`] (pause deep work).
     pub fn heavy_ok(self) -> bool {
         !matches!(self, Verdict::Hold)
     }

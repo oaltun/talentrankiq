@@ -11,10 +11,10 @@ name = "libcv_pipeline"
 
 [dependencies]
 libcv-state = { path = "../libcv-state" }
-libcv-judge-order = { path = "../libcv-judge-order" }
+libcv-comparator-order = { path = "../libcv-comparator-order" }
 libcv-match = { path = "../libcv-match" }
 libcvparser = { path = "../libcvparser" }
-libjudge = { path = "../libjudge" }
+libcomparator = { path = "../libcomparator" }
 libsyscap = { path = "../libsyscap" }
 libtriqui-core = { path = "../libtriqui-core" }
 uuid = { version = "1", features = ["v4", "serde"] }

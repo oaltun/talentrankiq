@@ -1,7 +1,7 @@
-# libjudge
+# libcomparator
 
-Plain-Rust inference for the frozen-embedder judge (design
-`bench/bench1/design/15-pairwise-judge.md`). loads a trained judge artifact
+Plain-Rust inference for the frozen-embedder comparator (design
+`bench/bench1/design/15-pairwise-comparator.md`). loads a trained comparator artifact
 (JSON), rebuilds the feature assembly, and scores documents with a
 hand-rolled forward pass. no burn, no ONNX — this crate is safe to
 link into any production binary.
@@ -9,10 +9,10 @@ link into any production binary.
 ## what it owns
 
 - **artifact contract** (`artifact.rs`) — serde + validation for the
-  judge artifact: feature spec (embedder, dim, chunking, contextual,
+  comparator artifact: feature spec (embedder, dim, chunking, contextual,
   variant, tau, text preprocessing), layer weights (`w[out][in]`),
   run metadata, per-block layout, and parity fixture vectors.
-  `JudgeArtifact::load` re-verifies burn-vs-hand-rolled parity
+  `ComparatorArtifact::load` re-verifies burn-vs-hand-rolled parity
   (tol 1e-4) on every load, so a stale or corrupt artifact is a hard
   error at startup, not silently wrong scores.
 - **feature assembly** (`features.rs`) — raw pair input
@@ -39,7 +39,7 @@ link into any production binary.
 
 ## what it does NOT own
 
-- training (see `judge/judgetrainer/`; burn is confined there)
+- training (see `comparator/comparatortrainer/`; burn is confined there)
 - spawning modelcaller — callers provide an embedder impl of
   `TextEmbedder` over their own client, with `texts_role = None`
 
@@ -48,9 +48,9 @@ link into any production binary.
 ```
 src/
 ├── lib.rs          # errors, l2_normalize, cosine, sigmoid
-├── artifact.rs     # JudgeArtifact serde/validate/parity/load
+├── artifact.rs     # ComparatorArtifact serde/validate/parity/load
 ├── features.rs     # DocFeatures, input assembly, block layout
-├── forward.rs      # JudgeModel hand-rolled scoring
+├── forward.rs      # ComparatorModel hand-rolled scoring
 ├── extract.rs      # TextEmbedder, ChunkCache, FeatureExtractor
 └── tournament.rs   # probability matrix, win rates, Bradley-Terry
 ```
@@ -58,28 +58,28 @@ src/
 ## usage sketch
 
 ```rust
-let artifact = libjudge::artifact::JudgeArtifact::load(path)?; // parity-checked
-let model = libjudge::forward::JudgeModel::from_artifact(&artifact)?;
+let artifact = libcomparator::artifact::ComparatorArtifact::load(path)?; // parity-checked
+let model = libcomparator::forward::ComparatorModel::from_artifact(&artifact)?;
 
-let mut extractor = libjudge::extract::FeatureExtractor::from_spec(
+let mut extractor = libcomparator::extract::FeatureExtractor::from_spec(
     &artifact.feature_spec, max_ctx, tokenizer, cache, embedder);
-let docs = extractor.extract(libjudge::extract::ObservationTexts {
+let docs = extractor.extract(libcomparator::extract::ObservationTexts {
     job_text, resume_texts })?;
 
 // pairwise: win-rate scores over the tournament matrix
-let p = libjudge::tournament::pairwise_prob_matrix(&model,
+let p = libcomparator::tournament::pairwise_prob_matrix(&model,
     &artifact.feature_spec, &docs[0], &docs);
-let scores = libjudge::tournament::win_rate_scores(&p);
+let scores = libcomparator::tournament::win_rate_scores(&p);
 
 // pointwise (m0): one forward per (ad, cv), score = P(Good Fit)
-let score = model.score(libjudge::features::assemble_pointwise(
+let score = model.score(libcomparator::features::assemble_pointwise(
     &artifact.feature_spec, &docs[0], &docs[3]));
 ```
 
 ## testing
 
 ```bash
-cargo test --manifest-path lib/libjudge/Cargo.toml    # 20 unit tests
+cargo test --manifest-path lib/libcomparator/Cargo.toml    # 20 unit tests
 ```
 
 covers: artifact validation/parity roundtrip, feature assembly dims
@@ -89,7 +89,7 @@ with bench.
 
 ## consumers
 
-- `judge/judgetrainer/` — writes artifacts (burn trains, libjudge scores
+- `comparator/comparatortrainer/` — writes artifacts (burn trains, libcomparator scores
   during validation so every metric is also a parity check)
-- `bench/` — `pairwise-judge` / `pointwise-judge` methods link this
+- `bench/` — `pairwise-comparator` / `pointwise-comparator` methods link this
   crate for inference; feature prep is the same rust code end-to-end

@@ -7,7 +7,7 @@
 //!
 //! It makes **no model calls** and takes **no budgets**. That is the point
 //! (`gui/design/app1/cascade-simple.md`): budgeting lives in the stages
-//! (`scout::run_scout`, `cascade::run_wave`, `judge::run_pool`), projection lives
+//! (`quick::run_scout`, `cascade::run_wave`, `comparator::run_pool`), projection lives
 //! here, and the two never meet. So an input change — a new criterion, an edited
 //! ad, a like — is one call to this function and the sheet is correct
 //! immediately, whether or not a cascade is running.
@@ -15,12 +15,12 @@
 //! # What it computes
 //!
 //! ```text
-//! space(c) = heavy if c has heavy-space grades else scout
-//! fit(c)   = judge win-rate if judged, else the ad grade in space(c)
+//! space(c) = deep if c has deep-space grades else quick
+//! fit(c)   = comparator win-rate if comparatord, else the ad grade in space(c)
 //! total(c) = ad_weight · fit(c) + Σ q.weight · sim(c, q, space(c))
 //! ```
 //!
-//! Every candidate has a total from the first scout pass, because the scout
+//! Every candidate has a total from the first quick pass, because the quick
 //! scores the whole rubric rather than only the ad. There are no "pending" rows
 //! and no counted/display-only cut: `points` is **computed from `stage_scores`**,
 //! not summed out of the display rows, so which row happens to carry the ad slot
@@ -28,7 +28,7 @@
 //! number, not to produce it.
 //!
 //! Exactly one row carries the ad slot per candidate, and the row id says which:
-//! `ad_judge` when judged, `ad` when the heavy embedder has graded it, `scout`
+//! `ad_comparator` when comparatord, `ad` when the deep embedder has graded it, `quick`
 //! while it has not. `rubric_capacity` counts the ad slot once regardless, since
 //! it is `ad_weight` plus the rubric's own questions.
 
@@ -40,14 +40,14 @@ use rusqlite::{Connection, OptionalExtension};
 use crate::db::db_err;
 use crate::rubric::{self, Rubric, AD_Q};
 use crate::runtime::EngineRuntime;
-use crate::scout;
+use crate::quick;
 use crate::types::{
     ChunkExplanation, DomainError, QuestionKind, RubricScore, TriqiItem, SortReport,
 };
 
-/// Question id of the judge's win-rate row — the judge's own, so the heavy
+/// Question id of the comparator's win-rate row — the comparator's own, so the deep
 /// embedder's ad cosine survives as a separate column.
-pub const JUDGE_Q: &str = "ad_judge";
+pub const JUDGE_Q: &str = "ad_comparator";
 
 /// What one rescore pass did. The reported-behaviour contract the gui and the
 /// tests assert on (never instrumentation).
@@ -58,9 +58,9 @@ pub struct RescoreReport {
     /// Candidates with no grade at all — no ad yet and no criteria, so there is
     /// nothing to measure them against.
     pub ungraded: i64,
-    /// Candidates whose total is backed by a judge's win-rate.
-    pub judged: i64,
-    /// Candidates still graded only in the scout space.
+    /// Candidates whose total is backed by a comparator's win-rate.
+    pub comparatord: i64,
+    /// Candidates still graded only in the quick space.
     pub scout_only: i64,
     /// The job's rubric capacity — the "Total /N" denominator.
     pub capacity: f64,
@@ -85,8 +85,8 @@ pub fn rescore_ids(
     ids: Option<&[String]>,
 ) -> Result<RescoreReport, DomainError> {
     let conn = rt.open_conn().map_err(dberr)?;
-    let heavy = rt.model();
-    rescore_conn(&conn, job_id, &heavy, ids)
+    let deep = rt.model();
+    rescore_conn(&conn, job_id, &deep, ids)
 }
 
 /// [`rescore_ids`] over a connection the caller already holds, with the embedder slug
@@ -99,27 +99,27 @@ pub fn rescore_ids(
 pub fn rescore_conn(
     conn: &Connection,
     job_id: &str,
-    heavy: &str,
+    deep: &str,
     ids: Option<&[String]>,
 ) -> Result<RescoreReport, DomainError> {
-    let scout_space = scout::scout_model_for(heavy);
-    rescore_in_spaces(conn, job_id, heavy, scout_space.as_deref(), ids)
+    let scout_space = quick::scout_model_for(deep);
+    rescore_in_spaces(conn, job_id, deep, scout_space.as_deref(), ids)
 }
 
-/// [`rescore_conn`] with the scout's slug named explicitly instead of read from
+/// [`rescore_conn`] with the quick's slug named explicitly instead of read from
 /// `triq.yaml`, so a test can name a space of its own instead of depending on
 /// whatever this box is configured with.
 pub fn rescore_in_spaces(
     conn: &Connection,
     job_id: &str,
-    heavy: &str,
+    deep: &str,
     scout_space: Option<&str>,
     ids: Option<&[String]>,
 ) -> Result<RescoreReport, DomainError> {
-    let heavy = heavy.to_string();
+    let deep = deep.to_string();
     let scout_space = scout_space.map(str::to_string);
 
-    let heavy_grades = crate::db::stage_scores_for_job(conn, job_id, &heavy).map_err(dberr)?;
+    let heavy_grades = crate::db::stage_scores_for_job(conn, job_id, &deep).map_err(dberr)?;
     let scout_grades = match scout_space.as_deref() {
         Some(s) => crate::db::stage_scores_for_job(conn, job_id, s).map_err(dberr)?,
         None => HashMap::new(),
@@ -143,7 +143,7 @@ pub fn rescore_in_spaces(
         });
     }
 
-    let heavy_rubric = Rubric::with_vectors(conn, job_id, &heavy).map_err(dberr)?;
+    let heavy_rubric = Rubric::with_vectors(conn, job_id, &deep).map_err(dberr)?;
     let scout_rubric = match scout_space.as_deref() {
         Some(s) => Some(Rubric::with_vectors(conn, job_id, s).map_err(dberr)?),
         None => None,
@@ -151,7 +151,7 @@ pub fn rescore_in_spaces(
     let ad_weight = heavy_rubric.ad_weight;
 
     let candidates = target_candidates(conn, job_id, ids)?;
-    let judge_grades = judge_grades(conn, &candidates)?;
+    let comparator_grades = comparator_grades(conn, &candidates)?;
 
     let mut report = RescoreReport {
         capacity: heavy_rubric.capacity() as f64,
@@ -159,8 +159,8 @@ pub fn rescore_in_spaces(
     };
     let mut pending: Vec<Pending> = Vec::with_capacity(candidates.len());
     for cid in &candidates {
-        // The candidate's space: the heavy one when the heavy embedder has graded
-        // it, the scout's otherwise. The judge does not decide this — it replaces
+        // The candidate's space: the deep one when the deep embedder has graded
+        // it, the quick's otherwise. The comparator does not decide this — it replaces
         // the ad slot's value, while the criteria and feedback terms still come
         // from the candidate's own space.
         let heavy_fit = heavy_grades.get(&(cid.clone(), AD_Q.to_string())).copied();
@@ -169,28 +169,28 @@ pub fn rescore_in_spaces(
             None => None,
         };
         let (space, rubric, grades) = match (&heavy_fit, &scout_rubric) {
-            (Some(_), _) => (heavy.as_str(), &heavy_rubric, &heavy_grades),
+            (Some(_), _) => (deep.as_str(), &heavy_rubric, &heavy_grades),
             (None, Some(r)) if r.vector(AD_Q, scout_space.as_deref().unwrap_or("")).is_some() => (
                 scout_space.as_deref().unwrap_or_default(),
                 r,
                 &scout_grades,
             ),
-            _ => (heavy.as_str(), &heavy_rubric, &heavy_grades),
+            _ => (deep.as_str(), &heavy_rubric, &heavy_grades),
         };
         let space_fit = grades.get(&(cid.clone(), AD_Q.to_string())).copied();
-        let judged = judge_grades.get(cid).copied().filter(|w| (0.0..=1.0).contains(w));
-        let Some(fit) = judged.or(space_fit) else {
+        let comparatord = comparator_grades.get(cid).copied().filter(|w| (0.0..=1.0).contains(w));
+        let Some(fit) = comparatord.or(space_fit) else {
             report.ungraded += 1;
             continue;
         };
-        if space == heavy.as_str() {
-            if judged.is_some() {
-                report.judged += 1;
+        if space == deep.as_str() {
+            if comparatord.is_some() {
+                report.comparatord += 1;
             }
         } else {
             report.scout_only += 1;
-            if judged.is_some() {
-                report.judged += 1;
+            if comparatord.is_some() {
+                report.comparatord += 1;
             }
         }
 
@@ -215,11 +215,11 @@ pub fn rescore_in_spaces(
         }
         let total = rubric.total(fit, &sims);
 
-        // The ad slot, unless the judge has taken it over. Exactly one row here
-        // carries it and its id names the stage; when the judge *has*, its own row
-        // (written by the judge stage — the only writer of `ad_judge`) is the one the
+        // The ad slot, unless the comparator has taken it over. Exactly one row here
+        // carries it and its id names the stage; when the comparator *has*, its own row
+        // (written by the comparator stage — the only writer of `ad_comparator`) is the one the
         // sheet shows, and this pass only reads its value.
-        if judged.is_none() {
+        if comparatord.is_none() {
             let (slot_id, slot_label, slot_kind, slot_points) = match heavy_fit {
                 Some(cos) => (
                     AD_Q.to_string(),
@@ -228,9 +228,9 @@ pub fn rescore_in_spaces(
                     ad_weight as f64 * cos,
                 ),
                 None => (
-                    scout::SCOUT_QUESTION_ID.to_string(),
-                    scout::SCOUT_LABEL.to_string(),
-                    QuestionKind::Scout,
+                    quick::SCOUT_QUESTION_ID.to_string(),
+                    quick::SCOUT_LABEL.to_string(),
+                    QuestionKind::Quick,
                     ad_weight as f64 * space_fit.unwrap_or(0.0),
                 ),
             };
@@ -265,11 +265,11 @@ pub fn rescore_in_spaces(
             }
         }
         if let Some(cos) = scout_fit {
-            if !emitted.iter().any(|q| q == scout::SCOUT_QUESTION_ID) {
+            if !emitted.iter().any(|q| q == quick::SCOUT_QUESTION_ID) {
                 scores.push(RubricScore {
-                    question_id: scout::SCOUT_QUESTION_ID.to_string(),
-                    label: scout::SCOUT_LABEL.to_string(),
-                    kind: QuestionKind::Scout,
+                    question_id: quick::SCOUT_QUESTION_ID.to_string(),
+                    label: quick::SCOUT_LABEL.to_string(),
+                    kind: QuestionKind::Quick,
                     points: (ad_weight as f64 * cos) as f32,
                     max_points: ad_weight,
                     chunk_explanations: vec![],
@@ -279,7 +279,7 @@ pub fn rescore_in_spaces(
 
         // The denominator is what this row was *measured* against: the ad slot plus
         // the questions it has a grade for. A feedback row with no learned vector is
-        // not capacity the ranking used, and a criterion the heavy embedder has not
+        // not capacity the ranking used, and a criterion the deep embedder has not
         // reached is not one either.
         let graded: Vec<&str> = sims.keys().map(|k| k.as_str()).collect();
         pending.push(Pending {
@@ -342,9 +342,9 @@ fn target_candidates(
     }
 }
 
-/// The judge's win-rate for each of `ids`, read from the `candidate_scores` rows
-/// the judge stage owns (`points / max_points` **is** the win-rate).
-fn judge_grades(
+/// The comparator's win-rate for each of `ids`, read from the `candidate_scores` rows
+/// the comparator stage owns (`points / max_points` **is** the win-rate).
+fn comparator_grades(
     conn: &Connection,
     ids: &[String],
 ) -> Result<HashMap<String, f64>, DomainError> {
@@ -381,7 +381,7 @@ fn judge_grades(
 ///
 /// Recomputed here rather than stored by the stage, because it is pure arithmetic
 /// over vectors that are already on disk — which is why rescore can afford it on
-/// every pass. (The ad slot has no explanation: a judge's win-rate is a
+/// every pass. (The ad slot has no explanation: a comparator's win-rate is a
 /// comparison, not a chunk, and an ad cosine is the same thing the SCO/EMB
 /// columns already show.)
 fn explanations_for(
@@ -434,7 +434,7 @@ fn persist(conn: &Connection, pending: &[Pending]) -> Result<(), DomainError> {
         // This pass owns every row in the rubric: the ad slot and every feedback
         // and criterion row. Two rows it must not touch: `fb_job`/`fb_profile`
         // belong to the feedback learner when this rubric's own `questions` list
-        // does not carry them (weight 0), and the `sort_reports`/judge bookkeeping
+        // does not carry them (weight 0), and the `sort_reports`/comparator bookkeeping
         // lives elsewhere entirely. Both are named explicitly so a future rubric
         // row cannot be clobbered by omission.
         tx.execute(
@@ -548,17 +548,17 @@ fn stamp_ranked(conn: &Connection, job_id: &str) -> Result<(), DomainError> {
 pub fn write_report(
     conn: &Connection,
     job_id: &str,
-    judge_stats: Option<&crate::judge_cache::PairVerdictStats>,
+    comparator_stats: Option<&crate::comparator_cache::PairVerdictStats>,
     mode: &str,
     wave: u32,
     complete: bool,
 ) -> Result<(), DomainError> {
-    let fresh = judge_stats.map(|s| s.fresh).unwrap_or(0);
-    let cached = judge_stats.map(|s| s.cached).unwrap_or(0);
-    // Three states, not two: the judge did not run at all, ran and every verdict came
+    let fresh = comparator_stats.map(|s| s.fresh).unwrap_or(0);
+    let cached = comparator_stats.map(|s| s.cached).unwrap_or(0);
+    // Three states, not two: the comparator did not run at all, ran and every verdict came
     // from the memoized cache, or ran and computed something. "Ran" with nothing
     // computed is the ambiguous middle the gui must not show.
-    let judge_mode = match judge_stats {
+    let comparator_mode = match comparator_stats {
         None => "skipped",
         Some(s) if s.fresh == 0 && s.cached > 0 => "cached",
         Some(s) if s.fresh == 0 => "skipped",
@@ -566,11 +566,11 @@ pub fn write_report(
     };
     conn.execute(
         "INSERT OR REPLACE INTO sort_reports
-           (job_id, judge_mode, judge_pairs_fresh, judge_pairs_cached, mode, waves, complete, cancelled, created_at)
+           (job_id, comparator_mode, comparator_pairs_fresh, comparator_pairs_cached, mode, waves, complete, cancelled, created_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, datetime('now'))",
         rusqlite::params![
             job_id,
-            judge_mode,
+            comparator_mode,
             fresh as i64,
             cached as i64,
             mode,
@@ -586,7 +586,7 @@ pub fn write_report(
 ///
 /// A finished pass already persisted everything, so a caller that needs the report
 /// reads it back rather than re-running the pipeline: a second pass would find
-/// every judge pair memoized and report `fresh = 0`, a lie about what happened.
+/// every comparator pair memoized and report `fresh = 0`, a lie about what happened.
 pub fn read_triqui(
     conn: &Connection,
     job_id: &str,
@@ -609,20 +609,20 @@ pub fn read_triqui(
         .map_err(dberr)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(dberr)?;
-    // A job that has been projected but never reported (a rescore with no judge in
+    // A job that has been projected but never reported (a rescore with no comparator in
     // the loop) has no row yet, and "no row" is not an error — it reads as a
-    // blocking rank that skipped the judge.
+    // blocking rank that skipped the comparator.
     let report = conn
         .query_row(
-            "SELECT judge_mode, judge_pairs_fresh, judge_pairs_cached, mode, waves, created_at
+            "SELECT comparator_mode, comparator_pairs_fresh, comparator_pairs_cached, mode, waves, created_at
              FROM sort_reports WHERE job_id = ?1",
             rusqlite::params![job_id],
             |r| {
                 Ok(SortReport {
                     job_id: job_id.to_string(),
-                    judge_mode: r.get(0)?,
-                    judge_pairs_fresh: r.get(1)?,
-                    judge_pairs_cached: r.get(2)?,
+                    comparator_mode: r.get(0)?,
+                    comparator_pairs_fresh: r.get(1)?,
+                    comparator_pairs_cached: r.get(2)?,
                     mode: r.get(3)?,
                     waves: r.get(4)?,
                     complete: true,
@@ -635,9 +635,9 @@ pub fn read_triqui(
         .map_err(dberr)?
         .unwrap_or(SortReport {
             job_id: job_id.to_string(),
-            judge_mode: "skipped".into(),
-            judge_pairs_fresh: 0,
-            judge_pairs_cached: 0,
+            comparator_mode: "skipped".into(),
+            comparator_pairs_fresh: 0,
+            comparator_pairs_cached: 0,
             mode: "full".into(),
             waves: 0,
             complete: true,
@@ -717,17 +717,17 @@ pub fn candidates_needing_embed(
     Ok(out)
 }
 
-/// How many candidates still need the heavy embedder.
+/// How many candidates still need the deep embedder.
 pub fn count_needing_embed(
     conn: &Connection,
     job_id: &str,
-    heavy: &str) -> Result<i64, DomainError> {
+    deep: &str) -> Result<i64, DomainError> {
     conn.query_row(
         "SELECT COUNT(*) FROM candidates c
          WHERE c.job_id = ?1 AND c.extraction_status = 'Extracted' AND c.extracted_text IS NOT NULL
            AND NOT EXISTS (SELECT 1 FROM candidate_chunks cc
                            WHERE cc.candidate_id = c.id AND cc.vector_model = ?2)",
-        rusqlite::params![job_id, heavy],
+        rusqlite::params![job_id, deep],
         |r| r.get(0),
     )
     .map_err(db_err)
@@ -754,7 +754,7 @@ pub fn total_points(conn: &Connection, job_id: &str) -> Result<f64, DomainError>
 /// One call, from every handler that mutates the rubric. This is the whole of
 /// `gui/design/app1/cascade-simple.md` §4: because the rubric is the only thing a
 /// rank reads, an input change is (1) embed the one text that changed, (2) project,
-/// and (3) at most invalidate the judge — never "cancel the run", never "mark it
+/// and (3) at most invalidate the comparator — never "cancel the run", never "mark it
 /// stale until somebody re-ranks".
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Invalidation {
@@ -762,7 +762,7 @@ pub struct Invalidation {
     pub embedded: usize,
     /// Candidates re-projected.
     pub rescored: i64,
-    /// Whether the judge pool was cleared (an ad change invalidates every
+    /// Whether the comparator pool was cleared (an ad change invalidates every
     /// memoized verdict, because the ad's content hash is part of the key).
     pub pool_cleared: bool,
     /// Whether the sheet was already up to date before this call.
@@ -773,12 +773,12 @@ pub struct Invalidation {
 ///
 /// `ad_changed` distinguishes the two cases that behave differently:
 ///
-/// - **criteria / weights / feedback.** The judge never read them, so every
+/// - **criteria / weights / feedback.** The comparator never read them, so every
 ///   memoized verdict is still valid and the pool still holds. The sheet is fixed
 ///   by this function alone — no run needed, no cancel, nothing lost.
-/// - **the job ad.** Every judge verdict is keyed on the ad's content hash, so the
-///   pool is emptied and the `ad_judge` rows are dropped; the sheet falls back to
-///   the embedder's cosine until a run re-judges. Candidates' own vectors are
+/// - **the job ad.** Every comparator verdict is keyed on the ad's content hash, so the
+///   pool is emptied and the `ad_comparator` rows are dropped; the sheet falls back to
+///   the embedder's cosine until a run re-comparators. Candidates' own vectors are
 ///   untouched (they are text-only), so no re-embedding is ever needed for an ad
 ///   change.
 ///
@@ -808,10 +808,10 @@ pub fn inputs_changed(
 
     // Embed whatever rubric text has no vector yet, in every space the job grades
     // in. One criterion edited is one embed; the rest is a cache hit.
-    let heavy = rt.model();
+    let deep = rt.model();
     let spaces: Vec<String> = {
-        let mut v = vec![heavy.clone()];
-        if let Some(s) = scout::scout_model_for(&heavy) {
+        let mut v = vec![deep.clone()];
+        if let Some(s) = quick::scout_model_for(&deep) {
             v.push(s);
         }
         v
@@ -819,12 +819,12 @@ pub fn inputs_changed(
     let mut embedded = 0usize;
     for space in &spaces {
         let rubric = Rubric::load(&conn, job_id)?;
-        // The scout's space is filled from the embedding cache only — loading its
-        // session from a request thread would evict the heavy embedder a running
-        // cascade is using, and the scout pass picks up anything left at its next
-        // boundary. The heavy space is filled properly, because its vectors are
+        // The quick's space is filled from the embedding cache only — loading its
+        // session from a request thread would evict the deep embedder a running
+        // cascade is using, and the quick pass picks up anything left at its next
+        // boundary. The deep space is filled properly, because its vectors are
         // what the totals are made of.
-        embedded += if space == &heavy {
+        embedded += if space == &deep {
             rubric::ensure_vectors(rt, &conn, &rubric, space, None).map_err(dberr)?
         } else {
             rubric::ensure_vectors_cache_only(&conn, &rubric, space).map_err(dberr)?
@@ -835,13 +835,13 @@ pub fn inputs_changed(
     score_live_spaces(
         &conn,
         job_id,
-        &heavy,
-        scout::scout_model_for(&heavy).as_deref(),
+        &deep,
+        quick::scout_model_for(&deep).as_deref(),
     )?;
 
     if ad_changed {
-        crate::db::clear_judge_pool(&conn, job_id).map_err(dberr)?;
-        // Drop the judge grades too: they were earned against the *old* ad, so
+        crate::db::clear_comparator_pool(&conn, job_id).map_err(dberr)?;
+        // Drop the comparator grades too: they were earned against the *old* ad, so
         // leaving them would rank by a verdict about a job description the user
         // no longer has. The pool is refrozen by the next run.
         conn.execute(
@@ -850,8 +850,8 @@ pub fn inputs_changed(
             rusqlite::params![JUDGE_Q, job_id],
         )
         .map_err(dberr)?;
-        // An empty ad leaves nothing to measure against, so the heavy space has no
-        // ad vector and every candidate falls back to its scout grade.
+        // An empty ad leaves nothing to measure against, so the deep space has no
+        // ad vector and every candidate falls back to its quick grade.
         let has_ad: Option<String> = conn
             .query_row(
                 "SELECT job_ad_text FROM jobs WHERE id = ?1",
@@ -869,7 +869,7 @@ pub fn inputs_changed(
             conn.execute(
                 "DELETE FROM stage_scores WHERE model = ?1 AND question_id = 'ad'
                  AND candidate_id IN (SELECT id FROM candidates WHERE job_id = ?2)",
-                rusqlite::params![heavy, job_id],
+                rusqlite::params![deep, job_id],
             )
             .map_err(dberr)?;
         }
@@ -895,17 +895,17 @@ pub fn inputs_changed(
 ///
 /// Only spaces that already hold chunk vectors for this job's candidates are touched:
 /// those are the ones a stage has reached, and they are exactly the spaces a grade
-/// can be computed in. (Testing for *grades* instead would skip the heavy space on a
+/// can be computed in. (Testing for *grades* instead would skip the deep space on a
 /// job that was imported without an ad — it has chunks from the prefill, no grades,
 /// and is the space that most needs one.) It never calls a model: every vector
 /// involved is on disk by the time a question can be scored.
 pub fn score_live_spaces(
     conn: &Connection,
     job_id: &str,
-    heavy: &str,
+    deep: &str,
     scout_space: Option<&str>,
 ) -> Result<usize, DomainError> {
-    let mut spaces = vec![heavy.to_string()];
+    let mut spaces = vec![deep.to_string()];
     if let Some(s) = scout_space {
         spaces.push(s.to_string());
     }
@@ -933,22 +933,22 @@ pub fn score_live_spaces(
     Ok(scored)
 }
 
-/// Whether a job still has work a cascade would do: candidates the heavy embedder
-/// has not reached, or pool members unjudged.
+/// Whether a job still has work a cascade would do: candidates the deep embedder
+/// has not reached, or pool members uncomparatord.
 ///
 /// This is what the rank button means now. A rescored job is never *stale* — the
 /// sheet is always the best answer available right now — but it can be
 /// *incomplete*, and this is the honest question to ask the user about it.
 pub fn pending_work(rt: &Arc<EngineRuntime>, job_id: &str) -> Result<PendingWork, DomainError> {
     let conn = rt.open_conn().map_err(dberr)?;
-    let heavy = rt.model();
-    let remaining_embed = count_needing_embed(&conn, job_id, &heavy)?;
-    let pool = crate::db::judge_pool_size(&conn, job_id).map_err(dberr)? as usize;
+    let deep = rt.model();
+    let remaining_embed = count_needing_embed(&conn, job_id, &deep)?;
+    let pool = crate::db::comparator_pool_size(&conn, job_id).map_err(dberr)? as usize;
     let pool_remaining = if pool == 0 {
         0
     } else {
         conn.query_row(
-            "SELECT COUNT(*) FROM judge_pool jp
+            "SELECT COUNT(*) FROM comparator_pool jp
              LEFT JOIN candidate_scores cs
                ON cs.candidate_id = jp.candidate_id AND cs.question_id = ?2
              WHERE jp.job_id = ?1 AND cs.id IS NULL",
@@ -977,11 +977,11 @@ pub fn pending_work(rt: &Arc<EngineRuntime>, job_id: &str) -> Result<PendingWork
 /// is never stale, only incomplete.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PendingWork {
-    /// Candidates the heavy embedder has not reached.
+    /// Candidates the deep embedder has not reached.
     pub remaining_embed: i64,
-    /// The frozen judge pool's size.
+    /// The frozen comparator pool's size.
     pub pool: usize,
-    /// Pool members with no judge grade yet.
+    /// Pool members with no comparator grade yet.
     pub pool_remaining: i64,
     /// Candidates with no total at all (no ad and no criteria yet).
     pub ungraded: i64,
@@ -1002,8 +1002,8 @@ mod tests {
 
     /// The embedder slug the tests pretend is selected. No model is ever loaded: the
     /// projection reads stored vectors only, which is the point of testing it here.
-    const HEAVY: &str = "heavy-slug";
-    const SCOUT: &str = "scout-slug";
+    const HEAVY: &str = "deep-slug";
+    const SCOUT: &str = "quick-slug";
 
     /// The projection, with both spaces named — no dependency on this box's
     /// `triq.yaml`.
@@ -1073,7 +1073,7 @@ mod tests {
         .unwrap();
     }
 
-    /// The state the scout leaves behind: rubric vectors in the scout space, chunks,
+    /// The state the quick leaves behind: rubric vectors in the quick space, chunks,
     /// and a grade for every candidate against every question.
     fn scout_pass(c: &rusqlite::Connection, job_id: &str, space: &str, dim: usize) {
         crate::db::put_rubric_vector(c, job_id, AD_Q, space, &axis("1", dim)).unwrap();
@@ -1115,7 +1115,7 @@ mod tests {
             .collect()
     }
 
-    /// The headline promise: after the scout pass every candidate has a total built
+    /// The headline promise: after the quick pass every candidate has a total built
     /// from the *whole* rubric, not just the ad. This is the single invariant the
     /// whole scoring-v3 simplification rests on.
     #[test]
@@ -1126,13 +1126,13 @@ mod tests {
         for cand in ["c1", "c2", "c3"] {
             candidate(&c, "j1", cand);
         }
-        scout_pass(&c, "j1", "scout-slug", 4);
+        scout_pass(&c, "j1", "quick-slug", 4);
 
-        let rubric = Rubric::with_vectors(&c, "j1", "scout-slug").unwrap();
-        assert_eq!(rubric.scored_questions("scout-slug"), vec![AD_Q, "crit_a"]);
+        let rubric = Rubric::with_vectors(&c, "j1", "quick-slug").unwrap();
+        assert_eq!(rubric.scored_questions("quick-slug"), vec![AD_Q, "crit_a"]);
 
         for cand in ["c1", "c2", "c3"] {
-            let graded = stage_question_ids(&c, cand, "scout-slug");
+            let graded = stage_question_ids(&c, cand, "quick-slug");
             assert!(
                 graded.contains(&"crit_a".to_string()),
                 "{cand} must be scored against the criterion, not only the ad: {graded:?}"
@@ -1151,12 +1151,12 @@ mod tests {
                 "{cand}'s sheet row carries its criterion: {ids:?}"
             );
             assert!(
-                ids.contains(&scout::SCOUT_QUESTION_ID.to_string()),
-                "{cand} carries the scout's ad grade: {ids:?}"
+                ids.contains(&quick::SCOUT_QUESTION_ID.to_string()),
+                "{cand} carries the quick's ad grade: {ids:?}"
             );
             assert!(
                 !ids.contains(&AD_Q.to_string()),
-                "an unembedded candidate has no heavy ad row: {ids:?}"
+                "an unembedded candidate has no deep ad row: {ids:?}"
             );
         }
     }
@@ -1174,8 +1174,8 @@ mod tests {
             .collect()
     }
 
-    /// A scout-only candidate's total is `ad_weight·fit + Σ w·sim` — complete, and
-    /// comparable with another scout-only candidate's.
+    /// A quick-only candidate's total is `ad_weight·fit + Σ w·sim` — complete, and
+    /// comparable with another quick-only candidate's.
     #[test]
     fn scout_space_totals_include_criteria() {
         let c = conn();
@@ -1183,9 +1183,9 @@ mod tests {
         criterion(&c, "j1", "crit_a", 10.0);
         candidate(&c, "j1", "c1"); // chunk axis 1 → ad sim 0, criterion sim 0
         candidate(&c, "j1", "c2"); // chunk axis 2 → ad sim 1, criterion sim 1
-        scout_pass(&c, "j1", "scout-slug", 4);
+        scout_pass(&c, "j1", "quick-slug", 4);
 
-        let rubric = Rubric::with_vectors(&c, "j1", "scout-slug").unwrap();
+        let rubric = Rubric::with_vectors(&c, "j1", "quick-slug").unwrap();
         let mut sims = HashMap::new();
         sims.insert("crit_a".to_string(), 0.0);
         assert_eq!(rubric.total(1.0, &sims), 50.0, "ad slot only when the criterion is 0");
@@ -1205,27 +1205,27 @@ mod tests {
         criterion(&c, "j1", "crit_a", 10.0);
         candidate(&c, "j1", "c1");
         candidate(&c, "j1", "c2");
-        scout_pass(&c, "j1", "scout-slug", 4);
-        // c1 also reaches the heavy embedder, so it gets an `ad` row as well.
-        chunk(&c, "c1", "heavy-slug", &axis("1", 4));
-        crate::db::put_rubric_vector(&c, "j1", AD_Q, "heavy-slug", &axis("1", 4)).unwrap();
-        crate::db::put_rubric_vector(&c, "j1", "crit_a", "heavy-slug", &axis("2", 4)).unwrap();
-        let rubric = Rubric::with_vectors(&c, "j1", "heavy-slug").unwrap();
-        crate::rubric::score_candidates_in_space(&c, "j1", "heavy-slug", &rubric, None).unwrap();
+        scout_pass(&c, "j1", "quick-slug", 4);
+        // c1 also reaches the deep embedder, so it gets an `ad` row as well.
+        chunk(&c, "c1", "deep-slug", &axis("1", 4));
+        crate::db::put_rubric_vector(&c, "j1", AD_Q, "deep-slug", &axis("1", 4)).unwrap();
+        crate::db::put_rubric_vector(&c, "j1", "crit_a", "deep-slug", &axis("2", 4)).unwrap();
+        let rubric = Rubric::with_vectors(&c, "j1", "deep-slug").unwrap();
+        crate::rubric::score_candidates_in_space(&c, "j1", "deep-slug", &rubric, None).unwrap();
 
         let report = rescore(&c, "j1", None).unwrap();
         assert_eq!(report.scored, 2);
 
-        // The heavy-space candidate carries both stage views plus its criterion.
+        // The deep-space candidate carries both stage views plus its criterion.
         let ids = question_ids(&c, "c1");
         assert!(ids.contains(&AD_Q.to_string()));
-        assert!(ids.contains(&scout::SCOUT_QUESTION_ID.to_string()));
+        assert!(ids.contains(&quick::SCOUT_QUESTION_ID.to_string()));
         assert!(ids.contains(&"crit_a".to_string()));
 
-        // The ad slot: `ad` for the embedded one, `scout` for the other.
+        // The ad slot: `ad` for the embedded one, `quick` for the other.
         assert_eq!(count_kind(&c, "c1", "Ad"), 1);
         assert_eq!(count_kind(&c, "c2", "Ad"), 0);
-        assert_eq!(count_kind(&c, "c2", "Scout"), 1);
+        assert_eq!(count_kind(&c, "c2", "Quick"), 1);
     }
 
     fn count_kind(c: &rusqlite::Connection, cand: &str, kind: &str) -> i64 {
@@ -1237,20 +1237,20 @@ mod tests {
         .unwrap()
     }
 
-    /// The judge's grade replaces the ad slot's *value* and changes no row's
-    /// max-points, so the capacity is unchanged and the judge row is counted.
+    /// The comparator's grade replaces the ad slot's *value* and changes no row's
+    /// max-points, so the capacity is unchanged and the comparator row is counted.
     #[test]
-    fn a_judge_grade_replaces_the_ad_value_and_leaves_capacity_alone() {
+    fn a_comparator_grade_replaces_the_ad_value_and_leaves_capacity_alone() {
         let c = conn();
         job(&c, "j1");
         criterion(&c, "j1", "crit_a", 10.0);
         candidate(&c, "j1", "c1");
-        scout_pass(&c, "j1", "scout-slug", 4);
-        // A judge grade on its own (the judge stage is the only writer of it).
+        scout_pass(&c, "j1", "quick-slug", 4);
+        // A comparator grade on its own (the comparator stage is the only writer of it).
         c.execute(
             "INSERT INTO candidate_scores (id, candidate_id, question_id, kind, label,
                                            points, max_points, sign)
-             VALUES ('j1', 'c1', 'ad_judge', 'AdJudge', 'Judge', 40.0, 50.0, 'Positive')",
+             VALUES ('j1', 'c1', 'ad_comparator', 'AdComparator', 'Comparator', 40.0, 50.0, 'Positive')",
             [],
         )
         .unwrap();
@@ -1259,13 +1259,13 @@ mod tests {
 
         // 50 (ad weight) * 0.8 win-rate.
         assert_eq!(points_of(&c, "c1"), Some(40.0));
-        assert_eq!(count_kind(&c, "c1", "AdJudge"), 1);
+        assert_eq!(count_kind(&c, "c1", "AdComparator"), 1);
         let capacity: f64 = c
             .query_row("SELECT points_max FROM candidates WHERE id = 'c1'", [], |r| {
                 r.get(0)
             })
             .unwrap();
-        assert_eq!(capacity, 60.0, "the judge scales the ad slot, it does not add to it");
+        assert_eq!(capacity, 60.0, "the comparator scales the ad slot, it does not add to it");
     }
 
     /// Ranking is global and stable: one candidate's new scorecard reorders the
@@ -1278,7 +1278,7 @@ mod tests {
         for cand in ["c1", "c2", "c3"] {
             candidate(&c, "j1", cand);
         }
-        scout_pass(&c, "j1", "scout-slug", 4);
+        scout_pass(&c, "j1", "quick-slug", 4);
         rescore(&c, "j1", None).unwrap();
         let first = ranks(&c);
         rescore(&c, "j1", None).unwrap();
@@ -1286,8 +1286,8 @@ mod tests {
 
         // c3 overtakes c1: a one-candidate change re-ranks everyone. Only c3's grades
         // change — the point of the wave path.
-        crate::db::put_stage_score(&c, "c3", "scout-slug", AD_Q, 1.0).unwrap();
-        crate::db::put_stage_score(&c, "c3", "scout-slug", "crit_a", 1.0).unwrap();
+        crate::db::put_stage_score(&c, "c3", "quick-slug", AD_Q, 1.0).unwrap();
+        crate::db::put_stage_score(&c, "c3", "quick-slug", "crit_a", 1.0).unwrap();
         rescore(&c, "j1", Some(&["c3".to_string()])).unwrap();
         let after = ranks(&c);
         assert_eq!(
@@ -1310,46 +1310,46 @@ mod tests {
     /// A frozen pool is a property of the run, not of the wave: the top N by total,
     /// once, and re-picking is the only thing that changes it.
     #[test]
-    fn the_judge_pool_is_the_top_n_by_total_and_only_a_refreeze_changes_it() {
+    fn the_comparator_pool_is_the_top_n_by_total_and_only_a_refreeze_changes_it() {
         let c = conn();
         job(&c, "j1");
         for cand in ["c1", "c2", "c3"] {
             candidate(&c, "j1", cand);
         }
-        scout_pass(&c, "j1", "scout-slug", 4);
+        scout_pass(&c, "j1", "quick-slug", 4);
         rescore(&c, "j1", None).unwrap();
 
-        let all = crate::db::freeze_judge_pool(&c, "j1", 3).unwrap();
+        let all = crate::db::freeze_comparator_pool(&c, "j1", 3).unwrap();
         assert_eq!(all, 3);
-        let first = crate::db::judge_pool_ids(&c, "j1").unwrap();
+        let first = crate::db::comparator_pool_ids(&c, "j1").unwrap();
         assert_eq!(first.len(), 3);
         assert_eq!(first[0], ranks(&c)[0], "the pool is in rank order");
 
         // A later, better grade does not move the pool by itself.
-        crate::db::put_stage_score(&c, "c3", "scout-slug", AD_Q, 1.0).unwrap();
+        crate::db::put_stage_score(&c, "c3", "quick-slug", AD_Q, 1.0).unwrap();
         rescore(&c, "j1", None).unwrap();
         assert_eq!(
-            crate::db::judge_pool_ids(&c, "j1").unwrap(),
+            crate::db::comparator_pool_ids(&c, "j1").unwrap(),
             first,
             "the pool must not re-pick itself"
         );
 
         // An explicit re-freeze does.
-        crate::db::freeze_judge_pool(&c, "j1", 1).unwrap();
-        assert_eq!(crate::db::judge_pool_ids(&c, "j1").unwrap().len(), 1);
+        crate::db::freeze_comparator_pool(&c, "j1", 1).unwrap();
+        assert_eq!(crate::db::comparator_pool_ids(&c, "j1").unwrap().len(), 1);
     }
 
     /// `pool_size: 0` is a pool of nobody — the old budget read `0` as "no limit",
-    /// so switching the judge off started the tournament.
+    /// so switching the comparator off started the tournament.
     #[test]
     fn a_pool_of_zero_is_a_pool_of_nobody() {
         let c = conn();
         job(&c, "j1");
         candidate(&c, "j1", "c1");
         candidate(&c, "j1", "c2");
-        scout_pass(&c, "j1", "scout-slug", 4);
-        assert_eq!(crate::db::freeze_judge_pool(&c, "j1", 0).unwrap(), 0);
-        assert!(crate::db::judge_pool_ids(&c, "j1").unwrap().is_empty());
+        scout_pass(&c, "j1", "quick-slug", 4);
+        assert_eq!(crate::db::freeze_comparator_pool(&c, "j1", 0).unwrap(), 0);
+        assert!(crate::db::comparator_pool_ids(&c, "j1").unwrap().is_empty());
     }
 
     /// The migration is idempotent and leaves the legacy slots alone (they are no
@@ -1361,18 +1361,18 @@ mod tests {
         criterion(&c, "j1", "crit_a", 10.0);
         let v = axis("3", 4);
         c.execute(
-            "UPDATE jobs SET ead = ?1, ead_model = 'heavy-slug' WHERE id = 'j1'",
+            "UPDATE jobs SET ead = ?1, ead_model = 'deep-slug' WHERE id = 'j1'",
             rusqlite::params![crate::embed::vector_to_bytes(&v)],
         )
         .unwrap();
         c.execute(
-            "UPDATE criteria SET vector = ?1, vector_model = 'heavy-slug' WHERE id = 'crit_a'",
+            "UPDATE criteria SET vector = ?1, vector_model = 'deep-slug' WHERE id = 'crit_a'",
             rusqlite::params![crate::embed::vector_to_bytes(&v)],
         )
         .unwrap();
         c.execute(
             "INSERT INTO job_feedback_vectors (job_id, model, ejobfeedback)
-             VALUES ('j1', 'heavy-slug', ?1)",
+             VALUES ('j1', 'deep-slug', ?1)",
             rusqlite::params![crate::embed::vector_to_bytes(&v)],
         )
         .unwrap();
@@ -1380,7 +1380,7 @@ mod tests {
         migrate(&c).unwrap();
         migrate(&c).unwrap();
 
-        let ids: Vec<String> = crate::db::rubric_vectors(&c, "j1", "heavy-slug")
+        let ids: Vec<String> = crate::db::rubric_vectors(&c, "j1", "deep-slug")
             .unwrap()
             .into_iter()
             .map(|(q, _)| q)
@@ -1396,8 +1396,8 @@ mod tests {
         assert!(still.is_some());
     }
 
-    /// The wave gate is the best available score, so a candidate the heavy embedder
-    /// has not reached but the scout loves is embedded before one the scout dislikes
+    /// The wave gate is the best available score, so a candidate the deep embedder
+    /// has not reached but the quick loves is embedded before one the quick dislikes
     /// and that is already embedded.
     #[test]
     fn the_wave_slice_is_the_best_scored_candidates_that_still_need_embedding() {
@@ -1406,19 +1406,19 @@ mod tests {
         for cand in ["c1", "c2", "c3"] {
             candidate(&c, "j1", cand);
         }
-        scout_pass(&c, "j1", "scout-slug", 4);
+        scout_pass(&c, "j1", "quick-slug", 4);
         rescore(&c, "j1", None).unwrap();
         // c2 is embedded already; c1 and c3 are not.
-        chunk(&c, "c2", "heavy-slug", &axis("2", 4));
+        chunk(&c, "c2", "deep-slug", &axis("2", 4));
 
-        let slice = candidates_needing_embed(&c, "j1", "heavy-slug", 10).unwrap();
+        let slice = candidates_needing_embed(&c, "j1", "deep-slug", 10).unwrap();
         assert_eq!(slice.len(), 2);
         assert!(!slice.contains(&"c2".to_string()), "already embedded");
         assert_eq!(
             slice[0], ranks(&c)[0],
             "the best-scored candidate needing embedding comes first"
         );
-        assert_eq!(count_needing_embed(&c, "j1", "heavy-slug").unwrap(), 2);
+        assert_eq!(count_needing_embed(&c, "j1", "deep-slug").unwrap(), 2);
     }
 
     /// A rubric with no ad and no criteria is legal: everything is ungraded, and the

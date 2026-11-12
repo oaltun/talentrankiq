@@ -16,7 +16,7 @@ use libconfigreader::{EngineConfig, SyscapConfig};
 use libsyscap::{budget, Budget, LoadSampler, LoadSnapshot};
 
 /// Reason code carried by `RankState.reason` / `RankProgress.reason` while
-/// the system budget holds heavy work back (waves paused). The gui maps it
+/// the system budget holds deep work back (waves paused). The gui maps it
 /// to a visible notice; it clears itself when the verdict lifts.
 pub const HOLDING: &str = "holding";
 
@@ -53,7 +53,7 @@ pub fn budget_now(cfg: &SyscapConfig, caps: &EngineConfig) -> Budget {
 /// unless the verdict is `hold` — the caller pauses instead of running
 /// zero-slice waves). `Full` hands out the configured value untouched.
 ///
-/// The judge pool is **not** scaled: it is frozen once per run, so the load
+/// The comparator pool is **not** scaled: it is frozen once per run, so the load
 /// verdict has nothing to say about it — a pool that grew and shrank with the
 /// machine would move every member's set-relative grade.
 pub fn wave_budget(k1: usize, pool_size: usize, b: &Budget) -> crate::cascade::CascadeBudget {

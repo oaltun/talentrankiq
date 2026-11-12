@@ -81,7 +81,7 @@ pub fn add_criterion(
     // One invalidation path for every ranking input (`rescore::inputs_changed`):
     // embed the one criterion text that changed and re-project. No cancel, and no
     // "stale until you press Re-rank" — the rubric is the only state a rank reads,
-    // and a criterion edit touches nothing a running cascade is computing (the judge
+    // and a criterion edit touches nothing a running cascade is computing (the comparator
     // never read a criterion).
     reproject(state, job_id)?;
     ok_json(criterion)

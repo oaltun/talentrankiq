@@ -1,10 +1,10 @@
-//! Artifact schema: the JSON file a trained judge is shipped as
-//! (`judge_<model>.json`, design step 15.6). Plain serde types, no burn types.
+//! Artifact schema: the JSON file a trained comparator is shipped as
+//! (`comparator_<model>.json`, design step 15.6). Plain serde types, no burn types.
 
 use serde::{Deserialize, Serialize};
 
 use crate::features::TextPrep;
-use crate::JudgeError;
+use crate::ComparatorError;
 
 /// Artifact schema version. Bump on any breaking change to this file's shape
 /// or to feature semantics.
@@ -19,7 +19,7 @@ fn default_dropout() -> f64 {
 /// Which ranking scheme the artifact's score feeds (15.5).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum JudgeKind {
+pub enum ComparatorKind {
     /// m0: one forward per (ad, cv), ranked by P(Good Fit). No tournament.
     Pointwise,
     /// m1-m3: pairwise verdicts aggregated by win-rate (15.7).
@@ -27,13 +27,13 @@ pub enum JudgeKind {
 }
 
 /// Human-readable architecture label (informational; the layer dims in
-/// `JudgeArtifact.layers` define the actual computation).
+/// `ComparatorArtifact.layers` define the actual computation).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Architecture {
     /// m0: 3-class softmax head on [a; e; c].
     PointwiseLinear3,
-    /// m1: logistic regression (linear judge).
+    /// m1: logistic regression (linear comparator).
     Linear,
     /// m2: MLP with one hidden layer.
     Mlp1,
@@ -69,7 +69,7 @@ pub enum Contextual {
     Static,
 }
 
-/// One named contiguous slice of the judge input vector. Recorded so
+/// One named contiguous slice of the comparator input vector. Recorded so
 /// introspection (per-block weight mass, zero-out ablation) and config
 /// validation can be data-driven instead of hard-coded.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -85,7 +85,7 @@ impl Block {
     }
 }
 
-/// Full description of how judge inputs are built from raw text. Travels
+/// Full description of how comparator inputs are built from raw text. Travels
 /// inside the artifact; bench validates its `--config embedder=...` (if
 /// given) against `embedder` here, and rebuilds features from the rest.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -115,7 +115,7 @@ pub struct LayerWeights {
 }
 
 /// (input, score) pair recorded straight from the burn model at save time.
-/// `libjudge` tests and any consumer can assert the hand-rolled forward
+/// `libcomparator` tests and any consumer can assert the hand-rolled forward
 /// reproduces them within 1e-4 (design 15.6: parity enforced by test).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ParityPair {
@@ -256,11 +256,11 @@ impl FeatureSpec {
     }
 }
 
-/// The full judge artifact: feature spec + weights + parity fixtures + meta.
+/// The full comparator artifact: feature spec + weights + parity fixtures + meta.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct JudgeArtifact {
+pub struct ComparatorArtifact {
     pub spec_version: u32,
-    pub kind: JudgeKind,
+    pub kind: ComparatorKind,
     pub architecture: Architecture,
     pub feature_spec: FeatureSpec,
     pub layers: Vec<LayerWeights>,
@@ -268,22 +268,22 @@ pub struct JudgeArtifact {
     pub parity: Vec<ParityPair>,
 }
 
-impl JudgeArtifact {
+impl ComparatorArtifact {
     /// Validate shape consistency (dims chain, blocks cover the input).
-    pub fn validate(&self) -> Result<(), JudgeError> {
+    pub fn validate(&self) -> Result<(), ComparatorError> {
         if self.spec_version != SPEC_VERSION {
-            return Err(JudgeError::InvalidArtifact(format!(
+            return Err(ComparatorError::InvalidArtifact(format!(
                 "spec_version {} != supported {}",
                 self.spec_version, SPEC_VERSION
             )));
         }
         if self.layers.is_empty() {
-            return Err(JudgeError::InvalidArtifact("no layers".into()));
+            return Err(ComparatorError::InvalidArtifact("no layers".into()));
         }
         let mut expected_in = self.feature_spec.input_dim;
         for (i, layer) in self.layers.iter().enumerate() {
             if layer.b.len() != layer.w.len() {
-                return Err(JudgeError::InvalidArtifact(format!(
+                return Err(ComparatorError::InvalidArtifact(format!(
                     "layer {i}: {} biases for {} rows",
                     layer.b.len(),
                     layer.w.len()
@@ -291,7 +291,7 @@ impl JudgeArtifact {
             }
             for (r, row) in layer.w.iter().enumerate() {
                 if row.len() != expected_in {
-                    return Err(JudgeError::InvalidArtifact(format!(
+                    return Err(ComparatorError::InvalidArtifact(format!(
                         "layer {i} row {r}: {} inputs, expected {expected_in}",
                         row.len()
                     )));
@@ -301,7 +301,7 @@ impl JudgeArtifact {
         }
         for block in &self.feature_spec.blocks {
             if block.end() > self.feature_spec.input_dim {
-                return Err(JudgeError::InvalidArtifact(format!(
+                return Err(ComparatorError::InvalidArtifact(format!(
                     "block {} [{}, {}) exceeds input_dim {}",
                     block.name,
                     block.start,
@@ -312,11 +312,11 @@ impl JudgeArtifact {
         }
         let last_out = self.layers.last().unwrap().w.len();
         let want_out = match self.kind {
-            JudgeKind::Pointwise => 3,
-            JudgeKind::Pairwise => 1,
+            ComparatorKind::Pointwise => 3,
+            ComparatorKind::Pairwise => 1,
         };
         if last_out != want_out {
-            return Err(JudgeError::InvalidArtifact(format!(
+            return Err(ComparatorError::InvalidArtifact(format!(
                 "kind {kind:?} needs {want_out} output units, artifact has {last_out}",
                 kind = self.kind
             )));
@@ -326,12 +326,12 @@ impl JudgeArtifact {
 
     /// Assert the hand-rolled forward pass reproduces the recorded burn
     /// outputs within 1e-4 (design 15.6).
-    pub fn verify_parity(&self) -> Result<(), JudgeError> {
-        let model = crate::forward::JudgeModel::from_artifact(self)?;
+    pub fn verify_parity(&self) -> Result<(), ComparatorError> {
+        let model = crate::forward::ComparatorModel::from_artifact(self)?;
         for (i, pair) in self.parity.iter().enumerate() {
             let score = model.score(pair.input.clone());
             if (score - pair.score as f64).abs() > 1e-4 {
-                return Err(JudgeError::ParityFailed {
+                return Err(ComparatorError::ParityFailed {
                     index: i,
                     burn: pair.score as f64,
                     hand: score,
@@ -342,25 +342,25 @@ impl JudgeArtifact {
     }
 
     /// Load + validate + parity-check from a JSON file.
-    pub fn load(path: &std::path::Path) -> Result<Self, JudgeError> {
+    pub fn load(path: &std::path::Path) -> Result<Self, ComparatorError> {
         let data = std::fs::read_to_string(path)
-            .map_err(|e| JudgeError::Other(format!("cannot read {}: {e}", path.display())))?;
+            .map_err(|e| ComparatorError::Other(format!("cannot read {}: {e}", path.display())))?;
         Self::load_from_str(&data)
     }
 
     /// Load + validate + parity-check from a JSON string.
-    pub fn load_from_str(data: &str) -> Result<Self, JudgeError> {
-        let artifact: JudgeArtifact = serde_json::from_str(data)
-            .map_err(|e| JudgeError::InvalidArtifact(format!("JSON parse: {e}")))?;
+    pub fn load_from_str(data: &str) -> Result<Self, ComparatorError> {
+        let artifact: ComparatorArtifact = serde_json::from_str(data)
+            .map_err(|e| ComparatorError::InvalidArtifact(format!("JSON parse: {e}")))?;
         artifact.validate()?;
         artifact.verify_parity()?;
         Ok(artifact)
     }
 
     /// Serialize to pretty JSON.
-    pub fn to_json(&self) -> Result<String, JudgeError> {
+    pub fn to_json(&self) -> Result<String, ComparatorError> {
         serde_json::to_string_pretty(self)
-            .map_err(|e| JudgeError::Other(format!("serialize: {e}")))
+            .map_err(|e| ComparatorError::Other(format!("serialize: {e}")))
     }
 }
 
@@ -368,25 +368,25 @@ impl JudgeArtifact {
 mod tests {
     use super::*;
 
-    fn spec(kind: JudgeKind) -> FeatureSpec {
+    fn spec(kind: ComparatorKind) -> FeatureSpec {
         match kind {
-            JudgeKind::Pairwise => FeatureSpec::raw_pair("m", 4, ChunkingMode::CtxSize, None, Contextual::Off, crate::features::TextPrep::Lowercase),
-            JudgeKind::Pointwise => FeatureSpec::pointwise("m", 4, ChunkingMode::CtxSize, None, Contextual::Off, crate::features::TextPrep::Lowercase),
+            ComparatorKind::Pairwise => FeatureSpec::raw_pair("m", 4, ChunkingMode::CtxSize, None, Contextual::Off, crate::features::TextPrep::Lowercase),
+            ComparatorKind::Pointwise => FeatureSpec::pointwise("m", 4, ChunkingMode::CtxSize, None, Contextual::Off, crate::features::TextPrep::Lowercase),
         }
     }
 
-    fn linear_artifact(kind: JudgeKind) -> JudgeArtifact {
+    fn linear_artifact(kind: ComparatorKind) -> ComparatorArtifact {
         let s = spec(kind);
         let out = match kind {
-            JudgeKind::Pairwise => 1,
-            JudgeKind::Pointwise => 3,
+            ComparatorKind::Pairwise => 1,
+            ComparatorKind::Pointwise => 3,
         };
         let w = (0..out).map(|o| (0..s.input_dim).map(|i| ((o + i) % 7) as f32 - 3.0).collect()).collect();
         let b = vec![0.5f32; out];
-        JudgeArtifact {
+        ComparatorArtifact {
             spec_version: SPEC_VERSION,
             kind,
-            architecture: if kind == JudgeKind::Pairwise { Architecture::Linear } else { Architecture::PointwiseLinear3 },
+            architecture: if kind == ComparatorKind::Pairwise { Architecture::Linear } else { Architecture::PointwiseLinear3 },
             feature_spec: s,
             layers: vec![LayerWeights { w, b }],
             meta: meta(),
@@ -426,17 +426,17 @@ mod tests {
 
     #[test]
     fn roundtrip_and_validate_ok() {
-        let a = linear_artifact(JudgeKind::Pairwise);
+        let a = linear_artifact(ComparatorKind::Pairwise);
         let json = a.to_json().unwrap();
-        let b: JudgeArtifact = serde_json::from_str(&json).unwrap();
-        assert_eq!(b.kind, JudgeKind::Pairwise);
+        let b: ComparatorArtifact = serde_json::from_str(&json).unwrap();
+        assert_eq!(b.kind, ComparatorKind::Pairwise);
         assert_eq!(b.feature_spec.input_dim, 20);
         b.validate().unwrap();
     }
 
     #[test]
     fn validate_rejects_wrong_out_dim() {
-        let mut a = linear_artifact(JudgeKind::Pairwise);
+        let mut a = linear_artifact(ComparatorKind::Pairwise);
         a.layers[0].w.insert(0, vec![0.0; a.feature_spec.input_dim]);
         a.layers[0].b.insert(0, 0.0);
         assert!(a.validate().is_err());
@@ -444,15 +444,15 @@ mod tests {
 
     #[test]
     fn validate_rejects_bad_block() {
-        let mut a = linear_artifact(JudgeKind::Pairwise);
+        let mut a = linear_artifact(ComparatorKind::Pairwise);
         a.feature_spec.blocks[0].start = 100;
         assert!(a.validate().is_err());
     }
 
     #[test]
     fn parity_check_detects_drift() {
-        let mut a = linear_artifact(JudgeKind::Pairwise);
-        let model = crate::forward::JudgeModel::from_artifact(&a).unwrap();
+        let mut a = linear_artifact(ComparatorKind::Pairwise);
+        let model = crate::forward::ComparatorModel::from_artifact(&a).unwrap();
         let x = vec![0.25f32; a.feature_spec.input_dim];
         let score = model.score_ref(&x) as f32;
         a.parity = vec![ParityPair { input: x.clone(), score }];
@@ -462,7 +462,7 @@ mod tests {
         bad.parity[0].score += 0.01;
         assert!(matches!(
             bad.verify_parity(),
-            Err(JudgeError::ParityFailed { .. })
+            Err(ComparatorError::ParityFailed { .. })
         ));
     }
 

@@ -1,8 +1,8 @@
-//! Streaming reader for `datamaker.judge.v1` exports.
+//! Streaming reader for `datamaker.comparator.v1` exports.
 //!
-//! Reads judge_results.jsonl + bundles/index.jsonl + bundle zips to reconstruct
+//! Reads comparator_results.jsonl + bundles/index.jsonl + bundle zips to reconstruct
 //! the full text of each judgment. Produces JobGroup/Doc structs compatible
-//! with judgetrainer's dataset module.
+//! with comparatortrainer's dataset module.
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
@@ -14,9 +14,9 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use zip::ZipArchive;
 
-/// One line of `judge_results.jsonl` (fields as exported by `datamaker export-judge`).
+/// One line of `comparator_results.jsonl` (fields as exported by `datamaker export-comparator`).
 #[derive(Debug, Clone, Deserialize)]
-pub struct JudgeRow {
+pub struct ComparatorRow {
     #[serde(default)]
     pub schema: String,
     pub pair_id: String,
@@ -60,7 +60,7 @@ pub struct DocText {
 }
 
 /// Job group with its CVs, built from datamaker pairwise judgments.
-/// Mirrors judgetrainer::dataset::JobGroup but with pairwise labels.
+/// Mirrors comparatortrainer::dataset::JobGroup but with pairwise labels.
 #[derive(Debug, Clone)]
 pub struct DatamakerJobGroup {
     pub job_id: String,
@@ -85,7 +85,7 @@ pub struct DatamakerExportConfig {
     pub export_dir: PathBuf,
     /// Minimum confidence threshold for including judgments
     pub min_confidence: f64,
-    /// Filter by judge model (None = all models)
+    /// Filter by comparator model (None = all models)
     pub model_filter: Option<String>,
     /// Only include status == "ok"
     pub only_ok: bool,
@@ -110,8 +110,8 @@ pub fn load_datamaker_export(config: DatamakerExportConfig) -> Result<Vec<Datama
     let index_path = export_dir.join("bundles").join("index.jsonl");
     let index = load_index(&index_path)?;
     
-    // 2. Load judge_results.jsonl and collect all needed sha256s
-    let results_path = export_dir.join("judge_results.jsonl");
+    // 2. Load comparator_results.jsonl and collect all needed sha256s
+    let results_path = export_dir.join("comparator_results.jsonl");
     let (rows, needed_shas) = load_judgments(&results_path, &config)?;
     
     // 3. Extract needed documents from bundle zips
@@ -139,12 +139,12 @@ fn load_index(index_path: &Path) -> Result<BTreeMap<String, IndexRow>> {
     Ok(map)
 }
 
-/// Load judgments from judge_results.jsonl, filtering by config.
+/// Load judgments from comparator_results.jsonl, filtering by config.
 /// Returns (filtered_rows, set of needed sha256s).
 fn load_judgments(
     results_path: &Path,
     config: &DatamakerExportConfig,
-) -> Result<(Vec<JudgeRow>, Vec<String>)> {
+) -> Result<(Vec<ComparatorRow>, Vec<String>)> {
     let mut rows = Vec::new();
     let mut needed_shas = Vec::new();
     let mut seen_shas = std::collections::HashSet::new();
@@ -155,7 +155,7 @@ fn load_judgments(
         if line.trim().is_empty() {
             continue;
         }
-        let row: JudgeRow = serde_json::from_str(&line)
+        let row: ComparatorRow = serde_json::from_str(&line)
             .with_context(|| format!("bad JSON line in {}", results_path.display()))?;
         
         // Filter
@@ -237,7 +237,7 @@ fn extract_docs(
 
 /// Build job groups from judgments and document texts.
 fn build_job_groups(
-    rows: &[JudgeRow],
+    rows: &[ComparatorRow],
     doc_texts: &HashMap<String, String>,
     _config: &DatamakerExportConfig,
 ) -> Result<Vec<DatamakerJobGroup>> {

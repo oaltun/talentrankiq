@@ -44,7 +44,7 @@ pub struct LeaderboardEntry {
     pub method: String,
     pub config: HashMap<String, serde_yaml::Value>,
     pub result_file: String,
-    /// Name of the judgetrainer run script that produced this result
+    /// Name of the comparatortrainer run script that produced this result
     /// (bench `--run-script`, e.g. "0995-wd5.nu"); None for results that
     /// pre-date the field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -473,7 +473,7 @@ pub fn generate_html(
             label
         ));
         // the run script that produced this result (one file = one run in
-        // judge/judgetrainer/runs/; the numeric prefix keeps them in run order)
+        // comparator/comparatortrainer/runs/; the numeric prefix keeps them in run order)
         cells.push_str(&format!(
             "      <td class=\"script\">{}</td>\n",
             entry.run_script.as_deref().unwrap_or("-")
@@ -645,7 +645,7 @@ pub fn generate_html(
 </div>
 <div class="notes">
   entries loaded from result YAML files | best per column in <span style="color:var(--best)">green</span> | baseline row in <span style="font-style:italic">italic</span>
-  <p><strong>script</strong>: the judgetrainer run script that produced this result (judge/judgetrainer/runs/&lt;script&gt; — one file = one run, committed with the result; "-" for results benched by hand).</p>
+  <p><strong>script</strong>: the comparatortrainer run script that produced this result (comparator/comparatortrainer/runs/&lt;script&gt; — one file = one run, committed with the result; "-" for results benched by hand).</p>
   <p><strong>commit</strong>: git commit the run started from (hover for the full hash). runs are refused from a dirty tree, so this is the exact code that produced the result.</p>
   <p><strong>added (UTC)</strong>: when this result was written to the results dir. click the column once for newest-first.</p>
 </div>

@@ -1,5 +1,5 @@
 [package]
-name = "libcv-judge-order"
+name = "libcv-comparator-order"
 version = "0.1.0"
 description = "Pair-picking strategy for head-to-head judging (Glicko-based)."
 authors = ["oaltun"]
@@ -7,9 +7,9 @@ edition = "2021"
 rust-version = "1.82"
 
 [lib]
-name = "libcv_judge_order"
+name = "libcv_comparator_order"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 libcv-core = { path = "../libcv-core" }
-libjudge = { path = "../libjudge" }
+libcomparator = { path = "../libcomparator" }

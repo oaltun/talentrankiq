@@ -96,7 +96,7 @@ impl License {
         if self.format != LICENSE_FORMAT {
             return Err(LicenseError::Version(self.format, LICENSE_FORMAT));
         }
-        if self.feature != "judge" {
+        if self.feature != "comparator" {
             return Err(LicenseError::MissingField("feature"));
         }
         if self.signature.is_empty() {
@@ -205,15 +205,15 @@ struct LicenseVerifyResponse {
     reason: Option<String>,
 }
 
-/// Load the judge license from the standard config directory.
+/// Load the comparator license from the standard config directory.
 /// Returns `None` if no license file exists or if it fails to load/verify.
-pub fn load_judge_license() -> Option<License> {
+pub fn load_comparator_license() -> Option<License> {
     let path = license_path()?;
     License::load(&path).ok()
 }
 
-/// Load and fully verify (offline + online) the judge license.
-pub async fn load_and_verify_judge_license() -> Result<Option<License>, LicenseError> {
+/// Load and fully verify (offline + online) the comparator license.
+pub async fn load_and_verify_comparator_license() -> Result<Option<License>, LicenseError> {
     let path = license_path().ok_or(LicenseError::NotFound("config dir not found".to_string()))?;
     let license = License::load(&path)?;
     license.verify_full().await?;
