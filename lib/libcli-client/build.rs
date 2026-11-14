@@ -9,6 +9,19 @@ use specta::Type;
 use specta::export;
 use specta_typescript::Typescript;
 
+/// Where generated artifacts go.
+///
+/// When this crate is the build target (`CARGO_PRIMARY_PACKAGE=1`) they land
+/// next to the sources, as before. When it is built as a dependency (the Tauri
+/// gui), they land in `OUT_DIR` so a gui build cannot rewrite this repo's
+/// tracked artifacts (their ordering is not stable between dependency graphs).
+fn artifact_path(name: &str) -> std::path::PathBuf {
+    if std::env::var_os("CARGO_PRIMARY_PACKAGE").is_some() {
+        return std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(name);
+    }
+    std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR set by cargo")).join(name)
+}
+
 // Envelope types (defined inline to avoid circular build dependency)
 #[derive(Debug, Clone, Serialize, Deserialize, Type, JsonSchema)]
 struct Request {
@@ -181,7 +194,7 @@ fn main() {
 
     // Write JSON Schema
     std::fs::write(
-        "protocol-schema.json",
+        artifact_path("protocol-schema.json"),
         serde_json::to_string_pretty(&root_schema).unwrap(),
     )
     .expect("Failed to write protocol-schema.json");
@@ -294,7 +307,7 @@ fn main() {
     specta_typescript::Typescript::default()
         .bigint(specta_typescript::BigIntExportBehavior::Number)
         .header("/* Auto-generated CLI protocol types. DO NOT EDIT. */\n\n")
-        .export_to("protocol.ts", &types)
+        .export_to(artifact_path("protocol.ts"), &types)
         .expect("Failed to export TypeScript");
 
     // Tell cargo to re-run if any source files change
