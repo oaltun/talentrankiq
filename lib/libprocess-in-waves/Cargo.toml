@@ -1,0 +1,30 @@
+[package]
+name = "libprocess-in-waves"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "libprocess_in_waves"
+
+[dependencies]
+libtriqui-core = { path = "../libtriqui-core" }
+libembedrank = { path = "../libembedrank" }
+libcomparator = { path = "../libcomparator" }
+libcvparser = { path = "../libcvparser" }
+libmodelcaller = { path = "../libmodelcaller" }
+libtriqui-client = { path = "../libtriqui-client" }
+libconfigreader = { path = "../libconfigreader" }
+libtokenizer = { path = "../libtokenizer" }
+libtriqui-cli = { path = "../libtriqui-cli" }
+rusqlite = { version = "0.32", features = ["bundled"] }
+anyhow = "1"
+sha2 = "0.10"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+log = "0.4"
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+[dev-dependencies]
+tempfile = "3.8"

@@ -3355,6 +3355,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ce5d3ddc6d3fa000eb1536d85e147bfe31aacaba692ed6a876f95cb7c855be78"
 
 [[package]]
+name = "libcomparator"
+version = "0.1.0"
+dependencies = [
+ "libjudge",
+]
+
+[[package]]
 name = "libconfigreader"
 version = "0.1.0"
 dependencies = [
@@ -3516,6 +3523,47 @@ dependencies = [
  "serde",
  "serde_json",
  "sysinfo",
+]
+
+[[package]]
+name = "libprocess-in-waves"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "libcomparator",
+ "libconfigreader",
+ "libcvparser",
+ "libembedrank",
+ "libmodelcaller",
+ "libtokenizer",
+ "libtriqui-cli",
+ "libtriqui-client",
+ "libtriqui-core",
+ "log",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror 2.0.21",
+ "uuid",
+]
+
+[[package]]
+name = "libprocess-in-waves-db-monitor"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "crossbeam-channel",
+ "libprocess-in-waves",
+ "libtriqui-cli",
+ "log",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

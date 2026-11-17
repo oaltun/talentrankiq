@@ -1,0 +1,21 @@
+[package]
+name = "libprocess-in-waves-db-monitor"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "libprocess_in_waves_db_monitor"
+
+[dependencies]
+libprocess-in-waves = { path = "../libprocess-in-waves" }
+libtriqui-cli = { path = "../libtriqui-cli" }
+rusqlite = { version = "0.32", features = ["bundled"] }
+crossbeam-channel = "0.5"
+anyhow = "1"
+thiserror = "2"
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3.8"
