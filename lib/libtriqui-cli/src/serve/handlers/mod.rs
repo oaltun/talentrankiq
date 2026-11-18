@@ -171,6 +171,10 @@ fn dispatch(state: &Arc<ServeState>, cmd: &str, params: &Value) -> Result<Value,
             let p: StartRankParams = from_params(params)?;
             rank::start_rank(state, &p.job_id)
         }
+        "process_in_waves" => {
+            let p: GetJobDetailParams = from_params(params)?;
+            rank::process_in_waves(state, &p.job_id)
+        }
         "cancel_rank" => {
             let p: CancelRankParams = from_params(params)?;
             rank::cancel_rank(state, &p.job_id)

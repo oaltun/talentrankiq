@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 use std::thread;
 
-use libtriqui_cli::serve::EventSink;
+use crate::EventSink;
 use rusqlite::Connection;
 
 use crate::queries;

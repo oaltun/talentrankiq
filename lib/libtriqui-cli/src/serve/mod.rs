@@ -57,6 +57,7 @@ pub struct EventSink(std::sync::mpsc::Sender<String>);
 
 impl EventSink {
     pub fn new(tx: std::sync::mpsc::Sender<String>) -> Self { EventSink(tx) }
+    pub fn inner(&self) -> std::sync::mpsc::Sender<String> { self.0.clone() }
     pub fn emit<D: Serialize>(&self, name: &str, data: &D) {
         let event = libtriqui_client::Event {
             event: name.to_string(),

@@ -44,7 +44,7 @@ pub struct ProcessContext {
     pub watch_dir: PathBuf,
     pub job: JobConfig,
     pub runtime: Arc<EngineRuntime>,
-    pub comparator_artifact: libcomparator::ComparatorArtifact,
+    pub comparator_artifact: Option<libcomparator::ComparatorArtifact>,
 }
 
 impl ProcessContext {

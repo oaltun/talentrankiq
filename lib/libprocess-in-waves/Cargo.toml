@@ -15,7 +15,6 @@ libmodelcaller = { path = "../libmodelcaller" }
 libtriqui-client = { path = "../libtriqui-client" }
 libconfigreader = { path = "../libconfigreader" }
 libtokenizer = { path = "../libtokenizer" }
-libtriqui-cli = { path = "../libtriqui-cli" }
 rusqlite = { version = "0.32", features = ["bundled"] }
 anyhow = "1"
 sha2 = "0.10"

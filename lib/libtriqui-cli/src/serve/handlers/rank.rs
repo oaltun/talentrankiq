@@ -920,3 +920,88 @@ mod tests {
         assert!(!gens.is_current("j", b));
     }
 }
+use libprocess_in_waves::{ProcessConfig, ProcessContext, JobConfig, DbHandle as WavesDbHandle};
+use libprocess_in_waves_db_monitor::{spawn_monitor as spawn_waves_monitor, MonitorConfig as WavesMonitorConfig, EventSink as WavesEventSink};
+
+/// Start the new `process_in_waves` pipeline for a job. Returns immediately
+/// with an initial RankState; work runs on a background thread and progress is
+/// emitted via the waves DB monitor.
+pub fn process_in_waves(state: &Arc<ServeState>, job_id: &str) -> Result<Value, ProtocolError> {
+    // Load job basics.
+    let (title, job_ad_text, import_dir): (String, Option<String>, Option<String>) = {
+        let conn = state.db.0.lock().map_err(|e| string_err(format!("db lock: {e}")))?;
+        conn.query_row(
+            "SELECT title, job_ad_text, import_directory_path FROM jobs WHERE id = ?1",
+            rusqlite::params![job_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => string_err(format!("job {job_id} not found")),
+            e => string_err(format!("db: {e}")),
+        })?
+    };
+    let watch_dir = import_dir
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| state.app_dir.clone());
+    let job_ad_text = job_ad_text.unwrap_or_default();
+
+    // Model ids: use the runtime's configured model for both passes.
+    let model = state.runtime.model();
+
+    // Ensure waves_rank_state row exists and marked running.
+    let waves_db = WavesDbHandle::open_at(&state.db_path)
+        .map_err(|e| string_err(format!("waves db open: {e}")))?;
+    let _ = waves_db.update_waves_rank_state(job_id, 0, 0, 0, 0, 0, 0, None, true);
+
+    let ctx = ProcessContext {
+        db: waves_db,
+        watch_dir: watch_dir.clone(),
+        job: JobConfig {
+            id: job_id.to_string(),
+            title: title.clone(),
+            job_ad_text: job_ad_text.clone(),
+            job_ad_hash: String::new(),
+            criteria: Vec::new(),
+            import_directory_path: Some(watch_dir.clone()),
+            quick_model: model.clone(),
+            deep_model: model.clone(),
+            comparator_model_path: None,
+            similarity_method: libembedrank::RetrievalStrategy::MaxSim,
+        },
+        runtime: Arc::clone(&state.runtime),
+        comparator_artifact: None,
+    };
+
+    let mut ctx = ctx;
+    let config = ProcessConfig::default();
+
+    // Spawn monitor.
+    let monitor_events = WavesEventSink::new(state.events.inner());
+    let monitor_cfg = WavesMonitorConfig {
+        poll_interval: std::time::Duration::from_secs(2),
+        job_id: job_id.to_string(),
+    };
+    let _ = spawn_waves_monitor(state.db_path.clone(), monitor_cfg, monitor_events);
+
+    // Spawn runner.
+    let job_id_owned = job_id.to_string();
+    std::thread::spawn(move || {
+        let _ = libprocess_in_waves::process_in_waves(&mut ctx, config);
+        // mark not running
+        let _ = ctx.db.update_waves_rank_state(&job_id_owned, 0, 0, 0, 0, 0, 0, None, false);
+    });
+
+    let initial = RankState {
+        running: true,
+        ranking: true,
+        stage: Some("waves".into()),
+        wave: None,
+        embedded_total: 0,
+        embedded_done: 0,
+        judged: 0,
+        candidates: 0,
+        converged: false,
+        reason: None,
+    };
+    ok_json(initial)
+}

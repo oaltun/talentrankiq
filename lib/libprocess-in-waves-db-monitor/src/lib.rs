@@ -3,10 +3,22 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-use libtriqui_cli::serve::EventSink;
 
 pub mod monitor;
 pub mod queries;
+
+#[derive(Clone)]
+pub struct EventSink(std::sync::mpsc::Sender<String>);
+
+impl EventSink {
+    pub fn new(tx: std::sync::mpsc::Sender<String>) -> Self { EventSink(tx) }
+    pub fn emit<D: serde::Serialize>(&self, name: &str, data: &D) {
+        let event = serde_json::json!({"event": name, "data": data});
+        if let Ok(line) = serde_json::to_string(&event) {
+            let _ = self.0.send(line);
+        }
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum MonitorError {

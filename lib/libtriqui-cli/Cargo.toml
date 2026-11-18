@@ -8,6 +8,8 @@ rust-version = "1.82"
 
 [dependencies]
 libtriqui-core = { path = "../libtriqui-core" }
+libprocess-in-waves = { path = "../libprocess-in-waves" }
+libprocess-in-waves-db-monitor = { path = "../libprocess-in-waves-db-monitor" }
 libtriqui-client = { path = "../libtriqui-client" }
 libmodelcallerclient = { path = "../libmodelcallerclient" }
 libmodelstorage = { path = "../libmodelstorage" }

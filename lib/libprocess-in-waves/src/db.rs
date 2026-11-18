@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS criteria (
     created_at TEXT
 );
 
-CREATE TABLE IF NOT EXISTS rank_state (
+CREATE TABLE IF NOT EXISTS waves_rank_state (
     job_id TEXT PRIMARY KEY,
     running INTEGER NOT NULL DEFAULT 0,
     wave INTEGER NOT NULL DEFAULT 0,
@@ -262,10 +262,10 @@ impl DbHandle {
         })
     }
 
-    pub fn update_rank_state(&self, job_id: &str, wave: i64, embedded_total: i64, embedded_done: i64, compared: i64, candidates: i64, converged: i64, reason: Option<&str>, running: bool) -> Result<(), rusqlite::Error> {
+    pub fn update_waves_rank_state(&self, job_id: &str, wave: i64, embedded_total: i64, embedded_done: i64, compared: i64, candidates: i64, converged: i64, reason: Option<&str>, running: bool) -> Result<(), rusqlite::Error> {
         self.with_writer(|c| {
             c.execute(
-                "INSERT OR REPLACE INTO rank_state (job_id, running, wave, embedded_total, embedded_done, compared, candidates, converged, reason)
+                "INSERT OR REPLACE INTO waves_rank_state (job_id, running, wave, embedded_total, embedded_done, compared, candidates, converged, reason)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 rusqlite::params![job_id, running as i64, wave, embedded_total, embedded_done, compared, candidates, converged, reason],
             )?;

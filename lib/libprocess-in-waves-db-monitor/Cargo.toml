@@ -8,7 +8,7 @@ name = "libprocess_in_waves_db_monitor"
 
 [dependencies]
 libprocess-in-waves = { path = "../libprocess-in-waves" }
-libtriqui-cli = { path = "../libtriqui-cli" }
+libtriqui-client = { path = "../libtriqui-client" }
 rusqlite = { version = "0.32", features = ["bundled"] }
 crossbeam-channel = "0.5"
 anyhow = "1"

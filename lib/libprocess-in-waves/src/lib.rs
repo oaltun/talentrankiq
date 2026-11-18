@@ -45,7 +45,7 @@ pub fn process_in_waves(ctx: &mut context::ProcessContext, config: context::Proc
             if wave >= max { break; }
         }
         let running: i64 = ctx.db.with_reader(|c| {
-            Ok(c.query_row("SELECT running FROM rank_state WHERE job_id = ?1", [ctx.job.id.as_str()], |r| r.get::<_, i64>(0)).unwrap_or(1))
+            Ok(c.query_row("SELECT running FROM waves_rank_state WHERE job_id = ?1", [ctx.job.id.as_str()], |r| r.get::<_, i64>(0)).unwrap_or(1))
         }).unwrap_or(1);
         if running == 0 { break; }
 
@@ -79,22 +79,26 @@ pub fn process_in_waves(ctx: &mut context::ProcessContext, config: context::Proc
         let to_compare_filtered: Vec<String> = to_compare.into_iter().filter(|h| !league_hashes.contains(h)).collect();
 
         let artifact = ctx.comparator_artifact.clone();
-        compare::run_comparison_wave(
-            ctx,
-            &to_compare_filtered,
-            &mut league,
-            config.wave_size_comparison,
-            &jobad_hash,
-            &deep_model,
-            &artifact,
-            &mut comparisons,
-            config.wave_size_comparison,
-        )?;
+        if let Some(artifact) = artifact {
+            compare::run_comparison_wave(
+                ctx,
+                &to_compare_filtered,
+                &mut league,
+                config.wave_size_comparison,
+                &jobad_hash,
+                &deep_model,
+                &artifact,
+                &mut comparisons,
+                config.wave_size_comparison,
+            )?;
+        } else {
+            log::info!("No comparator artifact available, skipping comparison wave");
+        }
 
         let candidates = cv_hashes_all.len() as i64;
         let embedded_done = cv_hashes_all.iter()
             .filter(|h| ctx.db.has_embedding(h, &deep_model).unwrap_or(false)).count() as i64;
-        ctx.db.update_rank_state(&ctx.job.id, wave as i64, candidates, embedded_done, to_compare_filtered.len() as i64, candidates, 0, None, true)?;
+        ctx.db.update_waves_rank_state(&ctx.job.id, wave as i64, candidates, embedded_done, to_compare_filtered.len() as i64, candidates, 0, None, true)?;
 
         wave += 1;
     }
