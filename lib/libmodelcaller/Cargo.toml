@@ -14,8 +14,6 @@ libconfigreader = { path = "../libconfigreader" }
 libcvevidence = { path = "../libcvevidence" }
 # Unset engine caps resolve from the live machine budget (no ORT fallback)
 libsyscap = { path = "../libsyscap" }
-# In-process auto-download (no libmodeldownloader binary exists)
-libmodeldownloader = { path = "../libmodeldownloader" }
 # The ORT wrapper runs in-process on a dedicated thread (see wrapper.rs)
 libonnxwrapperrs = { path = "../libonnxwrapperrs" }
 # The Metal arm of the backend ladder (design 15 §15.5.3).

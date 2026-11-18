@@ -40,6 +40,12 @@ pub fn process_in_waves(ctx: &mut context::ProcessContext, config: context::Proc
     let mut comparisons = ComparisonsCache::new();
 
     let mut wave: usize = 0;
+    // Convergence: stop once a wave makes no progress (no new candidates, no
+    // new deep embeddings, nothing left to compare). Without this the loop
+    // would spin forever after the initial embed, keeping the runtime busy.
+    let mut last_candidates: i64 = -1;
+    let mut last_embedded: i64 = -1;
+    let mut last_compared: i64 = -1;
     loop {
         if let Some(max) = config.max_waves {
             if wave >= max { break; }
@@ -98,7 +104,20 @@ pub fn process_in_waves(ctx: &mut context::ProcessContext, config: context::Proc
         let candidates = cv_hashes_all.len() as i64;
         let embedded_done = cv_hashes_all.iter()
             .filter(|h| ctx.db.has_embedding(h, &deep_model).unwrap_or(false)).count() as i64;
-        ctx.db.update_waves_rank_state(&ctx.job.id, wave as i64, candidates, embedded_done, to_compare_filtered.len() as i64, candidates, 0, None, true)?;
+        let compared = to_compare_filtered.len() as i64;
+        ctx.db.update_waves_rank_state(&ctx.job.id, wave as i64, candidates, embedded_done, compared, candidates, 0, None, true)?;
+
+        if candidates == last_candidates
+            && embedded_done == last_embedded
+            && compared == 0
+            && last_compared == 0
+        {
+            log::info!("process_in_waves converged for {} after {} wave(s)", ctx.job.id, wave);
+            break;
+        }
+        last_candidates = candidates;
+        last_embedded = embedded_done;
+        last_compared = compared;
 
         wave += 1;
     }

@@ -2,39 +2,29 @@ use std::path::Path;
 
 use crate::context::ProcessContext;
 use crate::error::ProcessError;
-use libcvparser;
-
-pub fn list_files(dir: &Path) -> Result<Vec<std::path::PathBuf>, ProcessError> {
-    let mut out = Vec::new();
-    if !dir.exists() { return Ok(out); }
-    for entry in std::fs::read_dir(dir)? {
-        let entry = entry?;
-        let p = entry.path();
-        if p.is_file() {
-            out.push(p);
-        }
-    }
-    out.sort();
-    Ok(out)
-}
 
 pub fn scan_watch_dir(ctx: &mut ProcessContext) -> Result<usize, ProcessError> {
-    // 1. collect file list without DB lock
-    let files = list_files(&ctx.watch_dir)?;
+    // Collect the same supported CV files the import watcher uses, recursively.
+    // This keeps stray files (e.g. a macOS `.DS_Store`) out of the scan instead
+    // of letting one unsupported file abort the whole run.
+    let dir = ctx.watch_dir.to_string_lossy().to_string();
+    let files = libtriqui_core::import::collect_supported_files(&dir)?;
     let mut new_count = 0usize;
     for path in files {
         let path_str = path.to_string_lossy().to_string();
-        // extract text
-        let text = if path.extension().and_then(|e| e.to_str()) == Some("txt") {
-            std::fs::read_to_string(&path).map_err(ProcessError::Io)?
-        } else {
-            libcvparser::extract_text(&path).map_err(ProcessError::CvParse)?
-        };
-        let file_hash = hash_text(&text);
-        // per file: acquire writer
+        // Known path: already imported (the file_state row is the dedupe key).
         if ctx.db.file_state_has(&path_str)? {
             continue;
         }
+        // A single unreadable/odd file must not abort the wave; log and move on.
+        let text = match read_text(&path) {
+            Ok(t) => t,
+            Err(e) => {
+                log::warn!("process_in_waves: skipping {path_str}: {e}");
+                continue;
+            }
+        };
+        let file_hash = hash_text(&text);
         ctx.db.upsert_file_state(&path_str, &file_hash)?;
         if ctx.db.cv_has(&file_hash)? {
             continue;
@@ -43,6 +33,14 @@ pub fn scan_watch_dir(ctx: &mut ProcessContext) -> Result<usize, ProcessError> {
         new_count += 1;
     }
     Ok(new_count)
+}
+
+fn read_text(path: &Path) -> Result<String, ProcessError> {
+    if path.extension().and_then(|e| e.to_str()) == Some("txt") {
+        Ok(std::fs::read_to_string(path)?)
+    } else {
+        Ok(libcvparser::extract_text(path)?)
+    }
 }
 
 fn hash_text(text: &str) -> String {

@@ -2021,7 +2021,6 @@ dependencies = [
  "libconfigreader",
  "libcvevidence",
  "libmlxembed",
- "libmodeldownloader",
  "libmodelstorage",
  "libonnxwrapperrs",
  "libsyscap",

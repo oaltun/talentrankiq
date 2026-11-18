@@ -306,9 +306,9 @@ fn run_embedder_download(
 ) -> Result<(), ProtocolError> {
     let model_dir = app_config::model_dir();
 
-    // Re-check right before downloading: on a fresh install the engine's
-    // modelcaller auto-download may race this call and complete first, and a
-    // client retry after a finished download would re-fetch needlessly.
+    // Re-check right before downloading: a client retry after a finished
+    // download would re-fetch needlessly, so treat an already-present artifact
+    // as success without touching the network.
     if libmodelstorage::onnx_exists(&model_dir, slug, &app_config::revision()) {
         emit_progress(state, slug, "", 1, Some(1));
         return Ok(());
@@ -650,6 +650,26 @@ pub fn set_default_model(
         prefs.inference_model = Some(repo_id.to_string());
     }
     save_app_preferences(state, prefs).map_err(string_err)
+}
+
+/// Make an embedder the default from the Models page: persist the choice and,
+/// when its weights are already on disk, hot-swap the live engine so the next
+/// `process_in_waves` / cascade ranks in the chosen space without a restart.
+///
+/// A model that is not downloaded yet still records the preference (so the
+/// badge follows the user's click); the engine swaps on the first download.
+pub fn make_default_embedder(
+    state: &Arc<ServeState>,
+    slug: &str,
+) -> Result<(), ProtocolError> {
+    match set_embedding_model(state, slug) {
+        Ok(()) => Ok(()),
+        Err(_) => {
+            let mut prefs = load_app_preferences(state);
+            prefs.embedding_model = Some(slug.to_string());
+            save_app_preferences(state, prefs).map_err(string_err)
+        }
+    }
 }
 
 /// Switch the embedding model: persists the choice, wipes every stored vector

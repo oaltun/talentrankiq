@@ -31,9 +31,6 @@ pub struct StdioArgs {
 
     /// Default compute precision.
     pub precision: String,
-
-    /// Automatically download missing models via modeldownloader (in-process).
-    pub auto_download_models: bool,
 }
 
 impl Default for StdioArgs {
@@ -44,7 +41,6 @@ impl Default for StdioArgs {
             exec_provider: "auto".to_string(),
             backend: "auto".to_string(),
             precision: "fp32".to_string(),
-            auto_download_models: true,
         }
     }
 }

@@ -751,6 +751,21 @@ pub fn get_rank_state(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Pr
         ],
     );
 
+    // The `process_in_waves` pipeline keeps its own `cv`/`cv_embedding` tables
+    // in the same db file and embeds candidate-by-candidate, so counting those
+    // rows for the runtime model is the live deep-progress signal. Fold it into
+    // the chunk-based counts so the gui reflects either pipeline.
+    let waves_total = count(
+        "SELECT COUNT(*) FROM cv",
+        Vec::<Box<dyn rusqlite::ToSql>>::new(),
+    );
+    let waves_done = count(
+        "SELECT COUNT(*) FROM cv_embedding WHERE model_id = ?1",
+        vec![Box::new(model.clone()) as Box<dyn rusqlite::ToSql>],
+    );
+    let candidates = candidates.max(waves_total);
+    let embedded_done = embedded_done.max(waves_done);
+
     // The latest report is the most recent wave, and it is the one that says
     // whether the run converged.
     let (running, converged, cancelled, stage, reports) = match &rs {
@@ -986,7 +1001,9 @@ pub fn process_in_waves(state: &Arc<ServeState>, job_id: &str) -> Result<Value, 
     // Spawn runner.
     let job_id_owned = job_id.to_string();
     std::thread::spawn(move || {
-        let _ = libprocess_in_waves::process_in_waves(&mut ctx, config);
+        if let Err(e) = libprocess_in_waves::process_in_waves(&mut ctx, config) {
+            log::error!("process_in_waves failed for {job_id_owned}: {e}");
+        }
         // mark not running
         let _ = ctx.db.update_waves_rank_state(&job_id_owned, 0, 0, 0, 0, 0, 0, None, false);
     });

@@ -494,7 +494,6 @@ impl EngineRuntime {
                 .map(|p| p.as_str().to_string())
                 .unwrap_or_else(|| "auto".to_string()),
             precision: "fp32".to_string(),
-            auto_download_models: true,
         };
         let syscap_cfg = cfg.syscap.clone();
         let verbose = app_config::verbose();
