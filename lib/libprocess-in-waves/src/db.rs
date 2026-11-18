@@ -49,6 +49,20 @@ CREATE TABLE IF NOT EXISTS criteria (
     created_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS job_cv (
+    job_id TEXT NOT NULL,
+    cv_hash TEXT NOT NULL,
+    PRIMARY KEY (job_id, cv_hash)
+);
+
+CREATE TABLE IF NOT EXISTS cv_comparison (
+    job_id TEXT NOT NULL,
+    a_hash TEXT NOT NULL,
+    b_hash TEXT NOT NULL,
+    prob REAL NOT NULL,
+    PRIMARY KEY (job_id, a_hash, b_hash)
+);
+
 CREATE TABLE IF NOT EXISTS waves_rank_state (
     job_id TEXT PRIMARY KEY,
     running INTEGER NOT NULL DEFAULT 0,
@@ -128,13 +142,34 @@ impl DbHandle {
     }
 
     // ---- queries ----
-    pub fn get_all_cv_hashes(&self) -> Result<Vec<String>, rusqlite::Error> {
+    /// All CV hashes belonging to one job (via the job-scoped membership table).
+    pub fn get_all_cv_hashes_for_job(&self, job_id: &str) -> Result<Vec<String>, rusqlite::Error> {
         self.with_reader(|c| {
-            let mut stmt = c.prepare("SELECT hash FROM cv ORDER BY hash")?;
-            let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+            let mut stmt = c.prepare("SELECT cv_hash FROM job_cv WHERE job_id = ?1 ORDER BY cv_hash")?;
+            let rows = stmt.query_map(rusqlite::params![job_id], |r| r.get::<_, String>(0))?;
             let mut out = Vec::new();
             for r in rows { out.push(r?); }
             Ok(out)
+        })
+    }
+
+    /// How many CVs the job currently has on disk (membership rows).
+    pub fn get_job_cv_count(&self, job_id: &str) -> Result<i64, rusqlite::Error> {
+        self.with_reader(|c| {
+            c.query_row("SELECT COUNT(*) FROM job_cv WHERE job_id = ?1", [job_id], |r| r.get::<_, i64>(0))
+        })
+    }
+
+    /// How many of the job's CVs hold an embedding for `model_id`.
+    pub fn get_job_cv_embedded_count(&self, job_id: &str, model_id: &str) -> Result<i64, rusqlite::Error> {
+        self.with_reader(|c| {
+            c.query_row(
+                "SELECT COUNT(*) FROM job_cv j
+                 JOIN cv_embedding e ON e.cv_hash = j.cv_hash AND e.model_id = ?2
+                 WHERE j.job_id = ?1",
+                rusqlite::params![job_id, model_id],
+                |r| r.get::<_, i64>(0),
+            )
         })
     }
 
@@ -159,6 +194,25 @@ impl DbHandle {
         })
     }
 
+    /// Drop all membership rows for a job (watch-dir reconciliation).
+    pub fn clear_job_cv(&self, job_id: &str) -> Result<(), rusqlite::Error> {
+        self.with_writer(|c| {
+            c.execute("DELETE FROM job_cv WHERE job_id = ?1", [job_id])?;
+            Ok(())
+        })
+    }
+
+    /// Record a job→cv membership (content-hash dedupe across jobs is fine).
+    pub fn insert_job_cv(&self, job_id: &str, cv_hash: &str) -> Result<(), rusqlite::Error> {
+        self.with_writer(|c| {
+            c.execute(
+                "INSERT OR IGNORE INTO job_cv (job_id, cv_hash) VALUES (?1, ?2)",
+                rusqlite::params![job_id, cv_hash],
+            )?;
+            Ok(())
+        })
+    }
+
     pub fn cv_has(&self, hash: &str) -> Result<bool, rusqlite::Error> {
         self.with_reader(|c| {
             let n: i64 = c.query_row("SELECT COUNT(*) FROM cv WHERE hash = ?1", [hash], |r| r.get(0))?;
@@ -173,39 +227,56 @@ impl DbHandle {
         })
     }
 
-    pub fn get_deep_queue(&self, quick_model_id: &str, deep_model_id: &str, limit: usize) -> Result<Vec<String>, rusqlite::Error> {
-        // CVs missing deep embedding, ordered by quick similarity to jobad desc
-        // We don't have jobad hash here; use score desc as proxy ordering like pseudocode (top by quick score)
+    pub fn get_deep_queue_for_job(&self, job_id: &str, quick_model_id: &str, deep_model_id: &str, limit: usize) -> Result<Vec<String>, rusqlite::Error> {
+        // The job's CVs missing a deep embedding, ordered by quick similarity to the job ad desc.
         self.with_reader(|c| {
             let sql = r#"
                 SELECT c.hash FROM cv c
-                WHERE EXISTS (SELECT 1 FROM cv_similarity s WHERE s.cv_hash=c.hash AND s.model_id=?1)
-                  AND NOT EXISTS (SELECT 1 FROM cv_embedding e WHERE e.cv_hash=c.hash AND e.model_id=?2)
-                ORDER BY (SELECT COALESCE(MAX(s.similarity),0) FROM cv_similarity s WHERE s.cv_hash=c.hash AND s.model_id=?1) DESC,
+                JOIN job_cv j ON j.cv_hash = c.hash AND j.job_id = ?1
+                WHERE EXISTS (SELECT 1 FROM cv_similarity s WHERE s.cv_hash=c.hash AND s.model_id=?2)
+                  AND NOT EXISTS (SELECT 1 FROM cv_embedding e WHERE e.cv_hash=c.hash AND e.model_id=?3)
+                ORDER BY (SELECT COALESCE(MAX(s.similarity),0) FROM cv_similarity s WHERE s.cv_hash=c.hash AND s.model_id=?2) DESC,
                          c.hash
-                LIMIT ?3
+                LIMIT ?4
             "#;
             let mut stmt = c.prepare(sql)?;
-            let rows = stmt.query_map(rusqlite::params![quick_model_id, deep_model_id, limit as i64], |r| r.get::<_, String>(0))?;
+            let rows = stmt.query_map(rusqlite::params![job_id, quick_model_id, deep_model_id, limit as i64], |r| r.get::<_, String>(0))?;
             let mut out = Vec::new();
             for r in rows { out.push(r?); }
             Ok(out)
         })
     }
 
-    pub fn get_cvs_for_comparison(&self, deep_model_id: &str, jobad_hash: &str) -> Result<Vec<String>, rusqlite::Error> {
+    pub fn get_cvs_for_comparison_for_job(&self, job_id: &str, deep_model_id: &str, jobad_hash: &str) -> Result<Vec<String>, rusqlite::Error> {
         self.with_reader(|c| {
             let sql = r#"
                 SELECT c.hash FROM cv c
-                WHERE EXISTS (SELECT 1 FROM cv_embedding e WHERE e.cv_hash=c.hash AND e.model_id=?1)
-                  AND EXISTS (SELECT 1 FROM cv_similarity s WHERE s.cv_hash=c.hash AND s.model_id=?1 AND s.target_hash=?2)
+                JOIN job_cv j ON j.cv_hash = c.hash AND j.job_id = ?1
+                WHERE EXISTS (SELECT 1 FROM cv_embedding e WHERE e.cv_hash=c.hash AND e.model_id=?2)
+                  AND EXISTS (SELECT 1 FROM cv_similarity s WHERE s.cv_hash=c.hash AND s.model_id=?2 AND s.target_hash=?3)
                 ORDER BY c.score DESC, c.hash
             "#;
             let mut stmt = c.prepare(sql)?;
-            let rows = stmt.query_map(rusqlite::params![deep_model_id, jobad_hash], |r| r.get::<_, String>(0))?;
+            let rows = stmt.query_map(rusqlite::params![job_id, deep_model_id, jobad_hash], |r| r.get::<_, String>(0))?;
             let mut out = Vec::new();
             for r in rows { out.push(r?); }
             Ok(out)
+        })
+    }
+
+    pub fn insert_comparison(&self, job_id: &str, a_hash: &str, b_hash: &str, prob: f64) -> Result<(), rusqlite::Error> {
+        self.with_writer(|c| {
+            c.execute(
+                "INSERT OR REPLACE INTO cv_comparison (job_id, a_hash, b_hash, prob) VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![job_id, a_hash, b_hash, prob],
+            )?;
+            Ok(())
+        })
+    }
+
+    pub fn get_comparison_count(&self, job_id: &str) -> Result<i64, rusqlite::Error> {
+        self.with_reader(|c| {
+            c.query_row("SELECT COUNT(*) FROM cv_comparison WHERE job_id = ?1", [job_id], |r| r.get::<_, i64>(0))
         })
     }
 

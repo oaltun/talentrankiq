@@ -243,13 +243,12 @@ pub fn reload_and_rerank(state: &Arc<ServeState>, job_id: &str) {
     };
     if extracted == 0 {
         // Nothing to rank yet; the ad is stored and will be used by the first
-        // rank (import auto-starts the cascade).
+        // run (the import auto-start path starts the waves run).
         return;
     }
-    match crate::serve::handlers::rank::spawn_cascade(state, job_id) {
-        Ok(true) => log::info!("ad-watch {job_id}: full re-rank started"),
-        Ok(false) => log::info!("ad-watch {job_id}: a rank was already running"),
-        Err(e) => log::warn!("ad-watch {job_id}: could not re-rank: {e}"),
+    match crate::serve::handlers::rank::process_in_waves(state, job_id) {
+        Ok(_) => log::info!("ad-watch {job_id}: waves run started"),
+        Err(e) => log::warn!("ad-watch {job_id}: could not start waves run: {e}"),
     }
 }
 

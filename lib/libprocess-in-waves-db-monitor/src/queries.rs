@@ -25,16 +25,20 @@ pub struct RankProgress {
 }
 
 pub fn get_conversion_progress(conn: &Connection, job_id: &str) -> Result<EmbeddingProgress, rusqlite::Error> {
-    let total: i64 = conn.query_row("SELECT COUNT(*) FROM cv", [], |r| r.get(0)).unwrap_or(0);
+    let total: i64 = conn.query_row("SELECT COUNT(*) FROM job_cv WHERE job_id = ?1", [job_id], |r| r.get(0)).unwrap_or(0);
     Ok(EmbeddingProgress { job_id: job_id.to_string(), done: total, total, failed: 0, active: false })
 }
 
 pub fn get_embedding_progress(conn: &Connection, job_id: &str, model_id: &str) -> Result<EmbeddingProgress, rusqlite::Error> {
-    let total: i64 = conn.query_row("SELECT COUNT(*) FROM cv", [], |r| r.get(0)).unwrap_or(0);
+    let total: i64 = conn.query_row("SELECT COUNT(*) FROM job_cv WHERE job_id = ?1", [job_id], |r| r.get(0)).unwrap_or(0);
     let done: i64 = if model_id.is_empty() {
-        conn.query_row("SELECT COUNT(*) FROM cv_embedding", [], |r| r.get(0)).unwrap_or(0)
+        total
     } else {
-        conn.query_row("SELECT COUNT(*) FROM cv_embedding WHERE model_id = ?1", [model_id], |r| r.get(0)).unwrap_or(0)
+        conn.query_row(
+            "SELECT COUNT(*) FROM job_cv j JOIN cv_embedding e ON e.cv_hash = j.cv_hash AND e.model_id = ?2 WHERE j.job_id = ?1",
+            rusqlite::params![job_id, model_id],
+            |r| r.get(0),
+        ).unwrap_or(0)
     };
     let running: i64 = conn.query_row("SELECT COALESCE((SELECT running FROM waves_rank_state WHERE job_id=?1),0)", [job_id], |r| r.get(0)).unwrap_or(0);
     Ok(EmbeddingProgress { job_id: job_id.to_string(), done, total, failed: 0, active: running != 0 })

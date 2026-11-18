@@ -458,10 +458,9 @@ pub fn update_job(
         .map_err(db_err)?;
     drop(conn);
     if start_cascade {
-        match crate::serve::handlers::rank::spawn_cascade(state, job_id) {
-            Ok(true) => log::info!("rank: inputs changed for {job_id} — cascade started"),
-            Ok(false) => log::info!("rank: cascade already running for {job_id}"),
-            Err(e) => log::warn!("rank: could not start cascade for {job_id}: {e}"),
+        match crate::serve::handlers::rank::process_in_waves(state, job_id) {
+            Ok(_) => log::info!("rank: inputs changed for {job_id} — waves run started"),
+            Err(e) => log::warn!("rank: could not start waves run for {job_id}: {e}"),
         }
     }
     ok_json(job)

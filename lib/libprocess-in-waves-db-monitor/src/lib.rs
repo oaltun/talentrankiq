@@ -32,11 +32,13 @@ pub enum MonitorError {
 pub struct MonitorConfig {
     pub poll_interval: Duration,
     pub job_id: String,
+    pub quick_model: String,
+    pub deep_model: String,
 }
 
 impl Default for MonitorConfig {
     fn default() -> Self {
-        Self { poll_interval: Duration::from_secs(2), job_id: String::new() }
+        Self { poll_interval: Duration::from_secs(2), job_id: String::new(), quick_model: String::new(), deep_model: String::new() }
     }
 }
 

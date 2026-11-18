@@ -25,6 +25,7 @@ pub fn process_in_waves(ctx: &mut context::ProcessContext, config: context::Proc
         Ok(())
     });
 
+    let job_id = ctx.job.id.clone();
     let quick_model = ctx.job.quick_model.clone();
     let deep_model = ctx.job.deep_model.clone();
     let jobad_hash = if ctx.job.job_ad_hash.is_empty() { hash_text(&ctx.job.job_ad_text) } else { ctx.job.job_ad_hash.clone() };
@@ -57,20 +58,18 @@ pub fn process_in_waves(ctx: &mut context::ProcessContext, config: context::Proc
 
         scan::scan_watch_dir(ctx)?;
 
-        let cv_hashes = ctx.db.get_all_cv_hashes()?;
-
+        let cv_hashes = ctx.db.get_all_cv_hashes_for_job(&job_id)?;
         embed::ensure_quick_embeddings(ctx, &cv_hashes)?;
-
         similarity::compute_batch_similarity(ctx, &cv_hashes, &targets, &quick_model, ctx.job.similarity_method)?;
 
-        let deep_queue = ctx.db.get_deep_queue(&quick_model, &deep_model, config.wave_size_deep)?;
+        let deep_queue = ctx.db.get_deep_queue_for_job(&job_id, &quick_model, &deep_model, config.wave_size_deep)?;
         let slice: Vec<String> = deep_queue.into_iter().take(config.wave_size_deep).collect();
         embed::ensure_deep_embeddings(ctx, &slice, config.wave_size_deep)?;
 
-        let cv_hashes_all = ctx.db.get_all_cv_hashes()?;
+        let cv_hashes_all = ctx.db.get_all_cv_hashes_for_job(&job_id)?;
         similarity::compute_batch_similarity(ctx, &cv_hashes_all, &targets, &deep_model, ctx.job.similarity_method)?;
 
-        let to_compare = ctx.db.get_cvs_for_comparison(&deep_model, &jobad_hash)?;
+        let to_compare = ctx.db.get_cvs_for_comparison_for_job(&job_id, &deep_model, &jobad_hash)?;
 
         if league.is_empty() {
             for h in &cv_hashes_all {
@@ -104,15 +103,14 @@ pub fn process_in_waves(ctx: &mut context::ProcessContext, config: context::Proc
         let candidates = cv_hashes_all.len() as i64;
         let embedded_done = cv_hashes_all.iter()
             .filter(|h| ctx.db.has_embedding(h, &deep_model).unwrap_or(false)).count() as i64;
-        let compared = to_compare_filtered.len() as i64;
-        ctx.db.update_waves_rank_state(&ctx.job.id, wave as i64, candidates, embedded_done, compared, candidates, 0, None, true)?;
+        let compared = ctx.db.get_comparison_count(&job_id)?;
+        ctx.db.update_waves_rank_state(&job_id, wave as i64, candidates, embedded_done, compared, candidates, 0, None, true)?;
 
         if candidates == last_candidates
             && embedded_done == last_embedded
-            && compared == 0
-            && last_compared == 0
+            && compared == last_compared
         {
-            log::info!("process_in_waves converged for {} after {} wave(s)", ctx.job.id, wave);
+            log::info!("process_in_waves converged for {} after {} wave(s)", job_id, wave);
             break;
         }
         last_candidates = candidates;
@@ -124,7 +122,7 @@ pub fn process_in_waves(ctx: &mut context::ProcessContext, config: context::Proc
     Ok(())
 }
 
-fn hash_text(text: &str) -> String {
+pub fn hash_text(text: &str) -> String {
     use sha2::{Digest, Sha256};
     let mut h = Sha256::new();
     h.update(text.as_bytes());

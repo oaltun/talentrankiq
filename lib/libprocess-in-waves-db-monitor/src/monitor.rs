@@ -21,7 +21,7 @@ pub fn monitor_loop(
     let _ = conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;");
     loop {
         // poll once
-        let _ = poll_once(&conn, &config.job_id, &events);
+        let _ = poll_once(&conn, &config, &events);
         // wait for interval or shutdown
         match shutdown_rx.recv_timeout(config.poll_interval) {
             Ok(_) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
@@ -31,12 +31,12 @@ pub fn monitor_loop(
     let _ = (db_path, thread::current().id());
 }
 
-fn poll_once(conn: &Connection, job_id: &str, events: &EventSink) -> Result<(), rusqlite::Error> {
-    let progress = queries::get_rank_progress(conn, job_id).unwrap_or_default();
+fn poll_once(conn: &Connection, config: &MonitorConfig, events: &EventSink) -> Result<(), rusqlite::Error> {
+    let progress = queries::get_rank_progress(conn, &config.job_id).unwrap_or_default();
     events.emit("rank-progress", &progress);
-    let quick = queries::get_embedding_progress(conn, job_id, "").unwrap_or_default();
+    let quick = queries::get_embedding_progress(conn, &config.job_id, &config.quick_model).unwrap_or_default();
     events.emit("job-quick-progress", &quick);
-    let deep = queries::get_embedding_progress(conn, job_id, "").unwrap_or_default();
+    let deep = queries::get_embedding_progress(conn, &config.job_id, &config.deep_model).unwrap_or_default();
     events.emit("job-deep-progress", &deep);
     Ok(())
 }

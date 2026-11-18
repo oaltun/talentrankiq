@@ -52,6 +52,7 @@ pub fn run_comparison_wave(
             let x = libcomparator::features::assemble_pair(&spec, &job_df, &old_df, &new_df);
             let prob = model.pair_prob(x);
             comparisons_cache.pairs.push((cv_old.clone(), cv_new.clone(), prob));
+            ctx.db.insert_comparison(&ctx.job.id, &cv_old, &cv_new, prob)?;
             // rescore
             ctx.db.rescore_cv(&cv_old)?;
             ctx.db.rescore_cv(&cv_new)?;

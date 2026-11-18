@@ -9,13 +9,13 @@ pub fn scan_watch_dir(ctx: &mut ProcessContext) -> Result<usize, ProcessError> {
     // of letting one unsupported file abort the whole run.
     let dir = ctx.watch_dir.to_string_lossy().to_string();
     let files = libtriqui_core::import::collect_supported_files(&dir)?;
+    // Reconcile this job's membership to exactly the files in its watch dir: drop
+    // rows for paths no longer present (e.g. after a directory change) and re-add
+    // the current ones. Content-hash dedupe stays global across jobs.
+    ctx.db.clear_job_cv(&ctx.job.id)?;
     let mut new_count = 0usize;
     for path in files {
         let path_str = path.to_string_lossy().to_string();
-        // Known path: already imported (the file_state row is the dedupe key).
-        if ctx.db.file_state_has(&path_str)? {
-            continue;
-        }
         // A single unreadable/odd file must not abort the wave; log and move on.
         let text = match read_text(&path) {
             Ok(t) => t,
@@ -26,11 +26,11 @@ pub fn scan_watch_dir(ctx: &mut ProcessContext) -> Result<usize, ProcessError> {
         };
         let file_hash = hash_text(&text);
         ctx.db.upsert_file_state(&path_str, &file_hash)?;
-        if ctx.db.cv_has(&file_hash)? {
-            continue;
+        ctx.db.insert_job_cv(&ctx.job.id, &file_hash)?;
+        if !ctx.db.cv_has(&file_hash)? {
+            ctx.db.insert_cv(&file_hash, &text)?;
+            new_count += 1;
         }
-        ctx.db.insert_cv(&file_hash, &text)?;
-        new_count += 1;
     }
     Ok(new_count)
 }

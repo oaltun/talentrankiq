@@ -162,10 +162,9 @@ fn auto_start_cascade(state: &Arc<ServeState>, job_id: &str) {
     if extracted == 0 {
         return;
     }
-    match crate::serve::handlers::rank::spawn_cascade(state, job_id) {
-        Ok(true) => log::info!("import: cascade started for job {job_id} ({extracted} CVs)"),
-        Ok(false) => log::info!("import: cascade already running for job {job_id}"),
-        Err(e) => log::warn!("import: could not start cascade for job {job_id}: {e}"),
+    match crate::serve::handlers::rank::process_in_waves(state, job_id) {
+        Ok(_) => log::info!("import: waves run started for job {job_id} ({extracted} CVs)"),
+        Err(e) => log::warn!("import: could not start waves run for job {job_id}: {e}"),
     }
 }
 

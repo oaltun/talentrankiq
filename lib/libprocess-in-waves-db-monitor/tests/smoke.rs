@@ -13,6 +13,8 @@ fn monitor_spawns_and_shuts_down() {
     let cfg = libprocess_in_waves_db_monitor::MonitorConfig {
         poll_interval: Duration::from_millis(100),
         job_id: "job1".to_string(),
+        quick_model: "quick".to_string(),
+        deep_model: "deep".to_string(),
     };
     let handle = libprocess_in_waves_db_monitor::spawn_monitor(dbpath, cfg, events).unwrap();
     std::thread::sleep(Duration::from_millis(250));

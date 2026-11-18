@@ -960,12 +960,49 @@ pub fn process_in_waves(state: &Arc<ServeState>, job_id: &str) -> Result<Value, 
         .unwrap_or_else(|| state.app_dir.clone());
     let job_ad_text = job_ad_text.unwrap_or_default();
 
-    // Model ids: use the runtime's configured model for both passes.
-    let model = state.runtime.model();
+    // Model ids: quick and deep are distinct models — quick is the fast pass,
+    // deep the heavy one. The runtime's single model is the deep (full) embedder;
+    // the quick pass uses the configured quick/scout model.
+    let full_model = state.runtime.model();
+    let quick_model = libtriqui_core::scout::scout_model_for(&full_model).unwrap_or_else(|| full_model.clone());
+    let deep_model = full_model;
 
     // Ensure waves_rank_state row exists and marked running.
     let waves_db = WavesDbHandle::open_at(&state.db_path)
         .map_err(|e| string_err(format!("waves db open: {e}")))?;
+    let already_running: bool = {
+        let conn = state.db.0.lock().map_err(|e| string_err(format!("db lock: {e}")))?;
+        conn.query_row(
+            "SELECT running FROM waves_rank_state WHERE job_id = ?1",
+            rusqlite::params![job_id],
+            |r| r.get::<_, i64>(0),
+        ).map(|v| v != 0).unwrap_or(false)
+    };
+    if already_running {
+        // A waves run already owns this job: report it instead of stacking a second
+        // loop on top (the second would re-embed/re-compare everything).
+        return ok_json(RankState {
+            running: true,
+            ranking: true,
+            stage: Some("waves".into()),
+            wave: None,
+            embedded_total: 0,
+            embedded_done: 0,
+            judged: 0,
+            candidates: 0,
+            converged: false,
+            reason: None,
+        });
+    }
+    let jobad_hash = libprocess_in_waves::hash_text(&job_ad_text);
+    let criteria: Vec<String> = {
+        let conn = state.db.0.lock().map_err(|e| string_err(format!("db lock: {e}")))?;
+        let mut stmt = conn.prepare("SELECT text FROM criteria WHERE job_id = ?1").map_err(|e| string_err(e.to_string()))?;
+        let rows = stmt.query_map(rusqlite::params![job_id], |r| r.get::<_, String>(0)).map_err(|e| string_err(e.to_string()))?;
+        let mut out = Vec::new();
+        for r in rows { out.push(r.map_err(|e| string_err(e.to_string()))?); }
+        out
+    };
     let _ = waves_db.update_waves_rank_state(job_id, 0, 0, 0, 0, 0, 0, None, true);
 
     let ctx = ProcessContext {
@@ -975,11 +1012,11 @@ pub fn process_in_waves(state: &Arc<ServeState>, job_id: &str) -> Result<Value, 
             id: job_id.to_string(),
             title: title.clone(),
             job_ad_text: job_ad_text.clone(),
-            job_ad_hash: String::new(),
-            criteria: Vec::new(),
+            job_ad_hash: jobad_hash.clone(),
+            criteria,
             import_directory_path: Some(watch_dir.clone()),
-            quick_model: model.clone(),
-            deep_model: model.clone(),
+            quick_model: quick_model.clone(),
+            deep_model: deep_model.clone(),
             comparator_model_path: None,
             similarity_method: libembedrank::RetrievalStrategy::MaxSim,
         },
@@ -995,6 +1032,8 @@ pub fn process_in_waves(state: &Arc<ServeState>, job_id: &str) -> Result<Value, 
     let monitor_cfg = WavesMonitorConfig {
         poll_interval: std::time::Duration::from_secs(2),
         job_id: job_id.to_string(),
+        quick_model: quick_model.clone(),
+        deep_model: deep_model.clone(),
     };
     let _ = spawn_waves_monitor(state.db_path.clone(), monitor_cfg, monitor_events);
 
