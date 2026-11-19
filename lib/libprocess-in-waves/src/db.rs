@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::path::Path;
 
 use rusqlite::Connection;
@@ -79,10 +79,11 @@ CREATE INDEX IF NOT EXISTS idx_cv_similarity_model ON cv_similarity(model_id, ta
 CREATE INDEX IF NOT EXISTS idx_cv_embedding_model ON cv_embedding(model_id);
 "#;
 
+#[derive(Clone)]
 pub struct DbHandle {
-    pub read_pool: Mutex<Vec<Connection>>,
-    pub writer: Mutex<Connection>,
-    pub path: std::path::PathBuf,
+    read_pool: Arc<Mutex<Vec<Connection>>>,
+    writer: Arc<Mutex<Connection>>,
+    path: std::path::PathBuf,
 }
 
 impl DbHandle {
@@ -94,20 +95,19 @@ impl DbHandle {
             let _ = std::fs::create_dir_all(parent);
         }
         // writer
-        let mut w = Connection::open(path)?;
+        let w = Connection::open(path)?;
         w.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;")?;
         w.execute_batch(SCHEMA)?;
         // read pool
         let mut pool = Vec::new();
         for _ in 0..4 {
-            let mut c = Connection::open(path)?;
+            let c = Connection::open(path)?;
             c.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;")?;
-            // read-only-ish: still need schema present (already created)
             pool.push(c);
         }
         Ok(Self {
-            read_pool: Mutex::new(pool),
-            writer: Mutex::new(w),
+            read_pool: Arc::new(Mutex::new(pool)),
+            writer: Arc::new(Mutex::new(w)),
             path: path.to_path_buf(),
         })
     }
@@ -127,7 +127,6 @@ impl DbHandle {
     pub fn with_reader<F, R>(&self, f: F) -> Result<R, rusqlite::Error>
     where F: FnOnce(&mut Connection) -> Result<R, rusqlite::Error> {
         let mut pool = self.read_pool.lock().unwrap();
-        // borrow first available
         if pool.is_empty() {
             let mut c = Connection::open(&self.path)?;
             c.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;")?;
@@ -135,7 +134,6 @@ impl DbHandle {
             pool.push(c);
             return Ok(r);
         }
-        // use last
         let idx = pool.len() - 1;
         let c = &mut pool[idx];
         f(c)

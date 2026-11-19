@@ -6,6 +6,8 @@ pub mod similarity;
 pub mod league;
 pub mod compare;
 pub mod error;
+pub mod handler;
+pub mod monitor;
 
 pub use context::{ProcessContext, ProcessConfig, JobConfig};
 pub use db::DbHandle;
@@ -13,6 +15,8 @@ pub use db::open_connection_at;
 pub use league::MaxPriorityQueueByScore;
 pub use error::ProcessError;
 pub use similarity::Target;
+pub use handler::run_process_in_waves;
+pub use monitor::{spawn_monitor, MonitorConfig, EventSink, MonitorHandle, MonitorError};
 
 use crate::compare::ComparisonsCache;
 

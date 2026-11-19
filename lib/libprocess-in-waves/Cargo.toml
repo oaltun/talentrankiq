@@ -15,6 +15,7 @@ libmodelcaller = { path = "../libmodelcaller" }
 libtriqui-client = { path = "../libtriqui-client" }
 libconfigreader = { path = "../libconfigreader" }
 libtokenizer = { path = "../libtokenizer" }
+libsyscap = { path = "../libsyscap" }
 rusqlite = { version = "0.32", features = ["bundled"] }
 anyhow = "1"
 sha2 = "0.10"
@@ -24,6 +25,7 @@ serde_json = "1"
 log = "0.4"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
+crossbeam-channel = "0.5"
 
 [dev-dependencies]
 tempfile = "3.8"
