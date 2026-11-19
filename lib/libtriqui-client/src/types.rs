@@ -897,6 +897,10 @@ pub struct RankProgress {
     pub embedded_done: u32,
     pub embedded_total: u32,
     pub judged: u32,
+    /// Alias for `judged` — the number of pair-wise comparisons (fresh + cached)
+    /// performed so far. Kept for GUI compatibility.
+    #[serde(rename = "compared")]
+    pub compared: u32,
     pub candidates: u32,
     pub running: bool,
     /// Stable reason code while the run is alive but not making progress:

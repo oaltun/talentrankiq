@@ -12,7 +12,7 @@ use std::thread;
 use serde_json::Value;
 
 use libtriqui_client::protocol::ProtocolError;
-use libtriqui_client::types::{RankProgress, RankState, SortReport, SystemBudget, SystemLoad};
+use libtriqui_client::types::{EmbeddingProgress, RankProgress, RankState, SortReport, SystemBudget, SystemLoad};
 use libtriqui_core::cascade::{freeze_pool, project, run_scout_stage, run_wave, CascadeBudget};
 use libtriqui_core::config::CascadeConfig;
 use libtriqui_core::db::{rank_state_for_job, set_rank_state};
@@ -122,6 +122,8 @@ struct CascadeRunner {
     engine: libconfigreader::EngineSection,
     gens: Arc<CascadeGens>,
     gen: u64,
+    /// Total number of extracted candidates for this job (used for final progress events).
+    candidate_count: u32,
     /// Throttles the per-candidate `rank-progress` stream to ~10 Hz: embed
     /// callbacks arrive at engine speed, and an unthrottled event per CV
     /// makes the gui refetch + re-render the whole sheet each time — a big
@@ -169,7 +171,7 @@ impl CascadeRunner {
             return;
         }
 
-        let candidate_count = self.count_candidates(&conn).unwrap_or(0);
+        let candidate_count = self.candidate_count as i64;
         let is_small_job = candidate_count <= self.cascade.small_job_threshold() as i64;
         // The judge pool is frozen once per run and never scaled by the machine:
         // a pool that grew and shrank with the load would move every member's
@@ -195,9 +197,10 @@ impl CascadeRunner {
             stage: "scout".into(),
             wave: 0,
             embedded_done: 0,
-            embedded_total: candidate_count as u32,
+            embedded_total: self.candidate_count,
             judged: 0,
-            candidates: candidate_count as u32,
+            compared: 0,
+            candidates: self.candidate_count,
             running: true,
             reason: None,
         });
@@ -207,7 +210,17 @@ impl CascadeRunner {
         // first boundary after an ad lands — one ad embed plus maxsim over
         // the scout chunks already on disk, no further corpus model calls.
         let mut scout_deferred = false;
-        match run_scout_stage(&self.runtime, &self.job_id, &|_d, _t, _f, _a| {}) {
+        let job_id_clone = self.job_id.clone();
+        let events_clone = self.events.clone();
+        match run_scout_stage(&self.runtime, &self.job_id, &move |done, total, failed, active| {
+            events_clone.emit("job-quick-progress", &EmbeddingProgress {
+                job_id: job_id_clone.clone(),
+                done,
+                total,
+                failed,
+                active,
+            });
+        }) {
             Ok(Some(outcome)) => {
                 scout_deferred = outcome.deferred;
                 log::info!(
@@ -278,7 +291,17 @@ impl CascadeRunner {
             // costs one ad embed plus maxsim, and the wave's sort picks the
             // grades and the refreshed best-current-order up.
             if scout_deferred && self.job_has_ad(&conn) {
-                match run_scout_stage(&self.runtime, &self.job_id, &|_d, _t, _f, _a| {}) {
+                let job_id_clone = self.job_id.clone();
+                let events_clone = self.events.clone();
+                match run_scout_stage(&self.runtime, &self.job_id, &move |done, total, failed, active| {
+                    events_clone.emit("job-quick-progress", &EmbeddingProgress {
+                        job_id: job_id_clone.clone(),
+                        done,
+                        total,
+                        failed,
+                        active,
+                    });
+                }) {
                     Ok(Some(outcome)) if outcome.graded > 0 => {
                         scout_deferred = false;
                         log::info!(
@@ -312,9 +335,10 @@ impl CascadeRunner {
                     stage: "embed".into(),
                     wave,
                     embedded_done: total_embedded as u32,
-                    embedded_total: candidate_count as u32,
+                    embedded_total: self.candidate_count,
                     judged: total_judged,
-                    candidates: candidate_count as u32,
+                    compared: total_judged,
+                    candidates: self.candidate_count,
                     running: true,
                     reason: syscap::holding_code(&sys),
                 });
@@ -328,11 +352,14 @@ impl CascadeRunner {
             };
 
             wave += 1;
-            let progress = &|done: i64, total: i64, _failed: i64, active: bool| {
+            let job_id_clone = self.job_id.clone();
+            let events_clone = self.events.clone();
+            let progress = &|done: i64, total: i64, failed: i64, active: bool| {
                 // The one throttled spot: per-candidate embed callbacks. The
                 // wave's final (active=false) event and the wave-end emit
                 // below always pass, so counts stay exact at every edge.
                 if !active || self.throttle.allow() {
+                    // Emit rank-progress for the rank cascade UI
                     self.events.emit("rank-progress", &RankProgress {
                         job_id: self.job_id.clone(),
                         stage: "embed".into(),
@@ -340,9 +367,18 @@ impl CascadeRunner {
                         embedded_done: (total_embedded + done) as u32,
                         embedded_total: (total_embedded + total) as u32,
                         judged: total_judged,
-                        candidates: candidate_count as u32,
+                        compared: total_judged,
+                        candidates: self.candidate_count,
                         running: active,
                         reason: None,
+                    });
+                    // Emit job-deep-progress for the embedding progress UI
+                    events_clone.emit("job-deep-progress", &EmbeddingProgress {
+                        job_id: job_id_clone.clone(),
+                        done: total_embedded + done,
+                        total: total_embedded + total,
+                        failed,
+                        active,
                     });
                 }
             };
@@ -357,11 +393,20 @@ impl CascadeRunner {
                         stage: "embed".into(),
                         wave,
                         embedded_done: total_embedded as u32,
-                        embedded_total: candidate_count as u32,
+                        embedded_total: self.candidate_count,
                         judged: total_judged,
-                        candidates: candidate_count as u32,
+                        compared: total_judged,
+                        candidates: self.candidate_count,
                         running: !outcome.converged,
                         reason: None,
+                    });
+                    // Emit final job-deep-progress for this wave
+                    self.events.emit("job-deep-progress", &EmbeddingProgress {
+                        job_id: self.job_id.clone(),
+                        done: total_embedded,
+                        total: self.candidate_count as i64,
+                        failed: 0,
+                        active: !outcome.converged,
                     });
                     if outcome.converged {
                         break;
@@ -453,10 +498,21 @@ impl CascadeRunner {
             embedded_done: 0,
             embedded_total: 0,
             judged: 0,
+            compared: 0,
             candidates: 0,
             running: false,
             reason: None,
         });
+        // Emit final job-deep-progress to show completion
+        if converged {
+            self.events.emit("job-deep-progress", &EmbeddingProgress {
+                job_id: self.job_id.clone(),
+                done: self.candidate_count as i64,
+                total: self.candidate_count as i64,
+                failed: 0,
+                active: false,
+            });
+        }
     }
 
     fn fail(&self) {
@@ -481,18 +537,11 @@ impl CascadeRunner {
             embedded_done: 0,
             embedded_total: 0,
             judged: 0,
+            compared: 0,
             candidates: 0,
             running: false,
             reason: None,
         });
-    }
-
-    fn count_candidates(&self, conn: &rusqlite::Connection) -> Result<i64, rusqlite::Error> {
-        conn.query_row(
-            "SELECT COUNT(*) FROM candidates WHERE job_id = ?1 AND extraction_status = 'Extracted'",
-            rusqlite::params![self.job_id],
-            |r| r.get(0),
-        )
     }
 
     /// Whether the job has job-ad text to score against (a blank or NULL ad is
@@ -530,24 +579,23 @@ pub fn spawn_cascade(state: &Arc<ServeState>, job_id: &str) -> Result<bool, Stri
     // land when the ad does: the same run catches the scout up and re-sorts
     // from the stored chunks at the next wave boundary, or `update_job`
     // spawns a scoring-only run once this one converged.
-    {
-        let conn = state.db.0.lock().map_err(|e| format!("db lock: {e}"))?;
-        let cvs: i64 = conn
-            .query_row(
-                "SELECT (SELECT COUNT(*) FROM candidates
-                          WHERE job_id = ?1 AND extraction_status = 'Extracted')
+    let conn = state.db.0.lock().map_err(|e| format!("db lock: {e}"))?;
+    let cvs: i64 = conn
+        .query_row(
+            "SELECT (SELECT COUNT(*) FROM candidates
+                      WHERE job_id = ?1 AND extraction_status = 'Extracted')
                  FROM jobs WHERE id = ?1",
-                rusqlite::params![job_id],
-                |r| r.get(0),
-            )
-            .map_err(|e| match e {
-                rusqlite::Error::QueryReturnedNoRows => format!("job {job_id} not found"),
-                e => format!("db: {e}"),
-            })?;
-        if cvs < 1 {
-            return Err("cannot rank: no extracted CVs for this job".into());
-        }
+            rusqlite::params![job_id],
+            |r| r.get(0),
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => format!("job {job_id} not found"),
+            e => format!("db: {e}"),
+        })?;
+    if cvs < 1 {
+        return Err("cannot rank: no extracted CVs for this job".into());
     }
+    let candidate_count = cvs as u32;
 
     // Already running for this job? A live runner whose run was cancelled
     // (DB row says so) is on its way out at the next wave boundary — a spawn
@@ -607,6 +655,7 @@ pub fn spawn_cascade(state: &Arc<ServeState>, job_id: &str) -> Result<bool, Stri
         engine,
         gens: Arc::clone(&state.cascade_gens),
         gen,
+        candidate_count,
         throttle: crate::serve::ProgressThrottle::default(),
     };
 
