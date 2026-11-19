@@ -18,7 +18,7 @@ use libmodeldownloader::cli::Artifact;
 use libmodeldownloader::modelcache::verify_safetensors_present;
 use libtriqui_client::protocol::ProtocolError;
 use libtriqui_client::types::{
-    CosinePair, GuiEmbedder, ModelDownloadProgress, ModelKind, TryModelProgress, TryModelResult,
+    CosinePair, GuiEmbedder, ModelDownloadProgress, ModelKind, ScoutModel, TryModelProgress, TryModelResult,
 };
 use libtriqui_core::app_config;
 use libtriqui_core::embed::Embedder;
@@ -191,6 +191,48 @@ impl DownloadProgressAggregate {
 /// Last path segment as the progress label (repo paths and dest paths both).
 fn file_label(path: &str) -> String {
     path.rsplit('/').next().unwrap_or(path).to_string()
+}
+
+/// Expose scout model info to the GUI.
+pub fn get_scout_model(_state: &Arc<ServeState>) -> Result<serde_json::Value, ProtocolError> {
+    let cfg = app_config::load_triq();
+    let scout_slug = match cfg.cascade.scout() {
+        Some(s) => s.to_string(),
+        None => return ok_json(Option::<ScoutModel>::None),
+    };
+    let model_dir = app_config::model_dir();
+    let revision = app_config::revision();
+
+    let model_def = cfg.find_model(&scout_slug);
+    let downloaded = if let Some(md) = model_def {
+        if let Some(artifact) = md.artifacts.first() {
+            match artifact.backend {
+                libconfigreader::BackendKind::Ort => {
+                    libmodelstorage::onnx_exists(&model_dir, &scout_slug, &revision)
+                }
+                libconfigreader::BackendKind::Mlx => {
+                    let target = libmodelstorage::slug_dir(&model_dir, &scout_slug).join(&revision);
+                    libmodeldownloader::modelcache::verify_safetensors_present(&target)
+                }
+            }
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+    let size = if downloaded {
+        dir_size(&libmodelstorage::slug_dir(&model_dir, &scout_slug))
+    } else {
+        0
+    };
+    let scout = ScoutModel {
+        slug: scout_slug.clone(),
+        name: scout_slug.clone(),
+        downloaded,
+        size_bytes: size,
+    };
+    ok_json(Some(scout))
 }
 
 /// Which ONNX/MLX artifacts are present for an embedder slug, and which arm

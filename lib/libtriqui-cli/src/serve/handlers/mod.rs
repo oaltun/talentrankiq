@@ -241,6 +241,7 @@ fn dispatch(state: &Arc<ServeState>, cmd: &str, params: &Value) -> Result<Value,
 
         // Models
         "list_embedders" => models::list_embedders(state),
+        "get_scout_model" => models::get_scout_model(state),
         "model_variants" => {
             let p: ModelVariantsParams = from_params(params)?;
             models::model_variants(state, &p)

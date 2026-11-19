@@ -1040,6 +1040,15 @@ pub struct GuiEmbedder {
     pub size_bytes: u64,
 }
 
+/// Scout (quick) model info exposed to the GUI.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct ScoutModel {
+    pub slug: String,
+    pub name: String,
+    pub downloaded: bool,
+    pub size_bytes: u64,
+}
+
 /// Result of a single pair-wise cosine comparison.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct CosinePair {
