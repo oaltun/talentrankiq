@@ -99,11 +99,10 @@ pub fn scout_model(rt: &Arc<EngineRuntime>) -> Option<String> {
 }
 
 /// How many candidates still need the heavy embedder.
-pub fn remaining_embed_count(
-    rt: &Arc<EngineRuntime>,
-    job_id: &str,
-) -> Result<i64, DomainError> {
-    let conn = rt.open_conn().map_err(|e| DomainError::DbError { message: e })?;
+pub fn remaining_embed_count(rt: &Arc<EngineRuntime>, job_id: &str) -> Result<i64, DomainError> {
+    let conn = rt
+        .open_conn()
+        .map_err(|e| DomainError::DbError { message: e })?;
     rescore::count_needing_embed(&conn, job_id, &rt.model())
 }
 
@@ -111,10 +110,15 @@ pub fn remaining_embed_count(
 /// never waiting on an embed. Cheap and cache-first: after the first pass it is a
 /// few indexed reads.
 pub fn prepare_heavy_rubric(rt: &Arc<EngineRuntime>, job_id: &str) -> Result<(), DomainError> {
-    let conn = rt.open_conn().map_err(|e| DomainError::DbError { message: e })?;
+    let conn = rt
+        .open_conn()
+        .map_err(|e| DomainError::DbError { message: e })?;
     let rubric = Rubric::load(&conn, job_id)?;
-    rubric::ensure_vectors(rt, &conn, &rubric, &rt.model(), None)
-        .map_err(|e| DomainError::DbError { message: e.to_string() })?;
+    rubric::ensure_vectors(rt, &conn, &rubric, &rt.model(), None).map_err(|e| {
+        DomainError::DbError {
+            message: e.to_string(),
+        }
+    })?;
     Ok(())
 }
 
@@ -125,19 +129,27 @@ pub fn prepare_heavy_rubric(rt: &Arc<EngineRuntime>, job_id: &str) -> Result<(),
 /// which is what keeps a win-rate meaning the same thing at two moments. An ad
 /// change invalidates every memoized verdict, so `inputs_changed` clears the pool
 /// and the next run re-freezes it.
-pub fn freeze_pool(rt: &Arc<EngineRuntime>, job_id: &str, pool_size: usize) -> Result<usize, DomainError> {
-    let conn = rt.open_conn().map_err(|e| DomainError::DbError { message: e })?;
-    crate::db::freeze_judge_pool(&conn, job_id, pool_size)
-        .map_err(|e| DomainError::DbError { message: e.to_string() })
+pub fn freeze_pool(
+    rt: &Arc<EngineRuntime>,
+    job_id: &str,
+    pool_size: usize,
+) -> Result<usize, DomainError> {
+    let conn = rt
+        .open_conn()
+        .map_err(|e| DomainError::DbError { message: e })?;
+    crate::db::freeze_judge_pool(&conn, job_id, pool_size).map_err(|e| DomainError::DbError {
+        message: e.to_string(),
+    })
 }
 
 /// How many pool members are still unjudged.
-pub fn remaining_judge_count(
-    rt: &Arc<EngineRuntime>,
-    job_id: &str,
-) -> Result<i64, DomainError> {
-    let conn = rt.open_conn().map_err(|e| DomainError::DbError { message: e })?;
-    let ids = crate::db::judge_pool_ids(&conn, job_id).map_err(|e| DomainError::DbError { message: e.to_string() })?;
+pub fn remaining_judge_count(rt: &Arc<EngineRuntime>, job_id: &str) -> Result<i64, DomainError> {
+    let conn = rt
+        .open_conn()
+        .map_err(|e| DomainError::DbError { message: e })?;
+    let ids = crate::db::judge_pool_ids(&conn, job_id).map_err(|e| DomainError::DbError {
+        message: e.to_string(),
+    })?;
     if ids.is_empty() {
         return Ok(0);
     }
@@ -157,12 +169,10 @@ pub fn remaining_judge_count(
     let model = rt.model();
     let mut params: Vec<&dyn rusqlite::ToSql> = vec![&job_id, &model, &rescore::JUDGE_Q];
     params.extend(ids.iter().map(|i| i as &dyn rusqlite::ToSql));
-    conn.query_row(
-        &sql,
-        rusqlite::params_from_iter(params),
-        |r| r.get(0),
-    )
-    .map_err(|e| DomainError::DbError { message: e.to_string() })
+    conn.query_row(&sql, rusqlite::params_from_iter(params), |r| r.get(0))
+        .map_err(|e| DomainError::DbError {
+            message: e.to_string(),
+        })
 }
 
 /// Run one wave: embed the next slice in best-current-order, judge whoever in the
@@ -179,7 +189,9 @@ pub fn run_wave(
     progress: crate::embeddings::EmbedProgress<'_>,
 ) -> Result<WaveOutcome, DomainError> {
     let heavy = rt.model();
-    let conn = rt.open_conn().map_err(|e| DomainError::DbError { message: e })?;
+    let conn = rt
+        .open_conn()
+        .map_err(|e| DomainError::DbError { message: e })?;
 
     // 1. This wave's slice, best-current-order first. A zero budget means "embed
     //    nothing this wave" (a judge-only pass over an already-embedded pool).
@@ -192,8 +204,11 @@ pub fn run_wave(
     //    now the engine is up anyway.
     {
         let rubric = Rubric::load(&conn, job_id)?;
-        rubric::ensure_vectors(rt, &conn, &rubric, &heavy, None)
-            .map_err(|e| DomainError::DbError { message: e.to_string() })?;
+        rubric::ensure_vectors(rt, &conn, &rubric, &heavy, None).map_err(|e| {
+            DomainError::DbError {
+                message: e.to_string(),
+            }
+        })?;
     }
 
     // 3. Embed the slice, then grade it in the heavy space. `gate_wait` inside the
@@ -218,15 +233,10 @@ pub fn run_wave(
     let converged = remaining_embed == 0 && remaining_judge == 0;
 
     {
-        let conn = rt.open_conn().map_err(|e| DomainError::DbError { message: e })?;
-        rescore::write_report(
-            &conn,
-            job_id,
-            stats.as_ref(),
-            "waves",
-            wave,
-            converged,
-        )?;
+        let conn = rt
+            .open_conn()
+            .map_err(|e| DomainError::DbError { message: e })?;
+        rescore::write_report(&conn, job_id, stats.as_ref(), "waves", wave, converged)?;
     }
 
     Ok(WaveOutcome {
@@ -257,7 +267,10 @@ pub fn run_to_convergence(
 
 /// Re-project a job without doing any engine work: the cheap half of a rank, and
 /// the *whole* of an input change. See [`crate::rescore`].
-pub fn project(rt: &Arc<EngineRuntime>, job_id: &str) -> Result<rescore::RescoreReport, DomainError> {
+pub fn project(
+    rt: &Arc<EngineRuntime>,
+    job_id: &str,
+) -> Result<rescore::RescoreReport, DomainError> {
     rescore::rescore(rt, job_id)
 }
 

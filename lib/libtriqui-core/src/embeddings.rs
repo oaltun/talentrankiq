@@ -220,7 +220,7 @@ pub fn tokenizer_handle_for(model: &str) -> Option<Arc<libtokenizer::TokenizerHa
             Some(t)
         }
         Err(e) => {
-            log::warn!("embed: failed to load tokenizer, falling back to non-chunked: {e}");
+            tracing::warn!("embed: failed to load tokenizer, falling back to non-chunked: {e}");
             None
         }
     }
@@ -385,7 +385,7 @@ pub fn embed_text_cached(
                 }
             }
             if !misses.is_empty() {
-                log::info!(
+                tracing::info!(
                     "embed_text: {} chunk(s) embedded in {} ms ({} from cache)",
                     misses.len(),
                     t_misses.elapsed().as_millis(),
@@ -420,7 +420,7 @@ pub fn embed_text_cached(
                 });
             }
             cache_vector(conn, model, &hash, &vector_to_bytes(&v))?;
-            log::info!(
+            tracing::info!(
                 "embed_text: whole-text embed in {} ms (cache miss)",
                 t_whole.elapsed().as_millis()
             );
@@ -457,8 +457,8 @@ pub fn prewarm_rubric_inputs(rt: &Arc<EngineRuntime>, job_id: &str) {
         let result = prewarm_job_blocking(&rt, &jid);
         PREWARM_IN_FLIGHT.lock().expect("prewarm lock").remove(&jid);
         match result {
-            Ok(()) => log::info!("prewarm: job {jid} rubric vectors cached"),
-            Err(e) => log::warn!("prewarm: job {jid}: {e}"),
+            Ok(()) => tracing::info!("prewarm: job {jid} rubric vectors cached"),
+            Err(e) => tracing::warn!("prewarm: job {jid}: {e}"),
         }
     });
 }
@@ -482,8 +482,8 @@ pub fn prewarm_all_rubric_inputs(rt: &Arc<EngineRuntime>, job_ids: Vec<String>) 
         }
         for jid in &job_ids {
             match prewarm_job_blocking(&rt, jid) {
-                Ok(()) => log::info!("prewarm: job {jid} rubric vectors cached"),
-                Err(e) => log::warn!("prewarm: job {jid}: {e}"),
+                Ok(()) => tracing::info!("prewarm: job {jid} rubric vectors cached"),
+                Err(e) => tracing::warn!("prewarm: job {jid}: {e}"),
             }
         }
         PREWARM_IN_FLIGHT
@@ -774,7 +774,7 @@ fn embed_missing_candidates_filtered(
                 Ok(true) => done += 1,
                 Ok(false) => failed += 1,
                 Err(e) => {
-                    log::warn!("embed: candidate {cid} failed: {e}");
+                    tracing::warn!("embed: candidate {cid} failed: {e}");
                     failed += 1;
                 }
             }
@@ -787,7 +787,9 @@ fn embed_missing_candidates_filtered(
     }
 
     progress(done, total, failed, false);
-    log::info!("embed: job {job_id}: {done} embedded ({from_cache} from cache), {failed} failed");
+    tracing::info!(
+        "embed: job {job_id}: {done} embedded ({from_cache} from cache), {failed} failed"
+    );
     Ok((done, failed))
 }
 
@@ -808,7 +810,7 @@ fn persist_chunked_candidate(
 ) -> Result<bool, DomainError> {
     let c = centroid(&stored.iter().map(|c| c.vector.clone()).collect::<Vec<_>>());
     if !vector_is_sane(&c) {
-        log::warn!("embed: candidate {cid} centroid failed sanity check");
+        tracing::warn!("embed: candidate {cid} centroid failed sanity check");
         return Ok(false);
     }
     store_candidate_chunks(conn, cid, model, &stored)?;
@@ -886,7 +888,7 @@ fn store_candidate_plain_from_cache_only(
         message: format!("bad cached vector: {e}"),
     })?;
     if !vector_is_sane(&v) {
-        log::warn!("embed: candidate {cid} failed sanity check (empty or all-zero)");
+        tracing::warn!("embed: candidate {cid} failed sanity check (empty or all-zero)");
         return Ok(Some(false));
     }
     *from_cache += 1;
@@ -971,7 +973,7 @@ fn embed_candidate_chunked(
         }
         for (&i, v) in batch.iter().zip(vecs) {
             if !vector_is_sane(&v) {
-                log::warn!(
+                tracing::warn!(
                     "embed: candidate {cid} chunk {i} failed sanity check (empty or all-zero)"
                 );
                 return Ok(false);
@@ -1048,7 +1050,7 @@ fn embed_candidate_plain(
         }
     };
     if !vector_is_sane(&v) {
-        log::warn!("embed: candidate {cid} failed sanity check (empty or all-zero)");
+        tracing::warn!("embed: candidate {cid} failed sanity check (empty or all-zero)");
         return Ok(false);
     }
     if let Some(h) = key {

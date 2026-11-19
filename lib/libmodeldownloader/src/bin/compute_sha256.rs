@@ -1,10 +1,12 @@
-use libmodeldownloader::{UrlDownload, download_url, cli::Cli, cli::Artifact, Downloader};
-use std::path::PathBuf;
+use libmodeldownloader::{cli::Artifact, cli::Cli, download_url, Downloader, UrlDownload};
 use sha2::{Digest, Sha256};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let model_dir = PathBuf::from("/Users/apple1/Documents/repo/act/ik/activeik/talentrankiq/target/release/model_cache");
+    let model_dir = PathBuf::from(
+        "/Users/apple1/Documents/repo/act/ik/activeik/talentrankiq/target/release/model_cache",
+    );
     std::fs::create_dir_all(&model_dir)?;
 
     let artifacts = vec![
@@ -21,7 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for (slug, backend, quantization, primary_file, url_or_source, is_hf_source) in artifacts {
         println!("=== Downloading {} {} {} ===", slug, backend, quantization);
-        
+
         let path = if is_hf_source {
             // Use HF source mode (CLI mode) for MLX
             let cli = Cli {
@@ -36,13 +38,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 dry_run: false,
                 files: vec![],
                 extra_files: vec![],
-                artifact: if backend == "mlx" { Artifact::Mlx } else { Artifact::Onnx },
+                artifact: if backend == "mlx" {
+                    Artifact::Mlx
+                } else {
+                    Artifact::Onnx
+                },
                 sha256: None,
                 verbose: false,
                 logfile: None,
             };
-            let path = Downloader::run_with_progress(cli, Some(Arc::new(Mutex::new(|ev| {
-                match ev {
+            let path = Downloader::run_with_progress(
+                cli,
+                Some(Arc::new(Mutex::new(|ev| match ev {
                     libmodeldownloader::DownloadEvent::Finished { ref file, .. } => {
                         println!("  Downloaded: {}", file);
                     }
@@ -50,26 +57,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         println!("  Cached: {} ({} bytes)", file, bytes);
                     }
                     _ => {}
-                }
-            }))))?;
+                }))),
+            )?;
             path
         } else {
             // Use URL mode for ONNX
             let req = UrlDownload::new(url_or_source, slug, model_dir.clone(), None);
-            download_url(req, |ev| {
-                match ev {
-                    libmodeldownloader::DownloadEvent::Finished { file, .. } => {
-                        println!("  Downloaded: {}", file);
-                    }
-                    libmodeldownloader::DownloadEvent::Cached { file, bytes } => {
-                        println!("  Cached: {} ({} bytes)", file, bytes);
-                    }
-                    _ => {}
+            download_url(req, |ev| match ev {
+                libmodeldownloader::DownloadEvent::Finished { file, .. } => {
+                    println!("  Downloaded: {}", file);
                 }
+                libmodeldownloader::DownloadEvent::Cached { file, bytes } => {
+                    println!("  Cached: {} ({} bytes)", file, bytes);
+                }
+                _ => {}
             })?
         };
 
-// Find the downloaded file
+        // Find the downloaded file
         let file_path = if backend == "mlx" {
             // CLI mode returns the main directory directly
             path.join(primary_file)
@@ -77,14 +82,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // URL mode returns the slug directory
             path.join("repo").join("onnx").join(primary_file)
         };
-        
+
         if file_path.exists() {
             let bytes = std::fs::read(&file_path)?;
             let mut hasher = Sha256::new();
             hasher.update(&bytes);
             let sha256 = hex::encode(hasher.finalize());
             println!("  SHA256: {}", sha256);
-            
+
             // Also print fields for easy config.rs update
             println!("  URL/Source: {}", url_or_source);
             println!("  slug: {}", slug);

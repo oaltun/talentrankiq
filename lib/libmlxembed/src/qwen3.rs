@@ -5,7 +5,7 @@
 //! --pooling last` at cosine 0.999999 on harrier-mlx-600m, and runs at 45.7
 //! texts/s against 1.56 texts/s for our ONNX CPU path — 29×.
 
-use mlxcel_core::layers::{FusedQKVLinear, RMSNorm, UnifiedEmbedding, UnifiedLinear, attention};
+use mlxcel_core::layers::{attention, FusedQKVLinear, RMSNorm, UnifiedEmbedding, UnifiedLinear};
 use mlxcel_core::weights::WeightMap;
 use mlxcel_core::{MlxArray, UniquePtr};
 
@@ -108,12 +108,7 @@ impl Mlp {
                 c.group_size,
                 c.bits,
             )?,
-            up: UnifiedLinear::from_weights(
-                w,
-                &format!("{prefix}.up_proj"),
-                c.group_size,
-                c.bits,
-            )?,
+            up: UnifiedLinear::from_weights(w, &format!("{prefix}.up_proj"), c.group_size, c.bits)?,
             down: UnifiedLinear::from_weights(
                 w,
                 &format!("{prefix}.down_proj"),
@@ -165,11 +160,7 @@ impl Qwen3Encoder {
     }
 
     /// `[B, L]` ids + mask -> `[B, L, H]` hidden states (no head).
-    pub fn forward_hidden(
-        &self,
-        ids: &MlxArray,
-        mask: Option<&MlxArray>,
-    ) -> UniquePtr<MlxArray> {
+    pub fn forward_hidden(&self, ids: &MlxArray, mask: Option<&MlxArray>) -> UniquePtr<MlxArray> {
         let mut h = self.embed.forward(ids);
         for layer in &self.layers {
             let normed = layer.input_norm.forward(&h);

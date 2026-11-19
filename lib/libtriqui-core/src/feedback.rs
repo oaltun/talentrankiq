@@ -139,7 +139,9 @@ pub fn apply_feedback_blocking(
     baseline_order.sort_by_key(|id| rank_of.get(id).copied().unwrap_or(i32::MAX));
     let liked_set: HashSet<&String> = liked_candidate_ids.iter().collect();
     let has_signal = valid != baseline_order
-        || liked_candidate_ids.iter().any(|id| !stored_liked.contains(id))
+        || liked_candidate_ids
+            .iter()
+            .any(|id| !stored_liked.contains(id))
         || stored_liked.iter().any(|id| !liked_set.contains(id));
     let has_signal = has_signal && !id_set.is_empty();
 
@@ -176,13 +178,12 @@ pub fn apply_feedback_blocking(
             .filter_map(|id| vectors.get(id).map(|v| v.as_slice()))
             .collect();
 
-        let delta = ranker::compute_feedback_delta(
-            &baseline, &staged, &added_vecs, &removed_vecs, dim,
-        );
-        let mut efb = learned_feedback(&conn, job_id, space, dim, true)
-            .unwrap_or_else(|| vec![0.0; dim]);
-        let mut eprof = learned_feedback(&conn, job_id, space, dim, false)
-            .unwrap_or_else(|| vec![0.0; dim]);
+        let delta =
+            ranker::compute_feedback_delta(&baseline, &staged, &added_vecs, &removed_vecs, dim);
+        let mut efb =
+            learned_feedback(&conn, job_id, space, dim, true).unwrap_or_else(|| vec![0.0; dim]);
+        let mut eprof =
+            learned_feedback(&conn, job_id, space, dim, false).unwrap_or_else(|| vec![0.0; dim]);
         add_weighted(&mut efb, &delta.ejobfeedback, 1.0);
         add_weighted(&mut eprof, &delta.eprofile, 1.0);
         normalize(&mut efb);
@@ -197,7 +198,9 @@ pub fn apply_feedback_blocking(
     drop(conn);
 
     if !learned_any {
-        log::info!("feedback: job {job_id} has no vectors in any space — flags persisted, nothing learned");
+        tracing::info!(
+            "feedback: job {job_id} has no vectors in any space — flags persisted, nothing learned"
+        );
     }
     // The learned rows are new *questions* for the projection: a vector alone does
     // not put a column on the sheet, the grade does. Re-score every space that
@@ -211,7 +214,7 @@ pub fn apply_feedback_blocking(
         crate::rescore::score_live_spaces(&conn, job_id, &heavy, scout_space.as_deref())?;
     }
     let report = crate::rescore::rescore(rt, job_id)?;
-    log::info!(
+    tracing::info!(
         "feedback: job {job_id} rescored ({} candidates, {} judged) across {} space(s)",
         report.scored,
         report.judged,

@@ -86,7 +86,7 @@ pub fn available_memory(total: u64) -> u64 {
             if let Some(bytes) = available_from_vm_stat(&out, total) {
                 return bytes;
             }
-            log::warn!("vm_stat unreadable; falling back to sysinfo available_memory");
+            tracing::warn!("vm_stat unreadable; falling back to sysinfo available_memory");
         }
     }
     let mut sys = sysinfo::System::new_all();
@@ -97,7 +97,7 @@ pub fn available_memory(total: u64) -> u64 {
     // would hide real pressure, so say "critically low" and let the caller's
     // own pressure logic act on it.
     if v == 0 {
-        log::warn!("available_memory() returned zero; treating as critically low");
+        tracing::warn!("available_memory() returned zero; treating as critically low");
         return 1;
     }
     v.min(total.max(1))
@@ -172,7 +172,10 @@ mod tests {
         // The regression guard: a zero here is exactly what pinned the budget
         // policy at Hold, and nothing else in the suite would have noticed.
         let got = available_memory(TOTAL);
-        assert!(got > 0, "sysinfo reports zero again; that is the bug prevented here");
+        assert!(
+            got > 0,
+            "sysinfo reports zero again; that is the bug prevented here"
+        );
         assert!(got <= TOTAL);
     }
 }

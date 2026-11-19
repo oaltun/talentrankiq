@@ -160,12 +160,12 @@ impl State {
 
     fn wrapper_for(&mut self, runtime: Runtime) -> Result<&mut Wrapper> {
         if !self.wrappers.contains_key(&runtime) {
-            log::debug!(
+            tracing::debug!(
                 "ensure_wrapper: spawning in-process {} wrapper",
                 runtime.as_str()
             );
             let w = Wrapper::spawn(runtime)?;
-            log::debug!("ensure_wrapper: {} wrapper spawned", runtime.as_str());
+            tracing::debug!("ensure_wrapper: {} wrapper spawned", runtime.as_str());
             self.wrappers.insert(runtime, w);
         }
         Ok(self.wrappers.get_mut(&runtime).expect("just inserted"))
@@ -299,12 +299,12 @@ impl<W: Write> ResponseCtx<W> {
 fn stdio_loop(mut state: State, input: impl BufRead, output: impl Write) -> Result<()> {
     let mut ctx = ResponseCtx::new(output);
 
-    log::info!("modelcaller 0.1.0 starting (stdio mode)");
-    log::debug!("model_dir: {}", state.model_dir.display());
-    log::debug!("revision: {}", state.revision);
-    log::debug!("exec_provider: {}", state.exec_provider);
-    log::debug!("precision: {}", state.precision);
-    log::debug!("verbose: {}", state.verbose);
+    tracing::info!("modelcaller 0.1.0 starting (stdio mode)");
+    tracing::debug!("model_dir: {}", state.model_dir.display());
+    tracing::debug!("revision: {}", state.revision);
+    tracing::debug!("exec_provider: {}", state.exec_provider);
+    tracing::debug!("precision: {}", state.precision);
+    tracing::debug!("verbose: {}", state.verbose);
 
     let mut lines = input.lines();
     while let Some(Ok(line)) = lines.next() {
@@ -312,25 +312,25 @@ fn stdio_loop(mut state: State, input: impl BufRead, output: impl Write) -> Resu
             Some(prefix) if line.len() > 200 => format!("{}... ({} bytes)", prefix, line.len()),
             _ => line.clone(),
         };
-        log::debug!("stdin_loop: received line: {}", preview);
-        log::debug!("stdin_loop: parsing JSON line...");
+        tracing::debug!("stdin_loop: received line: {}", preview);
+        tracing::debug!("stdin_loop: parsing JSON line...");
         let request = match Envelope::parse_line(&line) {
             Ok(e) => e,
             Err(e) => {
-                log::debug!("stdin_loop: parse error: {}", e);
+                tracing::debug!("stdin_loop: parse error: {}", e);
                 ctx.write(&Envelope::error(None, "bad_req", e));
-                log::debug!("stdin_loop: writing error response");
+                tracing::debug!("stdin_loop: writing error response");
                 continue;
             }
         };
-        log::debug!(
+        tracing::debug!(
             "stdin_loop: parsed successfully, id={}, type={}",
             request.id.clone().unwrap_or_default(),
             request.r#type
         );
         let req_id = request.id.clone().unwrap_or_default();
         if request.r#type != "request" {
-            log::debug!(
+            tracing::debug!(
                 "stdin_loop: expected type 'request', got '{}', sending error",
                 request.r#type
             );
@@ -341,29 +341,29 @@ fn stdio_loop(mut state: State, input: impl BufRead, output: impl Write) -> Resu
             ));
             continue;
         }
-        log::debug!("stdin_loop: dispatching to handle_request");
+        tracing::debug!("stdin_loop: dispatching to handle_request");
         let result = handle_request(&mut state, &request.payload);
-        log::debug!("stdin_loop: handle_request returned");
+        tracing::debug!("stdin_loop: handle_request returned");
         let (env, is_shutdown) = match result {
             Ok(payload) => {
                 let shutdown = payload.get("shutdown_ok").is_some();
                 (Envelope::response(&req_id, payload), shutdown)
             }
             Err(e) => {
-                log::error!("{}", e);
+                tracing::error!("{}", e);
                 (Envelope::error(request.id.as_deref(), e.code, e.msg), false)
             }
         };
-        log::debug!("stdin_loop: writing response to stdout");
+        tracing::debug!("stdin_loop: writing response to stdout");
         ctx.write(&env);
-        log::debug!("stdin_loop: response written");
+        tracing::debug!("stdin_loop: response written");
         if is_shutdown {
             break;
         }
     }
 
     for (_, w) in state.wrappers.iter_mut() {
-        log::debug!("stdin_loop: killing wrapper thread");
+        tracing::debug!("stdin_loop: killing wrapper thread");
         w.kill();
         // Drain before returning: the loop may end while the wrapper thread
         // is still inside a request (a session load takes seconds), and a
@@ -371,12 +371,12 @@ fn stdio_loop(mut state: State, input: impl BufRead, output: impl Write) -> Resu
         // (observed as a SIGSEGV inside CreateSession). Bounded so a wedged
         // wrapper delays shutdown without ever hanging it.
         if w.wait_exited(Duration::from_secs(120)) {
-            log::debug!("stdin_loop: wrapper thread exited");
+            tracing::debug!("stdin_loop: wrapper thread exited");
         } else {
-            log::warn!("stdin_loop: wrapper thread still running after 120s, giving up");
+            tracing::warn!("stdin_loop: wrapper thread still running after 120s, giving up");
         }
     }
-    log::info!("modelcaller shutting down");
+    tracing::info!("modelcaller shutting down");
     Ok(())
 }
 
@@ -386,65 +386,65 @@ fn handle_request(state: &mut State, payload: &Value) -> Result<Value> {
         .and_then(|v| v.as_str())
         .ok_or_else(|| ModelError::bad_req("missing 'cmd' field"))?;
 
-    log::debug!("handle_request: cmd = {}", cmd);
+    tracing::debug!("handle_request: cmd = {}", cmd);
 
     match cmd {
         "ping" => {
-            log::debug!("handle_request: ping -> ok");
+            tracing::debug!("handle_request: ping -> ok");
             Ok(json!({ "ok": true, "version": "0.1.0" }))
         }
         "shutdown" => {
-            log::debug!("handle_request: shutdown -> ensuring wrapper");
+            tracing::debug!("handle_request: shutdown -> ensuring wrapper");
             let _ = state.ensure_wrapper().map(|w| {
-                log::debug!("handle_request: sending shutdown to wrapper");
+                tracing::debug!("handle_request: sending shutdown to wrapper");
                 let _ = w.send(json!({ "cmd": "shutdown" }));
             });
             Ok(json!({ "ok": true, "shutdown_ok": true }))
         }
         "probe" => {
-            log::debug!("handle_request: probe -> ensure_wrapper");
+            tracing::debug!("handle_request: probe -> ensure_wrapper");
             let w = state.ensure_wrapper()?;
-            log::debug!("handle_request: probe -> sending to wrapper");
+            tracing::debug!("handle_request: probe -> sending to wrapper");
             Ok(w.send(json!({ "cmd": "probe" }))?)
         }
         "load" => {
-            log::debug!("handle_request: load -> cmd_load");
+            tracing::debug!("handle_request: load -> cmd_load");
             cmd_load(state, payload)
         }
         "unload" => {
-            log::debug!("handle_request: unload -> cmd_unload");
+            tracing::debug!("handle_request: unload -> cmd_unload");
             cmd_unload(state, payload)
         }
         "embed" => {
-            log::debug!("handle_request: embed -> cmd_embed");
+            tracing::debug!("handle_request: embed -> cmd_embed");
             cmd_embed(state, payload)
         }
         "rerank" => {
-            log::debug!("handle_request: rerank -> cmd_rerank");
+            tracing::debug!("handle_request: rerank -> cmd_rerank");
             cmd_rerank(state, payload)
         }
         "discover_schema" => {
-            log::debug!("handle_request: discover_schema -> cmd_discover_schema");
+            tracing::debug!("handle_request: discover_schema -> cmd_discover_schema");
             cmd_discover_schema(state, payload)
         }
         "extract_constrained" => {
-            log::debug!("handle_request: extract_constrained -> cmd_extract_constrained");
+            tracing::debug!("handle_request: extract_constrained -> cmd_extract_constrained");
             cmd_extract_constrained(state, payload)
         }
         "models" => {
-            log::debug!("handle_request: models -> cmd_models");
+            tracing::debug!("handle_request: models -> cmd_models");
             cmd_models(state, payload)
         }
         "list" => {
-            log::debug!("handle_request: list -> cmd_list");
+            tracing::debug!("handle_request: list -> cmd_list");
             cmd_list(state, payload)
         }
         "recommend" => {
-            log::debug!("handle_request: recommend -> cmd_recommend");
+            tracing::debug!("handle_request: recommend -> cmd_recommend");
             cmd_recommend(state, payload)
         }
         _ => {
-            log::debug!(
+            tracing::debug!(
                 "handle_request: unknown cmd '{}', forwarding to wrapper",
                 cmd
             );
@@ -491,7 +491,9 @@ fn model_artifact_path(state: &State, record: &ResolvedModel, runtime: Runtime) 
                 .artifacts
                 .iter()
                 .find(|a| a.backend == libconfigreader::Backend::Ort)
-                .ok_or_else(|| ModelError::load_err(format!("{} has no ONNX artifact", record.slug)))?;
+                .ok_or_else(|| {
+                    ModelError::load_err(format!("{} has no ONNX artifact", record.slug))
+                })?;
             model_onnx_path(state, &record.slug)
         }
         Runtime::Mlx => {
@@ -499,8 +501,11 @@ fn model_artifact_path(state: &State, record: &ResolvedModel, runtime: Runtime) 
                 .artifacts
                 .iter()
                 .find(|a| a.backend == libconfigreader::Backend::Mlx)
-                .ok_or_else(|| ModelError::load_err(format!("{} has no mlx variant", record.slug)))?;
-            let dir = libmodelstorage::slug_dir(&state.model_dir, &record.slug).join(&state.revision);
+                .ok_or_else(|| {
+                    ModelError::load_err(format!("{} has no mlx variant", record.slug))
+                })?;
+            let dir =
+                libmodelstorage::slug_dir(&state.model_dir, &record.slug).join(&state.revision);
             if !libmodelstorage::local_size(&dir.join("model.safetensors")).is_some() {
                 return Err(ModelError::no_model(&record.slug));
             }
@@ -549,7 +554,7 @@ fn resolve_runtime_setting(
         .iter()
         .any(|a| a.backend == libconfigreader::Backend::Mlx);
     if !has_mlx {
-        log::debug!(
+        tracing::debug!(
             "backend: {} has no mlx variant declared; serving it on ort",
             record.slug
         );
@@ -564,7 +569,7 @@ fn resolve_runtime_setting(
                 record.slug
             )));
         }
-        log::info!(
+        tracing::info!(
             "backend: this build has no MLX arm; serving '{}' on ort",
             record.slug
         );
@@ -620,10 +625,10 @@ pub fn variant_status(
 }
 
 fn model_onnx_path(state: &State, model: &str) -> Result<PathBuf> {
-    log::debug!("model_onnx_path: looking up model '{}'", model);
+    tracing::debug!("model_onnx_path: looking up model '{}'", model);
     match resolve_onnx(&state.model_dir, model, &state.revision) {
         Ok(res) => {
-            log::debug!(
+            tracing::debug!(
                 "model_onnx_path: found onnx at {} ({:?})",
                 res.path().display(),
                 res
@@ -631,15 +636,15 @@ fn model_onnx_path(state: &State, model: &str) -> Result<PathBuf> {
             Ok(res.path().to_path_buf())
         }
         Err(ResolveError::NotFound) => {
-            log::debug!("model_onnx_path: no model found");
+            tracing::debug!("model_onnx_path: no model found");
             Err(ModelError::no_model(model))
         }
         Err(ResolveError::Ambiguous(msg)) => {
-            log::debug!("model_onnx_path: ambiguous: {}", msg);
+            tracing::debug!("model_onnx_path: ambiguous: {}", msg);
             Err(ModelError::ambiguous_onnx(&msg))
         }
         Err(ResolveError::Io(msg)) => {
-            log::debug!("model_onnx_path: io error: {}", msg);
+            tracing::debug!("model_onnx_path: io error: {}", msg);
             Err(ModelError::load_err(msg))
         }
     }
@@ -647,20 +652,20 @@ fn model_onnx_path(state: &State, model: &str) -> Result<PathBuf> {
 
 fn load_into(state: &mut State, model: &str) -> Result<u64> {
     if let Some(lm) = state.loaded.get(model) {
-        log::debug!(
+        tracing::debug!(
             "load_into: model '{}' already loaded (session={})",
             model,
             lm.session
         );
         return Ok(lm.session);
     }
-    log::debug!("load_into: starting to load model {}", model);
-    log::info!("starting loading model {}", model);
+    tracing::debug!("load_into: starting to load model {}", model);
+    tracing::info!("starting loading model {}", model);
 
     let record = resolve_model(state, model)?;
     let runtime = state.resolve_runtime(&record)?;
     let artifact = model_artifact_path(state, &record, runtime)?;
-    log::info!(
+    tracing::info!(
         "loading '{}' on the {} arm ({})",
         record.slug,
         runtime.as_str(),
@@ -671,7 +676,7 @@ fn load_into(state: &mut State, model: &str) -> Result<u64> {
         state.wrapper_load_payload(&artifact, runtime, record.max_context_window as usize);
     let resp = {
         let w = state.wrapper_for(runtime)?;
-        log::debug!(
+        tracing::debug!(
             "load_into: sending load request to the {} wrapper",
             runtime.as_str()
         );
@@ -694,19 +699,19 @@ fn load_into(state: &mut State, model: &str) -> Result<u64> {
         })
         .unwrap_or(runtime);
     if served != runtime {
-        log::warn!(
+        tracing::warn!(
             "arm mismatch: asked {} for '{}', it reported {}",
             runtime.as_str(),
             record.slug,
             served.as_str()
         );
     }
-    log::debug!(
+    tracing::debug!(
         "load_into: model '{}' loaded with session {}",
         model,
         session
     );
-    log::info!("ended loading model {}", model);
+    tracing::info!("ended loading model {}", model);
 
     let global = state.alloc_session(served, session);
     state.loaded.insert(
@@ -724,13 +729,13 @@ fn cmd_load(state: &mut State, payload: &Value) -> Result<Value> {
     let model = require_model(payload)?;
     let record = resolve_model(state, model)?;
     let runtime = state.resolve_runtime(&record)?;
-    
+
     // The artifact must already be on disk; models are downloaded explicitly
     // through the Models page, never auto-fetched during a load.
     if !model_artifact_exists(state, &record, runtime) {
         return Err(ModelError::no_model(model));
     }
-    
+
     let artifact = model_artifact_path(state, &record, runtime)?;
     let load = state.wrapper_load_payload(&artifact, runtime, record.max_context_window as usize);
     let resp = {
@@ -786,14 +791,14 @@ fn cmd_unload(state: &mut State, payload: &Value) -> Result<Value> {
 }
 
 fn cmd_embed(state: &mut State, payload: &Value) -> Result<Value> {
-    log::debug!("cmd_embed: extracting model and texts from payload");
+    tracing::debug!("cmd_embed: extracting model and texts from payload");
     let model = payload.get("model").and_then(|v| v.as_str());
-    log::debug!("cmd_embed: model specified: {:?}", model);
+    tracing::debug!("cmd_embed: model specified: {:?}", model);
 
     let model_str = model.ok_or_else(|| ModelError::bad_req("missing 'model' field"))?;
     let record = resolve_model(state, model_str)?;
     ensure_kind(&record, &["embedder", "reranker"], "embed")?;
-    log::debug!(
+    tracing::debug!(
         "cmd_embed: resolved model='{}', dim={}, usage='{}'",
         record.slug,
         record.dim,
@@ -834,7 +839,7 @@ fn cmd_embed(state: &mut State, payload: &Value) -> Result<Value> {
         raw_texts
     };
 
-    log::debug!("cmd_embed: {} texts to embed", formatted.len());
+    tracing::debug!("cmd_embed: {} texts to embed", formatted.len());
     if formatted.is_empty() {
         let mut empty = json!({ "model": record.slug, "dim": record.dim, "usage": record.usage, "embeddings": [] });
         if record.multi_vector {
@@ -861,10 +866,10 @@ fn cmd_embed(state: &mut State, payload: &Value) -> Result<Value> {
     }
 
     let (runtime, arm_handle) = state.arm_session(session)?;
-    log::debug!("cmd_embed: sending embed to the {} arm", runtime.as_str());
+    tracing::debug!("cmd_embed: sending embed to the {} arm", runtime.as_str());
     let resp = {
         let w = state.wrapper_for(runtime)?;
-        log::debug!(
+        tracing::debug!(
             "cmd_embed: sending embed request to wrapper: session={}, {} texts",
             arm_handle,
             formatted.len()
@@ -876,7 +881,7 @@ fn cmd_embed(state: &mut State, payload: &Value) -> Result<Value> {
             "opts": opts,
         }))?
     };
-    log::debug!("cmd_embed: received embed response from wrapper");
+    tracing::debug!("cmd_embed: received embed response from wrapper");
     let mut resp = resp;
     resp["model"] = json!(record.slug);
     resp["dim"] = json!(record.dim);
@@ -1295,9 +1300,9 @@ fn clamp_schema(repaired: &str) -> Result<libcvevidence::ExtractionSchema> {
 }
 
 fn cmd_models(state: &State, payload: &Value) -> Result<Value> {
-    log::debug!("cmd_models: called");
+    tracing::debug!("cmd_models: called");
     let filter = payload.get("model").and_then(|v| v.as_str());
-    log::debug!("cmd_models: filter = {:?}", filter);
+    tracing::debug!("cmd_models: filter = {:?}", filter);
     let mut out = Vec::new();
     for m in state.registry.all() {
         if let Some(f) = filter {
@@ -1310,11 +1315,11 @@ fn cmd_models(state: &State, payload: &Value) -> Result<Value> {
     }
     if let Some(f) = filter {
         if out.is_empty() {
-            log::debug!("cmd_models: model '{}' not found in registry", f);
+            tracing::debug!("cmd_models: model '{}' not found in registry", f);
             return Err(ModelError::no_model(f));
         }
     }
-    log::debug!("cmd_models: returning {} models", out.len());
+    tracing::debug!("cmd_models: returning {} models", out.len());
     Ok(json!({ "models": out }))
 }
 

@@ -42,7 +42,7 @@ use crate::rubric::{self, Rubric, AD_Q};
 use crate::runtime::EngineRuntime;
 use crate::scout;
 use crate::types::{
-    ChunkExplanation, DomainError, QuestionKind, RubricScore, TriqiItem, SortReport,
+    ChunkExplanation, DomainError, QuestionKind, RubricScore, SortReport, TriqiItem,
 };
 
 /// Question id of the judge's win-rate row — the judge's own, so the heavy
@@ -170,15 +170,19 @@ pub fn rescore_in_spaces(
         };
         let (space, rubric, grades) = match (&heavy_fit, &scout_rubric) {
             (Some(_), _) => (heavy.as_str(), &heavy_rubric, &heavy_grades),
-            (None, Some(r)) if r.vector(AD_Q, scout_space.as_deref().unwrap_or("")).is_some() => (
-                scout_space.as_deref().unwrap_or_default(),
-                r,
-                &scout_grades,
-            ),
+            (None, Some(r))
+                if r.vector(AD_Q, scout_space.as_deref().unwrap_or(""))
+                    .is_some() =>
+            {
+                (scout_space.as_deref().unwrap_or_default(), r, &scout_grades)
+            }
             _ => (heavy.as_str(), &heavy_rubric, &heavy_grades),
         };
         let space_fit = grades.get(&(cid.clone(), AD_Q.to_string())).copied();
-        let judged = judge_grades.get(cid).copied().filter(|w| (0.0..=1.0).contains(w));
+        let judged = judge_grades
+            .get(cid)
+            .copied()
+            .filter(|w| (0.0..=1.0).contains(w));
         let Some(fit) = judged.or(space_fit) else {
             report.ungraded += 1;
             continue;
@@ -202,8 +206,7 @@ pub fn rescore_in_spaces(
                 continue;
             };
             sims.insert(q.id.clone(), sim);
-            let explanations =
-                explanations_for(conn, cid, space, &q.id, 2).map_err(dberr)?;
+            let explanations = explanations_for(conn, cid, space, &q.id, 2).map_err(dberr)?;
             scores.push(RubricScore {
                 question_id: q.id.clone(),
                 label: q.label.clone(),
@@ -297,7 +300,6 @@ pub fn rescore_in_spaces(
     Ok(report)
 }
 
-
 /// Any DB-layer error (a `rusqlite::Error` or a plain message) into the domain
 /// error, so callers do not have to care which a helper returned.
 fn dberr(e: impl std::fmt::Display) -> DomainError {
@@ -344,10 +346,7 @@ fn target_candidates(
 
 /// The judge's win-rate for each of `ids`, read from the `candidate_scores` rows
 /// the judge stage owns (`points / max_points` **is** the win-rate).
-fn judge_grades(
-    conn: &Connection,
-    ids: &[String],
-) -> Result<HashMap<String, f64>, DomainError> {
+fn judge_grades(conn: &Connection, ids: &[String]) -> Result<HashMap<String, f64>, DomainError> {
     let mut out = HashMap::new();
     if ids.is_empty() {
         return Ok(out);
@@ -360,8 +359,7 @@ fn judge_grades(
          WHERE question_id = '{JUDGE_Q}' AND candidate_id IN ({holes})"
     );
     let mut stmt = conn.prepare(&sql).map_err(dberr)?;
-    let params: Vec<&dyn rusqlite::ToSql> =
-        ids.iter().map(|i| i as &dyn rusqlite::ToSql).collect();
+    let params: Vec<&dyn rusqlite::ToSql> = ids.iter().map(|i| i as &dyn rusqlite::ToSql).collect();
     let rows = stmt
         .query_map(params.as_slice(), |r| {
             Ok((r.get::<_, String>(0)?, r.get::<_, Option<f64>>(1)?))
@@ -668,10 +666,7 @@ fn triqui_item_from_row(row: &rusqlite::Row) -> rusqlite::Result<TriqiItem> {
 /// Ordering by the persisted total — one indexed column — is what makes wave
 /// selection O(N) integer compares instead of O(N · questions) float work, and it
 /// is the score the user actually sees.
-pub fn best_order(
-    conn: &Connection,
-    job_id: &str,
-) -> Result<Vec<String>, DomainError> {
+pub fn best_order(conn: &Connection, job_id: &str) -> Result<Vec<String>, DomainError> {
     let mut stmt = conn
         .prepare(
             "SELECT id FROM candidates
@@ -700,7 +695,9 @@ pub fn candidates_needing_embed(
     }
     let ordered = best_order(conn, job_id)?;
     let mut stmt = conn
-        .prepare("SELECT 1 FROM candidate_chunks WHERE candidate_id = ?1 AND vector_model = ?2 LIMIT 1")
+        .prepare(
+            "SELECT 1 FROM candidate_chunks WHERE candidate_id = ?1 AND vector_model = ?2 LIMIT 1",
+        )
         .map_err(dberr)?;
     let mut out = Vec::with_capacity(limit.min(64));
     for cid in ordered {
@@ -721,7 +718,8 @@ pub fn candidates_needing_embed(
 pub fn count_needing_embed(
     conn: &Connection,
     job_id: &str,
-    heavy: &str) -> Result<i64, DomainError> {
+    heavy: &str,
+) -> Result<i64, DomainError> {
     conn.query_row(
         "SELECT COUNT(*) FROM candidates c
          WHERE c.job_id = ?1 AND c.extraction_status = 'Extracted' AND c.extracted_text IS NOT NULL
@@ -859,7 +857,11 @@ pub fn inputs_changed(
                 |r| r.get(0),
             )
             .ok();
-        if has_ad.as_deref().map(|t| t.trim().is_empty()).unwrap_or(true) {
+        if has_ad
+            .as_deref()
+            .map(|t| t.trim().is_empty())
+            .unwrap_or(true)
+        {
             conn.execute(
                 "DELETE FROM rubric_vectors
                  WHERE job_id = ?1 AND question_id = 'ad'",
@@ -927,8 +929,8 @@ pub fn score_live_spaces(
         if rubric.scored_questions(space).is_empty() {
             continue;
         }
-        scored += rubric::score_candidates_in_space(conn, job_id, space, &rubric, None)
-            .map_err(dberr)?;
+        scored +=
+            rubric::score_candidates_in_space(conn, job_id, space, &rubric, None).map_err(dberr)?;
     }
     Ok(scored)
 }
@@ -1144,7 +1146,10 @@ mod tests {
         // candidate — which is the property that used to require a "pending" tier.
         rescore(&c, "j1", None).unwrap();
         for cand in ["c1", "c2", "c3"] {
-            assert!(points_of(&c, cand).is_some(), "{cand} has a total after one pass");
+            assert!(
+                points_of(&c, cand).is_some(),
+                "{cand} has a total after one pass"
+            );
             let ids = question_ids(&c, cand);
             assert!(
                 ids.contains(&"crit_a".to_string()),
@@ -1188,11 +1193,19 @@ mod tests {
         let rubric = Rubric::with_vectors(&c, "j1", "scout-slug").unwrap();
         let mut sims = HashMap::new();
         sims.insert("crit_a".to_string(), 0.0);
-        assert_eq!(rubric.total(1.0, &sims), 50.0, "ad slot only when the criterion is 0");
+        assert_eq!(
+            rubric.total(1.0, &sims),
+            50.0,
+            "ad slot only when the criterion is 0"
+        );
 
         let mut sims = HashMap::new();
         sims.insert("crit_a".to_string(), 1.0);
-        assert_eq!(rubric.total(0.0, &sims), 10.0, "the criterion's full weight");
+        assert_eq!(
+            rubric.total(0.0, &sims),
+            10.0,
+            "the criterion's full weight"
+        );
         assert_eq!(rubric.capacity(), 60.0, "ad + one criterion");
     }
 
@@ -1261,11 +1274,16 @@ mod tests {
         assert_eq!(points_of(&c, "c1"), Some(40.0));
         assert_eq!(count_kind(&c, "c1", "AdJudge"), 1);
         let capacity: f64 = c
-            .query_row("SELECT points_max FROM candidates WHERE id = 'c1'", [], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT points_max FROM candidates WHERE id = 'c1'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
-        assert_eq!(capacity, 60.0, "the judge scales the ad slot, it does not add to it");
+        assert_eq!(
+            capacity, 60.0,
+            "the judge scales the ad slot, it does not add to it"
+        );
     }
 
     /// Ranking is global and stable: one candidate's new scorecard reorders the
@@ -1415,7 +1433,8 @@ mod tests {
         assert_eq!(slice.len(), 2);
         assert!(!slice.contains(&"c2".to_string()), "already embedded");
         assert_eq!(
-            slice[0], ranks(&c)[0],
+            slice[0],
+            ranks(&c)[0],
             "the best-scored candidate needing embedding comes first"
         );
         assert_eq!(count_needing_embed(&c, "j1", "heavy-slug").unwrap(), 2);
@@ -1434,8 +1453,11 @@ mod tests {
         candidate(&c, "j1", "c1");
         let report = rescore(&c, "j1", None).unwrap();
         assert_eq!(report.ungraded, 1);
-        assert_eq!(points_of(&c, "c1"), None, "no ad and no criteria means no total");
+        assert_eq!(
+            points_of(&c, "c1"),
+            None,
+            "no ad and no criteria means no total"
+        );
         assert!(ranks(&c).is_empty());
     }
-
 }

@@ -5,8 +5,13 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 const METRIC_FIELDS: &[&str] = &[
-    "ndcg_at_5", "ndcg_at_10", "ndcg_at_20",
-    "recall_at_10", "recall_at_20", "map", "spearman",
+    "ndcg_at_5",
+    "ndcg_at_10",
+    "ndcg_at_20",
+    "recall_at_10",
+    "recall_at_20",
+    "map",
+    "spearman",
 ];
 
 const METRIC_LABELS: &[(&str, &str)] = &[
@@ -69,10 +74,7 @@ mod timestamp_serde {
     use serde::{Deserialize, Deserializer, Serializer};
 
     pub fn serialize<S: Serializer>(t: &SystemTime, s: S) -> Result<S::Ok, S::Error> {
-        let dur = t
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        let dur = t.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
         s.serialize_u64(dur)
     }
 
@@ -120,8 +122,8 @@ fn config_key(config: &HashMap<String, serde_yaml::Value>) -> String {
         return String::new();
     }
     let mut parts: Vec<String> = config
-        .iter()
-        .map(|(_k, v)| match v {
+        .values()
+        .map(|v| match v {
             serde_yaml::Value::String(s) => s.clone(),
             _ => String::new(),
         })
@@ -133,11 +135,10 @@ fn config_key(config: &HashMap<String, serde_yaml::Value>) -> String {
 pub fn load_results(dir: &str) -> Result<Vec<LeaderboardEntry>, ResultError> {
     let mut all_entries: Vec<LeaderboardEntry> = Vec::new();
 
-    let entries_dir =
-        fs::read_dir(dir).map_err(|e| ResultError::ReadDir {
-            path: dir.to_string(),
-            source: e,
-        })?;
+    let entries_dir = fs::read_dir(dir).map_err(|e| ResultError::ReadDir {
+        path: dir.to_string(),
+        source: e,
+    })?;
 
     for entry in entries_dir {
         let entry = entry.map_err(|e| ResultError::ReadDir {
@@ -166,11 +167,7 @@ pub fn load_results(dir: &str) -> Result<Vec<LeaderboardEntry>, ResultError> {
         let doc: serde_yaml::Value = match serde_yaml::from_str(&content) {
             Ok(d) => d,
             Err(e) => {
-                log::warn!(
-                    "skipping unparseable YAML '{}': {}",
-                    path.display(),
-                    e
-                );
+                tracing::warn!("skipping unparseable YAML '{}': {}", path.display(), e);
                 continue;
             }
         };
@@ -243,7 +240,9 @@ pub fn load_results(dir: &str) -> Result<Vec<LeaderboardEntry>, ResultError> {
             .and_then(|c| c.get("total_wall_time_s"))
             .and_then(parse_f64)
             .unwrap_or(0.0);
-        let compute_time_s = cost.and_then(|c| c.get("compute_time_s")).and_then(parse_f64);
+        let compute_time_s = cost
+            .and_then(|c| c.get("compute_time_s"))
+            .and_then(parse_f64);
         let per_observation_mean_ms = cost
             .and_then(|c| c.get("per_observation_mean_ms"))
             .and_then(parse_f64)
@@ -507,13 +506,8 @@ pub fn generate_html(
                 .map(|d| format!("{:.3}", d.mean))
                 .unwrap_or_else(|| "-".to_string());
             let best = best_per_metric.get(field).copied().unwrap_or(0.0);
-            let is_best =
-                detail.is_some_and(|d| (d.mean - best).abs() < 1e-6 && best > 0.0);
-            let cell_class = if is_best {
-                " class=\"best\""
-            } else {
-                ""
-            };
+            let is_best = detail.is_some_and(|d| (d.mean - best).abs() < 1e-6 && best > 0.0);
+            let cell_class = if is_best { " class=\"best\"" } else { "" };
             cells.push_str(&format!("      <td{cell_class}>{val}</td>\n"));
         }
 
@@ -538,10 +532,7 @@ pub fn generate_html(
             "      <td>{}</td>\n",
             fmt_cost_s(cost.compute_time_s)
         ));
-        cells.push_str(&format!(
-            "      <td>{:.1}</td>\n",
-            cost.total_wall_time_s
-        ));
+        cells.push_str(&format!("      <td>{:.1}</td>\n", cost.total_wall_time_s));
         rows.push_str(&format!(
             "    <tr{row_class}>\n{cells}    </tr>\n\n",
             row_class = row_class,
@@ -723,11 +714,7 @@ pub fn generate_text_table(entries: &mut [LeaderboardEntry], sort_by: &str) -> S
 
     for entry in entries {
         let ndcg = entry.metrics.get("ndcg_at_10").copied().unwrap_or(0.0);
-        let recall = entry
-            .metrics
-            .get("recall_at_10")
-            .copied()
-            .unwrap_or(0.0);
+        let recall = entry.metrics.get("recall_at_10").copied().unwrap_or(0.0);
         let label = method_label(&entry.method, &entry.config);
         let marker = if entry.is_baseline { " *" } else { "" };
         let computed = entry
@@ -740,19 +727,14 @@ pub fn generate_text_table(entries: &mut [LeaderboardEntry], sort_by: &str) -> S
             .cached_observations
             .map(|n| n.to_string())
             .unwrap_or_else(|| "-".to_string());
-        let ms_computed = entry.cost.per_compute_observation_mean_ms
+        let ms_computed = entry
+            .cost
+            .per_compute_observation_mean_ms
             .map(|n| format!("{:.0}", n))
             .unwrap_or_else(|| "-".to_string());
         lines.push(format!(
             "{:<55} {:>8.3} {:>8.3} {:>4.1}s  comp:{} cached:{} ms/comp:{}{}",
-            label,
-            ndcg,
-            recall,
-            entry.display_time_s,
-            computed,
-            cached,
-            ms_computed,
-            marker
+            label, ndcg, recall, entry.display_time_s, computed, cached, ms_computed, marker
         ));
     }
 
@@ -768,120 +750,121 @@ pub fn generate_yaml(
     sort_entries(entries, sort_by);
     mark_baselines(entries, baseline);
 
-    let yaml_entries: Vec<serde_yaml::Value> = entries.iter().map(|e| {
-        let mut metrics_map = serde_yaml::Mapping::new();
-        for &(field, _) in METRIC_LABELS {
-            if let Some(detail) = e.metric_details.get(field) {
-                metrics_map.insert(
-                    serde_yaml::Value::String(field.to_string()),
-                    serde_yaml::Value::Mapping({
-                        let mut m = serde_yaml::Mapping::new();
-                        m.insert(
-                            serde_yaml::Value::String("mean".to_string()),
-                            serde_yaml::Value::String(format!("{:.4}", detail.mean)),
-                        );
-                        m.insert(
-                            serde_yaml::Value::String("median".to_string()),
-                            serde_yaml::Value::String(format!("{:.4}", detail.median)),
-                        );
-                        m.insert(
-                            serde_yaml::Value::String("std".to_string()),
-                            serde_yaml::Value::String(format!("{:.4}", detail.std)),
-                        );
-                        m.insert(
-                            serde_yaml::Value::String("iqr".to_string()),
-                            serde_yaml::Value::String(format!("{:.4}", detail.iqr)),
-                        );
-                        m.insert(
-                            serde_yaml::Value::String("ci_95_lower".to_string()),
-                            serde_yaml::Value::String(format!("{:.4}", detail.ci_lower)),
-                        );
-                        m.insert(
-                            serde_yaml::Value::String("ci_95_upper".to_string()),
-                            serde_yaml::Value::String(format!("{:.4}", detail.ci_upper)),
-                        );
-                        m
-                    }),
+    let yaml_entries: Vec<serde_yaml::Value> = entries
+        .iter()
+        .map(|e| {
+            let mut metrics_map = serde_yaml::Mapping::new();
+            for &(field, _) in METRIC_LABELS {
+                if let Some(detail) = e.metric_details.get(field) {
+                    metrics_map.insert(
+                        serde_yaml::Value::String(field.to_string()),
+                        serde_yaml::Value::Mapping({
+                            let mut m = serde_yaml::Mapping::new();
+                            m.insert(
+                                serde_yaml::Value::String("mean".to_string()),
+                                serde_yaml::Value::String(format!("{:.4}", detail.mean)),
+                            );
+                            m.insert(
+                                serde_yaml::Value::String("median".to_string()),
+                                serde_yaml::Value::String(format!("{:.4}", detail.median)),
+                            );
+                            m.insert(
+                                serde_yaml::Value::String("std".to_string()),
+                                serde_yaml::Value::String(format!("{:.4}", detail.std)),
+                            );
+                            m.insert(
+                                serde_yaml::Value::String("iqr".to_string()),
+                                serde_yaml::Value::String(format!("{:.4}", detail.iqr)),
+                            );
+                            m.insert(
+                                serde_yaml::Value::String("ci_95_lower".to_string()),
+                                serde_yaml::Value::String(format!("{:.4}", detail.ci_lower)),
+                            );
+                            m.insert(
+                                serde_yaml::Value::String("ci_95_upper".to_string()),
+                                serde_yaml::Value::String(format!("{:.4}", detail.ci_upper)),
+                            );
+                            m
+                        }),
+                    );
+                }
+            }
+
+            let mut entry_map = serde_yaml::Mapping::new();
+            entry_map.insert(
+                serde_yaml::Value::String("method".to_string()),
+                serde_yaml::Value::String(e.method.clone()),
+            );
+            if !e.config.is_empty() {
+                entry_map.insert(
+                    serde_yaml::Value::String("config".to_string()),
+                    serde_yaml::Value::Mapping(
+                        e.config
+                            .iter()
+                            .map(|(k, v)| (serde_yaml::Value::String(k.clone()), v.clone()))
+                            .collect(),
+                    ),
                 );
             }
-        }
-
-        let mut entry_map = serde_yaml::Mapping::new();
-        entry_map.insert(
-            serde_yaml::Value::String("method".to_string()),
-            serde_yaml::Value::String(e.method.clone()),
-        );
-        if !e.config.is_empty() {
             entry_map.insert(
-                serde_yaml::Value::String("config".to_string()),
-                serde_yaml::Value::Mapping(
-                    e.config
-                        .iter()
-                        .map(|(k, v)| {
-                            (serde_yaml::Value::String(k.clone()), v.clone())
-                        })
-                        .collect(),
-                ),
+                serde_yaml::Value::String("result_file".to_string()),
+                serde_yaml::Value::String(e.result_file.clone()),
             );
-        }
-        entry_map.insert(
-            serde_yaml::Value::String("result_file".to_string()),
-            serde_yaml::Value::String(e.result_file.clone()),
-        );
-        entry_map.insert(
-            serde_yaml::Value::String("metrics".to_string()),
-            serde_yaml::Value::Mapping(metrics_map),
-        );
-        if e.is_baseline {
             entry_map.insert(
-                serde_yaml::Value::String("is_baseline".to_string()),
-                serde_yaml::Value::Bool(true),
+                serde_yaml::Value::String("metrics".to_string()),
+                serde_yaml::Value::Mapping(metrics_map),
             );
-        }
-        entry_map.insert(
-            serde_yaml::Value::String("observations".to_string()),
-            serde_yaml::Value::Number(serde_yaml::Number::from(e.observations_count)),
-        );
-        let cost = &e.cost;
-        let mut cost_map = serde_yaml::Mapping::new();
-        cost_map.insert(
-            serde_yaml::Value::String("total_wall_time_s".to_string()),
-            serde_yaml::Value::String(format!("{:.1}", cost.total_wall_time_s)),
-        );
-        if let Some(v) = cost.compute_time_s {
+            if e.is_baseline {
+                entry_map.insert(
+                    serde_yaml::Value::String("is_baseline".to_string()),
+                    serde_yaml::Value::Bool(true),
+                );
+            }
+            entry_map.insert(
+                serde_yaml::Value::String("observations".to_string()),
+                serde_yaml::Value::Number(serde_yaml::Number::from(e.observations_count)),
+            );
+            let cost = &e.cost;
+            let mut cost_map = serde_yaml::Mapping::new();
             cost_map.insert(
-                serde_yaml::Value::String("compute_time_s".to_string()),
-                serde_yaml::Value::String(format!("{:.1}", v)),
+                serde_yaml::Value::String("total_wall_time_s".to_string()),
+                serde_yaml::Value::String(format!("{:.1}", cost.total_wall_time_s)),
             );
-        }
-        cost_map.insert(
-            serde_yaml::Value::String("per_observation_mean_ms".to_string()),
-            serde_yaml::Value::String(format!("{:.4}", cost.per_observation_mean_ms)),
-        );
-        if let Some(v) = cost.per_compute_observation_mean_ms {
+            if let Some(v) = cost.compute_time_s {
+                cost_map.insert(
+                    serde_yaml::Value::String("compute_time_s".to_string()),
+                    serde_yaml::Value::String(format!("{:.1}", v)),
+                );
+            }
             cost_map.insert(
-                serde_yaml::Value::String("per_compute_observation_mean_ms".to_string()),
-                serde_yaml::Value::String(format!("{:.4}", v)),
+                serde_yaml::Value::String("per_observation_mean_ms".to_string()),
+                serde_yaml::Value::String(format!("{:.4}", cost.per_observation_mean_ms)),
             );
-        }
-        if let Some(v) = cost.compute_observations {
-            cost_map.insert(
-                serde_yaml::Value::String("compute_observations".to_string()),
-                serde_yaml::Value::Number(serde_yaml::Number::from(v)),
+            if let Some(v) = cost.per_compute_observation_mean_ms {
+                cost_map.insert(
+                    serde_yaml::Value::String("per_compute_observation_mean_ms".to_string()),
+                    serde_yaml::Value::String(format!("{:.4}", v)),
+                );
+            }
+            if let Some(v) = cost.compute_observations {
+                cost_map.insert(
+                    serde_yaml::Value::String("compute_observations".to_string()),
+                    serde_yaml::Value::Number(serde_yaml::Number::from(v)),
+                );
+            }
+            if let Some(v) = cost.cached_observations {
+                cost_map.insert(
+                    serde_yaml::Value::String("cached_observations".to_string()),
+                    serde_yaml::Value::Number(serde_yaml::Number::from(v)),
+                );
+            }
+            entry_map.insert(
+                serde_yaml::Value::String("cost".to_string()),
+                serde_yaml::Value::Mapping(cost_map),
             );
-        }
-        if let Some(v) = cost.cached_observations {
-            cost_map.insert(
-                serde_yaml::Value::String("cached_observations".to_string()),
-                serde_yaml::Value::Number(serde_yaml::Number::from(v)),
-            );
-        }
-        entry_map.insert(
-            serde_yaml::Value::String("cost".to_string()),
-            serde_yaml::Value::Mapping(cost_map),
-        );
-        serde_yaml::Value::Mapping(entry_map)
-    }).collect();
+            serde_yaml::Value::Mapping(entry_map)
+        })
+        .collect();
 
     let mut doc = serde_yaml::Mapping::new();
     doc.insert(
@@ -914,10 +897,7 @@ pub fn write_html(
     Ok(())
 }
 
-pub fn write_text(
-    entries: &mut [LeaderboardEntry],
-    sort_by: &str,
-) -> String {
+pub fn write_text(entries: &mut [LeaderboardEntry], sort_by: &str) -> String {
     generate_text_table(entries, sort_by)
 }
 
@@ -1038,7 +1018,9 @@ mod tests {
         let mut with = vec![sample_entry("bm25")];
         let html = generate_html(&mut with, "ndcg_at_10", &None);
         assert!(html.contains("<th>commit</th>"));
-        assert!(html.contains("class=\"commit\" title=\"ae2eef5d7c62f72806aead9bbc30bd13ebb7d409\">ae2eef5d<"));
+        assert!(html.contains(
+            "class=\"commit\" title=\"ae2eef5d7c62f72806aead9bbc30bd13ebb7d409\">ae2eef5d<"
+        ));
 
         let mut without = vec![sample_entry("bm25")];
         without[0].git_commit = None;

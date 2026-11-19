@@ -119,12 +119,10 @@ impl ChunkedEmbedding {
     pub fn aggregate_score(&self, query: &[f64], strategy: RetrievalStrategy) -> f64 {
         match strategy {
             RetrievalStrategy::MaxSim => self.max_sim(query),
-            RetrievalStrategy::Centroid => {
-                match self.centroid() {
-                    Some(c) => cosine_similarity(query, &c),
-                    None => 0.0,
-                }
-            }
+            RetrievalStrategy::Centroid => match self.centroid() {
+                Some(c) => cosine_similarity(query, &c),
+                None => 0.0,
+            },
             RetrievalStrategy::MeanTopK => {
                 let k = 3.min(self.chunks.len()).max(1);
                 let mut sims: Vec<f64> = self
@@ -254,8 +252,6 @@ pub fn query_embedding(
     }
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -370,11 +366,7 @@ mod tests {
     #[test]
     fn aggregate_max_sim_picks_best() {
         let query = vec![1.0, 0.0];
-        let ce = ChunkedEmbedding::new(vec![
-            vec![0.0, 1.0],
-            vec![1.0, 0.0],
-            vec![0.8, 0.6],
-        ]);
+        let ce = ChunkedEmbedding::new(vec![vec![0.0, 1.0], vec![1.0, 0.0], vec![0.8, 0.6]]);
         let score = ce.aggregate_score(&query, RetrievalStrategy::MaxSim);
         assert!((score - 1.0).abs() < 1e-9);
     }
@@ -391,11 +383,7 @@ mod tests {
     #[test]
     fn aggregate_mean_top_k() {
         let query = vec![1.0, 0.0];
-        let ce = ChunkedEmbedding::new(vec![
-            vec![1.0, 0.0],
-            vec![0.0, 1.0],
-            vec![0.8, 0.6],
-        ]);
+        let ce = ChunkedEmbedding::new(vec![vec![1.0, 0.0], vec![0.0, 1.0], vec![0.8, 0.6]]);
         let score = ce.aggregate_score(&query, RetrievalStrategy::MeanTopK);
         let sims: Vec<f64> = [1.0, 0.0, 0.8].to_vec();
         let mut sorted = sims.clone();

@@ -408,7 +408,7 @@ fn migrate_candidate_chunks_multimodel(conn: &Connection) -> Result<(), String> 
             return Ok(()); // already multi-model
         }
     }
-    log::info!("db: rebuilding candidate_chunks for multi-model chunk storage");
+    tracing::info!("db: rebuilding candidate_chunks for multi-model chunk storage");
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
     tx.execute_batch(
         "CREATE TABLE candidate_chunks_new (
@@ -498,7 +498,7 @@ fn migrate_scoring_v3(conn: &Connection) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
         conn.execute("DROP TABLE scout_scores", [])
             .map_err(|e| e.to_string())?;
-        log::info!("db: scoring v3 — scout_scores folded into stage_scores");
+        tracing::info!("db: scoring v3 — scout_scores folded into stage_scores");
     }
     Ok(())
 }
@@ -836,7 +836,6 @@ pub fn last_sort_report(
     .map_err(|e| e.to_string())
 }
 
-
 // ---------------------------------------------------------------------------
 // Scoring v3 accessors. `rubric_vectors` / `stage_scores` / `judge_pool` are the
 // three facts rescore and the stages read; each has exactly one writer.
@@ -1094,13 +1093,16 @@ pub fn candidates_with_centroids(
     };
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
     let rows = stmt
-        .query_map(rusqlite::params_from_iter(params.iter().map(|b| b.as_ref())), |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, Vec<u8>>(1)?,
-                r.get::<_, String>(2)?,
-            ))
-        })
+        .query_map(
+            rusqlite::params_from_iter(params.iter().map(|b| b.as_ref())),
+            |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, Vec<u8>>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
+            },
+        )
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;

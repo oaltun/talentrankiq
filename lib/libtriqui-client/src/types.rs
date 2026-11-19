@@ -32,6 +32,7 @@ pub static FILENAME_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
 /// Only contains settings that should be saved between sessions.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct AppPreferences {
+    #[serde(default = "default_theme")]
     pub theme: String,
     /// Color scheme (palette) applied on top of light/dark mode: "default",
     /// "slate", "ocean", "forest", "amber", or "contrast"
@@ -77,6 +78,14 @@ pub struct AppPreferences {
     /// Benchmark mode: skip caches. If None, uses config (default false).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub engine_no_cache: Option<bool>,
+    /// Directory where per-request `triq` log files are written (serve `--log-dir`).
+    /// If None, the OS-conventional default log dir is used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log_dir: Option<String>,
+}
+
+fn default_theme() -> String {
+    "system".to_string()
 }
 
 fn default_color_theme() -> String {
@@ -100,6 +109,7 @@ impl Default for AppPreferences {
             engine_embed_batch: None,
             engine_max_cores: None,
             engine_no_cache: None,
+            log_dir: None,
         }
     }
 }
@@ -1090,10 +1100,18 @@ pub struct VettedEmbeddersResponse {
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(tag = "kind")]
 pub enum LicenseStatus {
-    Licensed { customer: String, expires_at: String, artifacts: Vec<String> },
-    Invalid { reason: String },
+    Licensed {
+        customer: String,
+        expires_at: String,
+        artifacts: Vec<String>,
+    },
+    Invalid {
+        reason: String,
+    },
     NotFound,
-    Revoked { reason: String },
+    Revoked {
+        reason: String,
+    },
 }
 
 // ============================================================================

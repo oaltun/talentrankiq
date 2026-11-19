@@ -1,13 +1,21 @@
 use std::path::PathBuf;
-use std::sync::{Arc, mpsc};
+use std::sync::{mpsc, Arc};
 
 use libtriqui_client::protocol::ProtocolError;
 use libtriqui_client::types::RankState;
 use libtriqui_core::runtime::EngineRuntime;
 use libtriqui_core::scout::scout_model_for;
 
-use crate::{ProcessConfig, ProcessContext, JobConfig, DbHandle as WavesDbHandle, hash_text, monitor::{spawn_monitor, MonitorConfig, EventSink}};
+use crate::{
+    hash_text,
+    monitor::{spawn_monitor, EventSink, MonitorConfig},
+    DbHandle as WavesDbHandle, JobConfig, ProcessConfig, ProcessContext,
+};
 
+#[tracing::instrument(
+    name = "run_process_in_waves",
+    skip(db_path, app_dir, runtime, events, job_id, config, request_log_file)
+)]
 pub fn run_process_in_waves(
     db_path: PathBuf,
     app_dir: PathBuf,
@@ -15,6 +23,7 @@ pub fn run_process_in_waves(
     events: mpsc::Sender<String>,
     job_id: &str,
     config: ProcessConfig,
+    request_log_file: Option<Arc<std::sync::Mutex<std::fs::File>>>,
 ) -> Result<RankState, ProtocolError> {
     let (title, job_ad_text, import_dir): (String, Option<String>, Option<String>) = {
         let conn = WavesDbHandle::open_at(&db_path)
@@ -27,7 +36,9 @@ pub fn run_process_in_waves(
             )
         })
         .map_err(|e| match e {
-            rusqlite::Error::QueryReturnedNoRows => ProtocolError::internal(format!("job {job_id} not found")),
+            rusqlite::Error::QueryReturnedNoRows => {
+                ProtocolError::internal(format!("job {job_id} not found"))
+            }
             e => ProtocolError::internal(format!("db: {e}")),
         })?
     };
@@ -51,8 +62,11 @@ pub fn run_process_in_waves(
                 "SELECT running FROM waves_rank_state WHERE job_id = ?1",
                 rusqlite::params![job_id],
                 |r| r.get::<_, i64>(0),
-            ).map(|v| v != 0).unwrap_or(false))
-        }).unwrap_or(false)
+            )
+            .map(|v| v != 0)
+            .unwrap_or(false))
+        })
+        .unwrap_or(false)
     };
     if already_running {
         return Ok(RankState {
@@ -74,11 +88,14 @@ pub fn run_process_in_waves(
         let conn = WavesDbHandle::open_at(&db_path)
             .map_err(|e| ProtocolError::internal(format!("waves db open: {e}")))?;
         conn.with_reader(|c| {
-            let mut stmt = c.prepare("SELECT text FROM criteria WHERE job_id = ?1")
+            let mut stmt = c
+                .prepare("SELECT text FROM criteria WHERE job_id = ?1")
                 .map_err(|e| rusqlite::Error::ExecuteReturnedResults)?; // placeholder, we'll handle differently
             let rows = stmt.query_map(rusqlite::params![job_id], |r| r.get::<_, String>(0))?;
             let mut out = Vec::new();
-            for r in rows { out.push(r?); }
+            for r in rows {
+                out.push(r?);
+            }
             Ok(out)
         })
         .map_err(|e| ProtocolError::internal(e.to_string()))?
@@ -116,11 +133,20 @@ pub fn run_process_in_waves(
     let _ = spawn_monitor(db_path.clone(), monitor_cfg, monitor_events);
 
     let job_id_owned = job_id.to_string();
+    let had_request_log = request_log_file.is_some();
     std::thread::spawn(move || {
-        if let Err(e) = crate::process_in_waves(&mut ctx, config) {
-            log::error!("process_in_waves failed for {job_id_owned}: {e}");
+        if let Some(file) = request_log_file {
+            libtriqui_core::logging::set_current_request_log(file);
         }
-        let _ = ctx.db.update_waves_rank_state(&job_id_owned, 0, 0, 0, 0, 0, 0, None, false);
+        if let Err(e) = crate::process_in_waves(&mut ctx, config) {
+            tracing::error!("process_in_waves failed for {job_id_owned}: {e}");
+        }
+        let _ = ctx
+            .db
+            .update_waves_rank_state(&job_id_owned, 0, 0, 0, 0, 0, 0, None, false);
+        if had_request_log {
+            libtriqui_core::logging::clear_current_request_log();
+        }
     });
 
     Ok(RankState {

@@ -170,7 +170,7 @@ pub fn unknown_usage_err(usage: &str) -> String {
         usage
     )
 }
- 
+
 /// Convert ModelKind enum to string for internal representation.
 fn model_kind_to_string(kind: libconfigreader::ModelKind) -> String {
     match kind {
@@ -179,7 +179,7 @@ fn model_kind_to_string(kind: libconfigreader::ModelKind) -> String {
         libconfigreader::ModelKind::Reranker => "reranker".to_string(),
     }
 }
- 
+
 /// Convert BackendKind enum to libconfigreader::Backend enum.
 fn backend_kind_to_backend(kind: libconfigreader::BackendKind) -> libconfigreader::Backend {
     match kind {
@@ -187,7 +187,7 @@ fn backend_kind_to_backend(kind: libconfigreader::BackendKind) -> libconfigreade
         libconfigreader::BackendKind::Mlx => libconfigreader::Backend::Mlx,
     }
 }
- 
+
 /// Convert Quantization enum to string for internal representation.
 fn quantization_to_string(q: libconfigreader::Quantization) -> String {
     match q {
@@ -199,7 +199,7 @@ fn quantization_to_string(q: libconfigreader::Quantization) -> String {
         libconfigreader::Quantization::None => "none".to_string(),
     }
 }
- 
+
 /// Convert Usage enum to string for internal representation.
 fn usage_to_string(usage: libconfigreader::Usage) -> String {
     match usage {
@@ -213,7 +213,7 @@ fn usage_to_string(usage: libconfigreader::Usage) -> String {
         libconfigreader::Usage::ExtractionJson => "extraction-json".to_string(),
     }
 }
- 
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -284,6 +284,6 @@ models:
                 models: file.models,
                 families,
             })
-}
-}
+        }
+    }
 }

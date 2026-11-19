@@ -18,9 +18,9 @@
 //!    tokenizers (design 15 §15.5.3.3).
 
 use std::io::{BufRead, Write};
+use std::os::unix::io::AsRawFd;
 use std::panic;
 use std::path::Path;
-use std::os::unix::io::AsRawFd;
 
 use libtokenizer::TokenizerHandle;
 use serde_json::Value;
@@ -103,19 +103,26 @@ impl SessionManager {
         let dir = Path::new(model_path);
         // Wrap in catch_unwind to catch any panics from C++ exceptions
         // that cross the FFI boundary (cxx bridge converts them to panics).
-        let embedder = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            Embedder::load(dir)
-        }))
-        .map_err(|_| ("load_failed".to_string(), "MLX embedder load panicked (likely unhandled C++ exception)".to_string()))?
-        .map_err(|e| match e {
-            EmbedError::Unsupported(m) => ("unsupported_model".to_string(), m),
-            EmbedError::Load(m) => ("load_failed".to_string(), m),
-        })?;
+        let embedder =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| Embedder::load(dir)))
+                .map_err(|_| {
+                    (
+                        "load_failed".to_string(),
+                        "MLX embedder load panicked (likely unhandled C++ exception)".to_string(),
+                    )
+                })?
+                .map_err(|e| match e {
+                    EmbedError::Unsupported(m) => ("unsupported_model".to_string(), m),
+                    EmbedError::Load(m) => ("load_failed".to_string(), m),
+                })?;
         // The tokenizer sits next to the weights, as in the ONNX layout. A
         // missing one is a load error, not an empty-vocabulary fallback: ids
         // are the input to everything this arm computes.
         let tokenizer = TokenizerHandle::from_file(&dir.join("tokenizer.json")).map_err(|e| {
-            ("load_failed".to_string(), format!("tokenizer.json next to the weights: {e}"))
+            (
+                "load_failed".to_string(),
+                format!("tokenizer.json next to the weights: {e}"),
+            )
         })?;
         let report = LoadReport::from(&embedder);
         let handle = self.next_handle;
@@ -133,18 +140,20 @@ impl SessionManager {
 
     pub fn unload(&mut self, handle: u32) -> Result<(), (String, String)> {
         self.sessions.remove(&handle).map(|_| ()).ok_or_else(|| {
-            ("no_session".to_string(), format!("session {handle} not loaded"))
+            (
+                "no_session".to_string(),
+                format!("session {handle} not loaded"),
+            )
         })
     }
 
     #[allow(clippy::type_complexity)]
-    pub fn embed(
-        &self,
-        handle: u32,
-        texts: &[&str],
-    ) -> Result<Vec<Vec<f32>>, (String, String)> {
+    pub fn embed(&self, handle: u32, texts: &[&str]) -> Result<Vec<Vec<f32>>, (String, String)> {
         let loaded = self.sessions.get(&handle).ok_or_else(|| {
-            ("no_session".to_string(), format!("session {handle} not loaded"))
+            (
+                "no_session".to_string(),
+                format!("session {handle} not loaded"),
+            )
         })?;
         // Same call, same cap, same `add_special_tokens=true` as the ONNX arm:
         // for a last-token-pooling family the appended token IS the pooled
@@ -164,7 +173,12 @@ impl SessionManager {
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             loaded.embedder.embed(&rows)
         }))
-        .map_err(|_| ("embed_failed".to_string(), "MLX embedder embed panicked (likely unhandled C++ exception)".to_string()))?
+        .map_err(|_| {
+            (
+                "embed_failed".to_string(),
+                "MLX embedder embed panicked (likely unhandled C++ exception)".to_string(),
+            )
+        })?
         .map_err(|e| ("embed_failed".to_string(), format!("{e}")))
     }
 }
@@ -220,11 +234,14 @@ pub fn run_stdio_over(input: impl BufRead, mut output: impl Write) {
         } else {
             "MLX embedder panic: unknown payload".to_string()
         };
-        let loc = info.location().map(|l| format!(" at {}:{}:{}", l.file(), l.line(), l.column())).unwrap_or_default();
+        let loc = info
+            .location()
+            .map(|l| format!(" at {}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_default();
         let full_msg = format!("{}", msg);
         eprintln!("{}", full_msg);
         eprintln!("  Location:{}", loc);
-        
+
         // Also write to a crash log file for post-mortem analysis
         // Use app cache dir to avoid sandbox issues
         let log_path = std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".to_string());
@@ -232,7 +249,8 @@ pub fn run_stdio_over(input: impl BufRead, mut output: impl Write) {
         if let Ok(mut file) = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
-            .open(&log_file) {
+            .open(&log_file)
+        {
             use std::io::Write;
             let timestamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -243,19 +261,19 @@ pub fn run_stdio_over(input: impl BufRead, mut output: impl Write) {
             let _ = writeln!(file, "  Thread: {:?}", std::thread::current().id());
         }
         eprintln!("Crash log written to: {:?}", log_file);
-        
+
         // Also call the original hook
         orig_hook(info);
     }));
 
-    log::info!("libmlxembed session loop starting (Metal)");
+    tracing::info!("libmlxembed session loop starting (Metal)");
     let mut sessions = SessionManager::new();
 
     for (line_num, line_result) in input.lines().enumerate() {
         let line = match line_result {
             Ok(l) => l,
             Err(e) => {
-                log::error!("failed to read line {line_num}: {e}");
+                tracing::error!("failed to read line {line_num}: {e}");
                 break;
             }
         };
@@ -282,7 +300,7 @@ pub fn run_stdio_over(input: impl BufRead, mut output: impl Write) {
         let _ = writeln!(output, "{resp}");
         let _ = output.flush();
     }
-    log::info!("EOF on input, dropping sessions and exiting loop");
+    tracing::info!("EOF on input, dropping sessions and exiting loop");
 }
 
 fn envelope(id: Option<String>, kind: &str, payload: Payload) -> String {
@@ -406,9 +424,9 @@ fn handle_unload(payload: &Payload, sessions: &mut SessionManager) -> CmdResult 
 #[cfg(all(test, target_os = "macos", feature = "mlx"))]
 mod tests {
     use super::*;
+    use libmodeldownloader::{cli, downloader, DownloadEvent};
     use std::path::PathBuf;
     use std::sync::{Arc, Mutex};
-    use libmodeldownloader::{cli, downloader, DownloadEvent};
 
     fn call(input: &str) -> Vec<Value> {
         let mut out = Vec::new();
@@ -458,7 +476,9 @@ mod tests {
 
     #[test]
     fn embedding_an_unloaded_session_is_an_error_not_a_crash() {
-        let out = call(r#"{"id":"1","type":"request","payload":{"cmd":"embed","session":7,"texts":["x"]}}"#);
+        let out = call(
+            r#"{"id":"1","type":"request","payload":{"cmd":"embed","session":7,"texts":["x"]}}"#,
+        );
         assert_eq!(out[0]["type"], "error");
         assert_eq!(out[0]["payload"]["code"], "no_session");
     }
@@ -475,7 +495,12 @@ mod tests {
         assert!(result.is_err());
         let (code, msg) = result.unwrap_err();
         assert_eq!(code, "load_failed");
-        assert!(msg.contains("load failed") || msg.contains("No such file") || msg.contains("not found") || msg.contains("Failed to load"));
+        assert!(
+            msg.contains("load failed")
+                || msg.contains("No such file")
+                || msg.contains("not found")
+                || msg.contains("Failed to load")
+        );
     }
 
     #[test]
@@ -512,9 +537,9 @@ mod tests {
         // Model cache directory
         let model_cache = PathBuf::from("/tmp").join("mlx_test_models");
         std::fs::create_dir_all(&model_cache).unwrap();
-        
+
         println!("Model cache: {:?}", model_cache);
-        
+
         // Download the harrier-oss-v1-270m MLX model (smaller than 600M)
         let cli = libmodeldownloader::cli::Cli {
             config: None,
@@ -533,51 +558,49 @@ mod tests {
             verbose: true,
             logfile: None,
         };
-        
+
         println!("Downloading model...");
-        
-        let sink: libmodeldownloader::ProgressSink = Arc::new(Mutex::new(|event| {
-            match event {
-                libmodeldownloader::DownloadEvent::Started { file, total } => {
-                    println!("Download started: {} (total: {:?})", file, total);
-                }
-                libmodeldownloader::DownloadEvent::Progress { file, done, total } => {
-                    if let Some(total) = total {
-                        let pct = (done as f64 / total as f64 * 100.0) as u32;
-                        println!("Progress: {}% ({}/{} bytes) - {}", pct, done, total, file);
-                    } else {
-                        println!("Downloaded: {} bytes - {}", done, file);
-                    }
-                }
-                libmodeldownloader::DownloadEvent::Finished { file, total } => {
-                    println!("Finished: {} (total: {:?})", file, total);
-                }
-                libmodeldownloader::DownloadEvent::Cached { file, bytes } => {
-                    println!("Cached: {} ({} bytes)", file, bytes);
+
+        let sink: libmodeldownloader::ProgressSink = Arc::new(Mutex::new(|event| match event {
+            libmodeldownloader::DownloadEvent::Started { file, total } => {
+                println!("Download started: {} (total: {:?})", file, total);
+            }
+            libmodeldownloader::DownloadEvent::Progress { file, done, total } => {
+                if let Some(total) = total {
+                    let pct = (done as f64 / total as f64 * 100.0) as u32;
+                    println!("Progress: {}% ({}/{} bytes) - {}", pct, done, total, file);
+                } else {
+                    println!("Downloaded: {} bytes - {}", done, file);
                 }
             }
+            libmodeldownloader::DownloadEvent::Finished { file, total } => {
+                println!("Finished: {} (total: {:?})", file, total);
+            }
+            libmodeldownloader::DownloadEvent::Cached { file, bytes } => {
+                println!("Cached: {} ({} bytes)", file, bytes);
+            }
         }));
-        
+
         println!("Starting download...");
         let result = libmodeldownloader::Downloader::run_with_progress(cli, Some(sink));
-        
+
         match result {
             Ok(model_dir) => {
                 println!("Download successful: {:?}", model_dir);
-                
+
                 // Now try to load the model - the download puts files in the revision subdirectory (e.g., "main")
                 let model_dir = model_dir;
                 println!("Loading model from {:?}", model_dir);
-                
+
                 match Embedder::load(&model_dir) {
                     Ok(embedder) => {
                         println!("Model loaded successfully: {}", embedder.describe());
-                    },
+                    }
                     Err(e) => {
                         println!("Model load failed: {:?}", e);
                     }
                 }
-            },
+            }
             Err(e) => {
                 println!("Download failed: {:?}", e);
             }

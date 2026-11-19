@@ -10,10 +10,10 @@ use std::path::PathBuf;
 pub use config::*;
 
 // Backward-compatible re-exports for dependent crates
-pub use config::EngineConfig as EngineSection;
-pub use config::SyscapConfig as SyscapSection;
 pub use config::CascadeConfig as CascadeSection;
+pub use config::EngineConfig as EngineSection;
 pub use config::GuiJudgeArtifact as GuiJudgeArtifacts;
+pub use config::SyscapConfig as SyscapSection;
 
 // Types that keep the same name are already exported via `pub use config::*;`
 

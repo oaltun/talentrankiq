@@ -827,7 +827,7 @@ pub(crate) fn generate(
     if let Some((kv_heads, head_dim)) = loaded.kv_spec {
         io.empty_kv = [1, kv_heads, 0, head_dim];
     }
-    log::debug!(
+    tracing::debug!(
         "generate: prompt_tokens={} pos_ids={} cache_pos={} past_inputs={} empty_kv={:?}",
         queue.len(),
         io.has_position_ids,
@@ -881,7 +881,7 @@ pub(crate) fn generate(
                 };
                 n_generated += 1;
                 let picked_text = tc.decoded(pick).to_string();
-                log::debug!(
+                tracing::debug!(
                     "step {n_generated}: pick {pick} {:?} kv_layers={}",
                     picked_text,
                     past.len()

@@ -96,29 +96,28 @@ pub fn watch_job_ad(state: &Arc<ServeState>, job_id: &str, path: &Path) {
         return;
     }
     if let Err(e) = libtriqui_core::job_ad::ensure_file(path) {
-        log::warn!("ad-watch {job_id}: cannot create {}: {e}", path.display());
+        tracing::warn!("ad-watch {job_id}: cannot create {}: {e}", path.display());
         return;
     }
     let tx = state.watch.ad_tx.clone();
     let jid = job_id.to_string();
-    let watcher =
-        notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| {
-            if let Ok(event) = res {
-                if matches!(event.kind, notify::event::EventKind::Access(_)) {
-                    return;
-                }
-                let _ = tx.send(jid.clone());
+    let watcher = notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| {
+        if let Ok(event) = res {
+            if matches!(event.kind, notify::event::EventKind::Access(_)) {
+                return;
             }
-        });
+            let _ = tx.send(jid.clone());
+        }
+    });
     match watcher {
         Ok(mut w) => match w.watch(path, RecursiveMode::NonRecursive) {
             Ok(()) => {
                 watchers.insert(job_id.to_string(), w);
-                log::info!("ad-watch: watching {} for {job_id}", path.display());
+                tracing::info!("ad-watch: watching {} for {job_id}", path.display());
             }
-            Err(e) => log::warn!("ad-watch {job_id}: cannot watch {}: {e}", path.display()),
+            Err(e) => tracing::warn!("ad-watch {job_id}: cannot watch {}: {e}", path.display()),
         },
-        Err(e) => log::warn!("ad-watch {job_id}: cannot create watcher: {e}"),
+        Err(e) => tracing::warn!("ad-watch {job_id}: cannot create watcher: {e}"),
     }
 }
 
@@ -132,7 +131,7 @@ pub fn stop_watching_ad(state: &Arc<ServeState>, job_id: &str) {
         .remove(job_id)
         .is_some()
     {
-        log::info!("ad-watch: stopped watching for {job_id}");
+        tracing::info!("ad-watch: stopped watching for {job_id}");
     }
 }
 
@@ -190,14 +189,14 @@ fn scan_and_import(state: &Arc<ServeState>, job_id: &str) {
         .expect("import state lock poisoned")
         .contains(job_id)
     {
-        log::info!("cv-watch {job_id}: import already active, skipping scan");
+        tracing::info!("cv-watch {job_id}: import already active, skipping scan");
         return;
     }
 
     let files = match libtriqui_core::import::collect_supported_files(&dir) {
         Ok(files) => files,
         Err(e) => {
-            log::warn!("cv-watch {job_id}: scan of {dir} failed: {e}");
+            tracing::warn!("cv-watch {job_id}: scan of {dir} failed: {e}");
             return;
         }
     };
@@ -228,12 +227,12 @@ fn scan_and_import(state: &Arc<ServeState>, job_id: &str) {
         return;
     }
 
-    log::info!(
+    tracing::info!(
         "cv-watch {job_id}: {} new file(s) in {dir}",
         new_files.len()
     );
     if let Err(e) = spawn_dir_import(state, job_id, &dir, new_files) {
-        log::warn!("cv-watch {job_id}: auto-import failed: {e}");
+        tracing::warn!("cv-watch {job_id}: auto-import failed: {e}");
     }
 }
 
@@ -278,7 +277,7 @@ pub fn watch_dir(
             message: format!("Cannot watch {dir}: {e}"),
         })?;
     watchers.insert(job_id.to_string(), watcher);
-    log::info!("cv-watch: watching {dir} for {job_id}");
+    tracing::info!("cv-watch: watching {dir} for {job_id}");
     Ok(())
 }
 
@@ -292,7 +291,7 @@ pub fn stop_watching(state: &Arc<ServeState>, job_id: &str) {
         .remove(job_id)
         .is_some()
     {
-        log::info!("cv-watch: stopped watching for {job_id}");
+        tracing::info!("cv-watch: stopped watching for {job_id}");
     }
 }
 
@@ -345,11 +344,11 @@ pub fn watch_job(state: &Arc<ServeState>, job_id: &str) {
         let _ = state.watch.ad_tx.send(job_id.to_string());
     }
     let Some(dir) = dir.filter(|d| !d.is_empty()) else {
-        log::info!("cv-watch {job_id}: no CV directory set, nothing to watch");
+        tracing::info!("cv-watch {job_id}: no CV directory set, nothing to watch");
         return;
     };
     if let Err(e) = watch_dir(state, job_id, &dir) {
-        log::warn!("cv-watch {job_id}: cannot watch {dir}: {e}");
+        tracing::warn!("cv-watch {job_id}: cannot watch {dir}: {e}");
         return;
     }
     // Catch-up scan (debounced like watcher events): imports files already in

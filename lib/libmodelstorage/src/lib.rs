@@ -75,12 +75,18 @@ pub enum ResolveError {
     Io(String),
 }
 
-pub fn resolve_onnx(model_dir: &Path, slug: &str, revision: &str) -> Result<Resolution, ResolveError> {
+pub fn resolve_onnx(
+    model_dir: &Path,
+    slug: &str,
+    revision: &str,
+) -> Result<Resolution, ResolveError> {
     let rd = repo_dir(model_dir, slug);
     if rd.is_dir() {
         match scan_single_onnx(&rd) {
             Ok(p) => return Ok(Resolution::Repo(p)),
-            Err(ResolveError::Ambiguous(_)) => return Err(ResolveError::Ambiguous(rd.to_string_lossy().to_string())),
+            Err(ResolveError::Ambiguous(_)) => {
+                return Err(ResolveError::Ambiguous(rd.to_string_lossy().to_string()))
+            }
             Err(ResolveError::NotFound) => {}
             Err(e) => return Err(e),
         }
@@ -90,7 +96,9 @@ pub fn resolve_onnx(model_dir: &Path, slug: &str, revision: &str) -> Result<Reso
     if ld.is_dir() {
         match scan_single_onnx(&ld) {
             Ok(p) => return Ok(Resolution::Legacy(p)),
-            Err(ResolveError::Ambiguous(_)) => return Err(ResolveError::Ambiguous(ld.to_string_lossy().to_string())),
+            Err(ResolveError::Ambiguous(_)) => {
+                return Err(ResolveError::Ambiguous(ld.to_string_lossy().to_string()))
+            }
             Err(ResolveError::NotFound) => {}
             Err(e) => return Err(e),
         }
@@ -121,8 +129,7 @@ pub fn collect_onnx(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), ResolveErr
     let entries = std::fs::read_dir(dir)
         .map_err(|e| ResolveError::Io(format!("failed to read {:?}: {}", dir, e)))?;
     for entry in entries {
-        let entry = entry
-            .map_err(|e| ResolveError::Io(format!("read_dir error: {}", e)))?;
+        let entry = entry.map_err(|e| ResolveError::Io(format!("read_dir error: {}", e)))?;
         let path = entry.path();
         if path.is_dir() {
             collect_onnx(&path, out)?;
@@ -134,9 +141,7 @@ pub fn collect_onnx(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), ResolveErr
 }
 
 pub fn is_onnx_file(path: &Path) -> bool {
-    path.extension()
-        .and_then(|e| e.to_str())
-        == Some("onnx")
+    path.extension().and_then(|e| e.to_str()) == Some("onnx")
         && !path
             .file_name()
             .and_then(|n| n.to_str())
@@ -157,7 +162,10 @@ mod tests {
         let base = Path::new("/cache");
         assert_eq!(slug_dir(base, "m1"), PathBuf::from("/cache/m1"));
         assert_eq!(repo_dir(base, "m1"), PathBuf::from("/cache/m1/repo"));
-        assert_eq!(legacy_dir(base, "m1", "main"), PathBuf::from("/cache/m1/main"));
+        assert_eq!(
+            legacy_dir(base, "m1", "main"),
+            PathBuf::from("/cache/m1/main")
+        );
         assert_eq!(meta_dir(base, "m1"), PathBuf::from("/cache/m1/meta"));
     }
 
@@ -225,7 +233,9 @@ mod tests {
         std::fs::create_dir_all(legacy_dir(base, "m1", "main")).unwrap();
         std::fs::write(legacy_dir(base, "m1", "main").join("model.onnx"), b"legacy").unwrap();
         match resolve_onnx(base, "m1", "main") {
-            Ok(Resolution::Repo(p)) => assert_eq!(p.file_name().unwrap().to_str(), Some("model.onnx")),
+            Ok(Resolution::Repo(p)) => {
+                assert_eq!(p.file_name().unwrap().to_str(), Some("model.onnx"))
+            }
             other => panic!("expected Repo resolution, got {:?}", other),
         }
         std::fs::remove_dir_all(&tmp).ok();
@@ -239,7 +249,9 @@ mod tests {
         std::fs::create_dir_all(legacy_dir(base, "m1", "main")).unwrap();
         std::fs::write(legacy_dir(base, "m1", "main").join("model.onnx"), b"legacy").unwrap();
         match resolve_onnx(base, "m1", "main") {
-            Ok(Resolution::Legacy(p)) => assert_eq!(p.file_name().unwrap().to_str(), Some("model.onnx")),
+            Ok(Resolution::Legacy(p)) => {
+                assert_eq!(p.file_name().unwrap().to_str(), Some("model.onnx"))
+            }
             other => panic!("expected Legacy resolution, got {:?}", other),
         }
         std::fs::remove_dir_all(&tmp).ok();

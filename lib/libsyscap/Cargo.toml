@@ -10,7 +10,7 @@ serde = { version = "1", features = ["derive"] }
 sysinfo = "0.34"
 # For the fallback warning in `mem`: a wrong memory reading is the kind of
 # thing that must be visible in the log, not silent.
-log = "0.4"
+tracing = "0.1"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

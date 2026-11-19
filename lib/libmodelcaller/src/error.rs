@@ -26,7 +26,9 @@ impl ModelError {
     pub fn ambiguous_onnx(dir: &str) -> Self {
         ModelError::new(
             "ambiguous_onnx",
-            format!("multiple .onnx files found under '{dir}'; cache only one quantization per model"),
+            format!(
+                "multiple .onnx files found under '{dir}'; cache only one quantization per model"
+            ),
         )
     }
 

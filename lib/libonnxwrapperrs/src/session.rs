@@ -118,7 +118,7 @@ impl SessionManager {
         fan_out: usize,
         verbose_provider: bool,
     ) -> Result<SessionInfo, (String, String)> {
-        log::info!("starting loading model {}", model_path);
+        tracing::info!("starting loading model {}", model_path);
 
         let fan_out = if fan_out == 0 {
             let dir = std::path::Path::new(model_path)
@@ -185,9 +185,7 @@ impl SessionManager {
         if verbose_provider {
             session_builder = session_builder
                 .with_log_level(ort::logging::LogLevel::Verbose)
-                .map_err(|e| {
-                    ("load_err".into(), format!("failed to set log level: {e}"))
-                })?;
+                .map_err(|e| ("load_err".into(), format!("failed to set log level: {e}")))?;
             session_builder = session_builder
                 .with_logger(std::sync::Arc::new(
                     |level: ort::logging::LogLevel,
@@ -195,12 +193,10 @@ impl SessionManager {
                      _id: &str,
                      _code_location: &str,
                      message: &str| {
-                        log::info!("ort[{level:?}/{category}]: {message}");
+                        tracing::info!("ort[{level:?}/{category}]: {message}");
                     },
                 ))
-                .map_err(|e| {
-                    ("load_err".into(), format!("failed to set logger: {e}"))
-                })?;
+                .map_err(|e| ("load_err".into(), format!("failed to set logger: {e}")))?;
         }
 
         if exec_provider != "auto" && exec_provider != "cpu" {
@@ -214,11 +210,14 @@ impl SessionManager {
             )
         })?;
 
-        log::info!("ended loading model {}", model_path);
+        tracing::info!("ended loading model {}", model_path);
 
         let kind = model_config.kind.unwrap_or_else(|| infer_kind(&session));
         // a decoder's hidden size is meaningless as an embedding dim
-        let kv_spec = match (model_config.num_key_value_heads, model_config.num_attention_heads) {
+        let kv_spec = match (
+            model_config.num_key_value_heads,
+            model_config.num_attention_heads,
+        ) {
             (Some(kv_heads), Some(heads)) if heads > 0 => {
                 model_config.dim.map(|hidden| (kv_heads, hidden / heads))
             }
@@ -276,7 +275,7 @@ impl SessionManager {
             exec_provider: exec_provider.to_string(),
         };
 
-        log::info!("{log_line}");
+        tracing::info!("{log_line}");
 
         Ok(info)
     }
@@ -294,28 +293,43 @@ impl SessionManager {
         let mut out = Vec::with_capacity(n);
         for _ in 0..n {
             let mut builder = Session::builder().map_err(|e| {
-                ("load_err".into(), format!("failed to create session builder: {e}"))
+                (
+                    "load_err".into(),
+                    format!("failed to create session builder: {e}"),
+                )
             })?;
-        if let Some(threads) = intra_threads {
-            builder = builder.with_intra_threads(threads).map_err(|e| {
-                    ("load_err".into(), format!("failed to set intra_threads: {e}"))
+            if let Some(threads) = intra_threads {
+                builder = builder.with_intra_threads(threads).map_err(|e| {
+                    (
+                        "load_err".into(),
+                        format!("failed to set intra_threads: {e}"),
+                    )
                 })?;
             }
             if let Some(threads) = inter_threads {
                 builder = builder.with_inter_threads(threads).map_err(|e| {
-                    ("load_err".into(), format!("failed to set inter_threads: {e}"))
+                    (
+                        "load_err".into(),
+                        format!("failed to set inter_threads: {e}"),
+                    )
                 })?;
             }
             builder = builder
                 .with_optimization_level(GraphOptimizationLevel::All)
                 .map_err(|e| {
-                    ("load_err".into(), format!("failed to set optimization level: {e}"))
+                    (
+                        "load_err".into(),
+                        format!("failed to set optimization level: {e}"),
+                    )
                 })?;
             if exec_provider != "auto" {
                 builder = apply_exec_provider(builder, exec_provider)?;
             }
             let s = builder.commit_from_file(model_path).map_err(|e| {
-                ("load_err".into(), format!("failed to load model {model_path}: {e}"))
+                (
+                    "load_err".into(),
+                    format!("failed to load model {model_path}: {e}"),
+                )
             })?;
             out.push(s);
         }
@@ -433,7 +447,7 @@ impl SessionManager {
                 };
                 loaded.projection = chain;
                 loaded.projection_key = Some(key);
-                log::info!(
+                tracing::info!(
                     "multi-vector: {} projection chain ({})",
                     if resolved.is_empty() {
                         "without"
@@ -654,9 +668,7 @@ impl SessionManager {
             let mut handles = Vec::with_capacity(parts);
             for (start, end) in slices.iter() {
                 let rows = &tokenized[*start..*end];
-                let session = sessions_iter
-                    .next()
-                    .expect("one session per slice");
+                let session = sessions_iter.next().expect("one session per slice");
                 let max_len = max_len;
                 handles.push(s.spawn(move || {
                     let (ids, mask, types) = build_batch_tensors(rows, max_len)?;
@@ -705,11 +717,14 @@ impl SessionManager {
                     .collect::<Result<_, _>>()
                     .map_err(|_| rank_error())?;
                 ndarray::concatenate(Axis(0), &views)
-                    .map_err(|e| ("inference_err".into(), format!("failed to join pool slices: {e}")))?
-                    .into_dimensionality::<ndarray::IxDyn>()
                     .map_err(|e| {
-                        ("inference_err".into(), format!("pool join rank error: {e}"))
+                        (
+                            "inference_err".into(),
+                            format!("failed to join pool slices: {e}"),
+                        )
                     })?
+                    .into_dimensionality::<ndarray::IxDyn>()
+                    .map_err(|e| ("inference_err".into(), format!("pool join rank error: {e}")))?
             }
             3 => {
                 let views: Vec<ArrayView3<'_, f32>> = parts_out
@@ -718,11 +733,14 @@ impl SessionManager {
                     .collect::<Result<_, _>>()
                     .map_err(|_| rank_error())?;
                 ndarray::concatenate(Axis(0), &views)
-                    .map_err(|e| ("inference_err".into(), format!("failed to join pool slices: {e}")))?
-                    .into_dimensionality::<ndarray::IxDyn>()
                     .map_err(|e| {
-                        ("inference_err".into(), format!("pool join rank error: {e}"))
+                        (
+                            "inference_err".into(),
+                            format!("failed to join pool slices: {e}"),
+                        )
                     })?
+                    .into_dimensionality::<ndarray::IxDyn>()
+                    .map_err(|e| ("inference_err".into(), format!("pool join rank error: {e}")))?
             }
             r => {
                 return Err((
@@ -791,8 +809,7 @@ impl SessionManager {
                 token_type_ids_val,
             );
 
-            let outputs = loaded
-                .pool[0]
+            let outputs = loaded.pool[0]
                 .run(inputs)
                 .map_err(|e| ("inference_err".into(), format!("inference failed: {e}")))?;
 
@@ -830,7 +847,7 @@ impl SessionManager {
 
     pub fn unload(&mut self, handle: u32) -> Result<(), (String, String)> {
         if self.sessions.remove(&handle).is_some() {
-            log::info!("unloaded session {handle}");
+            tracing::info!("unloaded session {handle}");
             Ok(())
         } else {
             Err(("no_session".into(), format!("session {handle} not loaded")))
@@ -981,11 +998,7 @@ fn auto_fan_out(model_dir: &std::path::Path) -> usize {
                 .sum()
         })
         .unwrap_or(u64::MAX);
-    if bytes <= CACHE_RESIDENT_BYTES {
-        8
-    } else {
-        1
-    }
+    if bytes <= CACHE_RESIDENT_BYTES { 8 } else { 1 }
 }
 
 fn extract_rerank_score(outputs: &SessionOutputs) -> Result<f32, (String, String)> {

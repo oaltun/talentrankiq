@@ -3,6 +3,7 @@ use std::path::Path;
 use crate::context::ProcessContext;
 use crate::error::ProcessError;
 
+#[tracing::instrument(name = "scan_watch_dir", skip(ctx))]
 pub fn scan_watch_dir(ctx: &mut ProcessContext) -> Result<usize, ProcessError> {
     // Collect the same supported CV files the import watcher uses, recursively.
     // This keeps stray files (e.g. a macOS `.DS_Store`) out of the scan instead
@@ -20,7 +21,7 @@ pub fn scan_watch_dir(ctx: &mut ProcessContext) -> Result<usize, ProcessError> {
         let text = match read_text(&path) {
             Ok(t) => t,
             Err(e) => {
-                log::warn!("process_in_waves: skipping {path_str}: {e}");
+                tracing::warn!("process_in_waves: skipping {path_str}: {e}");
                 continue;
             }
         };

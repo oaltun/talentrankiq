@@ -16,7 +16,10 @@ pub fn monitor_loop(
 ) {
     let conn = match Connection::open(&db_path) {
         Ok(c) => c,
-        Err(e) => { log::warn!("monitor: open db failed: {e}"); return; }
+        Err(e) => {
+            tracing::warn!("monitor: open db failed: {e}");
+            return;
+        }
     };
     let _ = conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;");
     loop {
@@ -31,12 +34,18 @@ pub fn monitor_loop(
     let _ = (db_path, thread::current().id());
 }
 
-fn poll_once(conn: &Connection, config: &MonitorConfig, events: &EventSink) -> Result<(), rusqlite::Error> {
+fn poll_once(
+    conn: &Connection,
+    config: &MonitorConfig,
+    events: &EventSink,
+) -> Result<(), rusqlite::Error> {
     let progress = queries::get_rank_progress(conn, &config.job_id).unwrap_or_default();
     events.emit("rank-progress", &progress);
-    let quick = queries::get_embedding_progress(conn, &config.job_id, &config.quick_model).unwrap_or_default();
+    let quick = queries::get_embedding_progress(conn, &config.job_id, &config.quick_model)
+        .unwrap_or_default();
     events.emit("job-quick-progress", &quick);
-    let deep = queries::get_embedding_progress(conn, &config.job_id, &config.deep_model).unwrap_or_default();
+    let deep = queries::get_embedding_progress(conn, &config.job_id, &config.deep_model)
+        .unwrap_or_default();
     events.emit("job-deep-progress", &deep);
     Ok(())
 }

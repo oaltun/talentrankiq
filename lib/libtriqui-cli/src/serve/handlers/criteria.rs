@@ -23,7 +23,6 @@ pub fn criterion_from_row(row: &rusqlite::Row) -> rusqlite::Result<Criterion> {
     })
 }
 
-
 /// Resolve the owning job id for a criterion (used to bump `inputs_updated_at`).
 fn job_id_for_criterion(conn: &rusqlite::Connection, criterion_id: &str) -> Option<String> {
     conn.query_row(
@@ -88,13 +87,13 @@ pub fn add_criterion(
 /// deadlock against the request's own lock.
 fn reproject(state: &Arc<ServeState>, job_id: &str) -> Result<(), ProtocolError> {
     match libtriqui_core::rescore::inputs_changed(&state.runtime, job_id, false) {
-        Ok(inv) => log::info!(
+        Ok(inv) => tracing::info!(
             "criteria: job {job_id} re-projected — {} candidates, {} rubric vector(s) embedded",
             inv.rescored,
             inv.embedded,
         ),
         Err(e) => {
-            log::warn!("criteria: re-projection failed for {job_id}: {e}");
+            tracing::warn!("criteria: re-projection failed for {job_id}: {e}");
             return Err(string_err(format!("re-rank failed for {job_id}: {e}")));
         }
     }

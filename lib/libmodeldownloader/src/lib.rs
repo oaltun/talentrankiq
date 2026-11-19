@@ -43,7 +43,12 @@ pub struct UrlDownload {
 }
 
 impl UrlDownload {
-    pub fn new(url: impl Into<String>, slug: impl Into<String>, model_dir: std::path::PathBuf, sha256: Option<String>) -> Self {
+    pub fn new(
+        url: impl Into<String>,
+        slug: impl Into<String>,
+        model_dir: std::path::PathBuf,
+        sha256: Option<String>,
+    ) -> Self {
         Self {
             url: url.into(),
             slug: slug.into(),

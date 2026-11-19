@@ -26,7 +26,7 @@ type CmdResult = Result<Payload, (String, String)>;
 /// Returns when `input` hits EOF, which is how a host shuts the wrapper down
 /// (closing the pipe drops the ORT sessions with it).
 pub fn run_stdio_over(input: impl BufRead, mut output: impl Write) {
-    log::info!("onnxwrapperrs session loop starting");
+    tracing::info!("onnxwrapperrs session loop starting");
 
     let mut sessions = SessionManager::new();
 
@@ -34,7 +34,7 @@ pub fn run_stdio_over(input: impl BufRead, mut output: impl Write) {
         let line = match line_result {
             Ok(l) => l,
             Err(e) => {
-                log::error!("failed to read line {line_num}: {e}");
+                tracing::error!("failed to read line {line_num}: {e}");
                 break;
             }
         };
@@ -59,7 +59,7 @@ pub fn run_stdio_over(input: impl BufRead, mut output: impl Write) {
         let _ = output.flush();
     }
 
-    log::info!("EOF on input, dropping sessions and exiting loop");
+    tracing::info!("EOF on input, dropping sessions and exiting loop");
 }
 
 fn handle_request(req: &Envelope, sessions: &mut SessionManager) -> Envelope {

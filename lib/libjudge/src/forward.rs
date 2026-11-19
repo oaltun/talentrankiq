@@ -4,7 +4,7 @@
 //! (design 15.6).
 
 use crate::artifact::{JudgeArtifact, JudgeKind};
-use crate::{sigmoid, JudgeError};
+use crate::{JudgeError, sigmoid};
 use rayon::prelude::*;
 
 /// A loaded judge network: consecutive affine layers, ReLU between hidden
@@ -155,13 +155,24 @@ mod tests {
     use crate::features::TextPrep;
 
     fn pair_spec(dim: usize) -> FeatureSpec {
-        FeatureSpec::raw_pair("m", dim, crate::artifact::ChunkingMode::CtxSize, None, crate::artifact::Contextual::Off, TextPrep::Lowercase)
+        FeatureSpec::raw_pair(
+            "m",
+            dim,
+            crate::artifact::ChunkingMode::CtxSize,
+            None,
+            crate::artifact::Contextual::Off,
+            TextPrep::Lowercase,
+        )
     }
 
     fn artifact(kind: JudgeKind, layers: Vec<LayerWeights>, input_dim: usize) -> JudgeArtifact {
         let mut spec = pair_spec(1);
         spec.input_dim = input_dim;
-        spec.blocks = vec![crate::artifact::Block { name: "x".into(), start: 0, len: input_dim }];
+        spec.blocks = vec![crate::artifact::Block {
+            name: "x".into(),
+            start: 0,
+            len: input_dim,
+        }];
         let architecture = match (kind, layers.len()) {
             (JudgeKind::Pairwise, 1) => Architecture::Linear,
             (JudgeKind::Pairwise, 2) => Architecture::Mlp1,
@@ -208,7 +219,10 @@ mod tests {
     #[test]
     fn linear_logit_hand_computed() {
         // score = 1*x0 + (-2)*x1 + 0.5
-        let layers = vec![LayerWeights { w: vec![vec![1.0, -2.0]], b: vec![0.5] }];
+        let layers = vec![LayerWeights {
+            w: vec![vec![1.0, -2.0]],
+            b: vec![0.5],
+        }];
         let a = artifact(JudgeKind::Pairwise, layers, 2);
         let m = JudgeModel::from_artifact(&a).unwrap();
         let score = m.score_ref(&[2.0, 3.0]);
@@ -220,8 +234,14 @@ mod tests {
     #[test]
     fn mlp_relu_hidden_layer() {
         // h = relu(x . w1 + b1); out = h . w2 + b2
-        let l1 = LayerWeights { w: vec![vec![1.0, -1.0], vec![1.0, 1.0]], b: vec![0.0, 0.0] }; // 2->2
-        let l2 = LayerWeights { w: vec![vec![2.0, 3.0]], b: vec![-1.0] }; // 2->1
+        let l1 = LayerWeights {
+            w: vec![vec![1.0, -1.0], vec![1.0, 1.0]],
+            b: vec![0.0, 0.0],
+        }; // 2->2
+        let l2 = LayerWeights {
+            w: vec![vec![2.0, 3.0]],
+            b: vec![-1.0],
+        }; // 2->1
         let a = artifact(JudgeKind::Pairwise, vec![l1, l2], 2);
         let m = JudgeModel::from_artifact(&a).unwrap();
         // x = [1, 2]: h = [max(0, 1-2), max(0, 1+2)] = [0, 3]; out = 0*2 + 3*3 - 1 = 8
@@ -248,10 +268,16 @@ mod tests {
 
     #[test]
     fn artifact_roundtrip_parity_file() {
-        let layers = vec![LayerWeights { w: vec![vec![1.0, -2.0]], b: vec![0.5] }];
+        let layers = vec![LayerWeights {
+            w: vec![vec![1.0, -2.0]],
+            b: vec![0.5],
+        }];
         let mut a = artifact(JudgeKind::Pairwise, layers, 2);
         let m = JudgeModel::from_artifact(&a).unwrap();
-        a.parity = vec![ParityPair { input: vec![2.0, 3.0], score: m.score_ref(&[2.0, 3.0]) as f32 }];
+        a.parity = vec![ParityPair {
+            input: vec![2.0, 3.0],
+            score: m.score_ref(&[2.0, 3.0]) as f32,
+        }];
         let json = a.to_json().unwrap();
         let loaded = JudgeArtifact::load_from_str(&json).unwrap();
         assert!(loaded.verify_parity().is_ok());
@@ -269,12 +295,20 @@ mod tests {
         let layers = vec![
             LayerWeights {
                 w: (0..hidden)
-                    .map(|o| (0..dim).map(|i| ((o * 31 + i * 7) % 23) as f32 * 0.01 - 0.1).collect())
+                    .map(|o| {
+                        (0..dim)
+                            .map(|i| ((o * 31 + i * 7) % 23) as f32 * 0.01 - 0.1)
+                            .collect()
+                    })
                     .collect(),
                 b: (0..hidden).map(|o| (o as f32) * 0.001).collect(),
             },
             LayerWeights {
-                w: vec![(0..hidden).map(|i| ((i * 13) % 17) as f32 * 0.05 - 0.2).collect()],
+                w: vec![
+                    (0..hidden)
+                        .map(|i| ((i * 13) % 17) as f32 * 0.05 - 0.2)
+                        .collect(),
+                ],
                 b: vec![0.25],
             },
         ];
@@ -282,7 +316,11 @@ mod tests {
         let m = JudgeModel::from_artifact(&a).unwrap();
 
         let rows: Vec<Vec<f32>> = (0..257)
-            .map(|r| (0..dim).map(|i| ((r * 17 + i * 5) % 29) as f32 * 0.02 - 0.3).collect())
+            .map(|r| {
+                (0..dim)
+                    .map(|i| ((r * 17 + i * 5) % 29) as f32 * 0.02 - 0.3)
+                    .collect()
+            })
             .collect();
         let flat: Vec<f32> = rows.iter().flatten().copied().collect();
 

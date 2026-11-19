@@ -1,26 +1,30 @@
+pub mod compare;
 pub mod context;
 pub mod db;
-pub mod scan;
 pub mod embed;
-pub mod similarity;
-pub mod league;
-pub mod compare;
 pub mod error;
 pub mod handler;
+pub mod league;
 pub mod monitor;
+pub mod scan;
+pub mod similarity;
 
-pub use context::{ProcessContext, ProcessConfig, JobConfig};
-pub use db::DbHandle;
+pub use context::{JobConfig, ProcessConfig, ProcessContext};
 pub use db::open_connection_at;
-pub use league::MaxPriorityQueueByScore;
+pub use db::DbHandle;
 pub use error::ProcessError;
-pub use similarity::Target;
 pub use handler::run_process_in_waves;
-pub use monitor::{spawn_monitor, MonitorConfig, EventSink, MonitorHandle, MonitorError};
+pub use league::MaxPriorityQueueByScore;
+pub use monitor::{spawn_monitor, EventSink, MonitorConfig, MonitorError, MonitorHandle};
+pub use similarity::Target;
 
 use crate::compare::ComparisonsCache;
 
-pub fn process_in_waves(ctx: &mut context::ProcessContext, config: context::ProcessConfig) -> Result<(), error::ProcessError> {
+#[tracing::instrument(name = "process_in_waves", skip(ctx, config))]
+pub fn process_in_waves(
+    ctx: &mut context::ProcessContext,
+    config: context::ProcessConfig,
+) -> Result<(), error::ProcessError> {
     let _ = ctx.db.with_writer(|c| {
         c.execute(
             "INSERT OR IGNORE INTO jobs (id, title, job_ad_text, import_directory_path) VALUES (?1, ?2, ?3, ?4)",
@@ -32,11 +36,21 @@ pub fn process_in_waves(ctx: &mut context::ProcessContext, config: context::Proc
     let job_id = ctx.job.id.clone();
     let quick_model = ctx.job.quick_model.clone();
     let deep_model = ctx.job.deep_model.clone();
-    let jobad_hash = if ctx.job.job_ad_hash.is_empty() { hash_text(&ctx.job.job_ad_text) } else { ctx.job.job_ad_hash.clone() };
+    let jobad_hash = if ctx.job.job_ad_hash.is_empty() {
+        hash_text(&ctx.job.job_ad_text)
+    } else {
+        ctx.job.job_ad_hash.clone()
+    };
     let targets: Vec<similarity::Target> = {
-        let mut t = vec![similarity::Target { hash: jobad_hash.clone(), text: ctx.job.job_ad_text.clone() }];
+        let mut t = vec![similarity::Target {
+            hash: jobad_hash.clone(),
+            text: ctx.job.job_ad_text.clone(),
+        }];
         for c in &ctx.job.criteria {
-            t.push(similarity::Target { hash: hash_text(c), text: c.clone() });
+            t.push(similarity::Target {
+                hash: hash_text(c),
+                text: c.clone(),
+            });
         }
         t
     };
@@ -53,29 +67,65 @@ pub fn process_in_waves(ctx: &mut context::ProcessContext, config: context::Proc
     let mut last_compared: i64 = -1;
     loop {
         if let Some(max) = config.max_waves {
-            if wave >= max { break; }
+            if wave >= max {
+                break;
+            }
         }
-        let running: i64 = ctx.db.with_reader(|c| {
-            Ok(c.query_row("SELECT running FROM waves_rank_state WHERE job_id = ?1", [ctx.job.id.as_str()], |r| r.get::<_, i64>(0)).unwrap_or(1))
-        }).unwrap_or(1);
-        if running == 0 { break; }
+        let running: i64 = ctx
+            .db
+            .with_reader(|c| {
+                Ok(c.query_row(
+                    "SELECT running FROM waves_rank_state WHERE job_id = ?1",
+                    [ctx.job.id.as_str()],
+                    |r| r.get::<_, i64>(0),
+                )
+                .unwrap_or(1))
+            })
+            .unwrap_or(1);
+        if running == 0 {
+            break;
+        }
 
-        scan::scan_watch_dir(ctx)?;
+        tracing::info!(wave = wave, "wave {wave} start");
+        let new_count = scan::scan_watch_dir(ctx)?;
+        tracing::info!(new_files = new_count, "scan done");
 
         let cv_hashes = ctx.db.get_all_cv_hashes_for_job(&job_id)?;
-        embed::ensure_quick_embeddings(ctx, &cv_hashes)?;
-        similarity::compute_batch_similarity(ctx, &cv_hashes, &targets, &quick_model, ctx.job.similarity_method)?;
+        let quick_done = embed::ensure_quick_embeddings(ctx, &cv_hashes)?;
+        tracing::info!(done = quick_done, total = cv_hashes.len(), "quick done");
+        similarity::compute_batch_similarity(
+            ctx,
+            &cv_hashes,
+            &targets,
+            &quick_model,
+            ctx.job.similarity_method,
+        )?;
 
-        let deep_queue = ctx.db.get_deep_queue_for_job(&job_id, &quick_model, &deep_model, config.wave_size_deep)?;
+        let deep_queue = ctx.db.get_deep_queue_for_job(
+            &job_id,
+            &quick_model,
+            &deep_model,
+            config.wave_size_deep,
+        )?;
         let slice: Vec<String> = deep_queue.into_iter().take(config.wave_size_deep).collect();
-        embed::ensure_deep_embeddings(ctx, &slice, config.wave_size_deep)?;
+        let deep_done = embed::ensure_deep_embeddings(ctx, &slice, config.wave_size_deep)?;
+        tracing::info!(done = deep_done, total = slice.len(), "deep done");
 
         let cv_hashes_all = ctx.db.get_all_cv_hashes_for_job(&job_id)?;
-        similarity::compute_batch_similarity(ctx, &cv_hashes_all, &targets, &deep_model, ctx.job.similarity_method)?;
+        similarity::compute_batch_similarity(
+            ctx,
+            &cv_hashes_all,
+            &targets,
+            &deep_model,
+            ctx.job.similarity_method,
+        )?;
 
-        let to_compare = ctx.db.get_cvs_for_comparison_for_job(&job_id, &deep_model, &jobad_hash)?;
+        let to_compare =
+            ctx.db
+                .get_cvs_for_comparison_for_job(&job_id, &deep_model, &jobad_hash)?;
 
         if league.is_empty() {
+            tracing::info!(candidates = cv_hashes_all.len(), "league intro start");
             for h in &cv_hashes_all {
                 if ctx.db.has_embedding(h, &deep_model)? {
                     let s = ctx.db.get_cv_score(h)?;
@@ -84,8 +134,12 @@ pub fn process_in_waves(ctx: &mut context::ProcessContext, config: context::Proc
             }
         }
 
+        tracing::info!(league_size = league.len(), "league intro done");
         let league_hashes: std::collections::HashSet<String> = league.iter().cloned().collect();
-        let to_compare_filtered: Vec<String> = to_compare.into_iter().filter(|h| !league_hashes.contains(h)).collect();
+        let to_compare_filtered: Vec<String> = to_compare
+            .into_iter()
+            .filter(|h| !league_hashes.contains(h))
+            .collect();
 
         let artifact = ctx.comparator_artifact.clone();
         if let Some(artifact) = artifact {
@@ -101,20 +155,37 @@ pub fn process_in_waves(ctx: &mut context::ProcessContext, config: context::Proc
                 config.wave_size_comparison,
             )?;
         } else {
-            log::info!("No comparator artifact available, skipping comparison wave");
+            tracing::info!("No comparator artifact available, skipping comparison wave");
         }
 
         let candidates = cv_hashes_all.len() as i64;
-        let embedded_done = cv_hashes_all.iter()
-            .filter(|h| ctx.db.has_embedding(h, &deep_model).unwrap_or(false)).count() as i64;
+        let embedded_done = cv_hashes_all
+            .iter()
+            .filter(|h| ctx.db.has_embedding(h, &deep_model).unwrap_or(false))
+            .count() as i64;
         let compared = ctx.db.get_comparison_count(&job_id)?;
-        ctx.db.update_waves_rank_state(&job_id, wave as i64, candidates, embedded_done, compared, candidates, 0, None, true)?;
+        ctx.db.update_waves_rank_state(
+            &job_id,
+            wave as i64,
+            candidates,
+            embedded_done,
+            compared,
+            candidates,
+            0,
+            None,
+            true,
+        )?;
+        tracing::info!(compared = compared, "comparisons done");
 
         if candidates == last_candidates
             && embedded_done == last_embedded
             && compared == last_compared
         {
-            log::info!("process_in_waves converged for {} after {} wave(s)", job_id, wave);
+            tracing::info!(
+                "process_in_waves converged for {} after {} wave(s)",
+                job_id,
+                wave
+            );
             break;
         }
         last_candidates = candidates;

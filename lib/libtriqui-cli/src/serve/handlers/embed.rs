@@ -42,7 +42,7 @@ pub fn embed_job(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Protoco
                 if let Err(e) =
                     embeddings::embed_missing_candidates(&st.runtime, &conn, &jid, &emit)
                 {
-                    log::warn!("embed_job {jid}: {e}");
+                    tracing::warn!("embed_job {jid}: {e}");
                     return;
                 }
                 // New vectors mean new grades, so grade and re-project: a backfill
@@ -50,28 +50,29 @@ pub fn embed_job(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Protoco
                 // (scoring v3 — the projection reads `stage_scores`, which a
                 // backfill alone does not touch).
                 let heavy = st.runtime.model();
-                match libtriqui_core::rubric::Rubric::with_vectors(&conn, &jid, &heavy)
-                    .and_then(|rubric| {
+                match libtriqui_core::rubric::Rubric::with_vectors(&conn, &jid, &heavy).and_then(
+                    |rubric| {
                         libtriqui_core::rubric::score_candidates_in_space(
                             &conn, &jid, &heavy, &rubric, None,
                         )
-                    }) {
+                    },
+                ) {
                     Ok(scored) => {
-                        log::info!("embed_job {jid}: {scored} candidates graded under {heavy}");
+                        tracing::info!("embed_job {jid}: {scored} candidates graded under {heavy}");
                     }
-                    Err(e) => log::warn!("embed_job {jid}: grading failed: {e}"),
+                    Err(e) => tracing::warn!("embed_job {jid}: grading failed: {e}"),
                 }
                 drop(conn);
                 match libtriqui_core::rescore::rescore(&st.runtime, &jid) {
-                    Ok(r) => log::info!(
+                    Ok(r) => tracing::info!(
                         "embed_job {jid}: re-projected ({} scored, {} ungraded)",
                         r.scored,
                         r.ungraded
                     ),
-                    Err(e) => log::warn!("embed_job {jid}: re-projection failed: {e}"),
+                    Err(e) => tracing::warn!("embed_job {jid}: re-projection failed: {e}"),
                 }
             }
-            Err(e) => log::error!("embed_job {jid}: failed to open db: {e}"),
+            Err(e) => tracing::error!("embed_job {jid}: failed to open db: {e}"),
         }
     });
     ok_json(serde_json::Value::Null)

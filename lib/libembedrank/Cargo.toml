@@ -7,7 +7,7 @@ description = "Shared chunked embedding + retrieval-aggregation logic used by bo
 [dependencies]
 libtokenizer = { path = "../libtokenizer" }
 thiserror = "2"
-log = "0.4"
+tracing = "0.1"
 
 [dev-dependencies]
 serde_json = "1"

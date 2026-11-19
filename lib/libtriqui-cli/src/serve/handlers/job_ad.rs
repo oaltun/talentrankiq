@@ -186,7 +186,7 @@ pub fn reload_and_rerank(state: &Arc<ServeState>, job_id: &str) {
         let conn = match state.db.0.lock() {
             Ok(c) => c,
             Err(e) => {
-                log::warn!("ad-watch {job_id}: db lock failed: {e}");
+                tracing::warn!("ad-watch {job_id}: db lock failed: {e}");
                 return;
             }
         };
@@ -206,7 +206,7 @@ pub fn reload_and_rerank(state: &Arc<ServeState>, job_id: &str) {
     let changed = match adopt_text(state, job_id, &path) {
         Ok(c) => c,
         Err(e) => {
-            log::warn!("ad-watch {job_id}: cannot read {}: {e}", path.display());
+            tracing::warn!("ad-watch {job_id}: cannot read {}: {e}", path.display());
             return;
         }
     };
@@ -214,7 +214,7 @@ pub fn reload_and_rerank(state: &Arc<ServeState>, job_id: &str) {
         // Touch/rename noise, or an editor rewriting identical bytes.
         return;
     }
-    log::info!(
+    tracing::info!(
         "ad-watch {job_id}: ad changed in {}, re-ranking",
         path.display()
     );
@@ -230,7 +230,7 @@ pub fn reload_and_rerank(state: &Arc<ServeState>, job_id: &str) {
         let conn = match state.db.0.lock() {
             Ok(c) => c,
             Err(e) => {
-                log::warn!("ad-watch {job_id}: db lock failed: {e}");
+                tracing::warn!("ad-watch {job_id}: db lock failed: {e}");
                 return;
             }
         };
@@ -247,8 +247,8 @@ pub fn reload_and_rerank(state: &Arc<ServeState>, job_id: &str) {
         return;
     }
     match crate::serve::handlers::rank::process_in_waves(state, job_id) {
-        Ok(_) => log::info!("ad-watch {job_id}: waves run started"),
-        Err(e) => log::warn!("ad-watch {job_id}: could not start waves run: {e}"),
+        Ok(_) => tracing::info!("ad-watch {job_id}: waves run started"),
+        Err(e) => tracing::warn!("ad-watch {job_id}: could not start waves run: {e}"),
     }
 }
 

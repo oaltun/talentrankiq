@@ -1,5 +1,5 @@
-use serde::Serialize;
 use rusqlite::Connection;
+use serde::Serialize;
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct EmbeddingProgress {
@@ -24,13 +24,38 @@ pub struct RankProgress {
     pub converged: bool,
 }
 
-pub fn get_conversion_progress(conn: &Connection, job_id: &str) -> Result<EmbeddingProgress, rusqlite::Error> {
-    let total: i64 = conn.query_row("SELECT COUNT(*) FROM job_cv WHERE job_id = ?1", [job_id], |r| r.get(0)).unwrap_or(0);
-    Ok(EmbeddingProgress { job_id: job_id.to_string(), done: total, total, failed: 0, active: false })
+pub fn get_conversion_progress(
+    conn: &Connection,
+    job_id: &str,
+) -> Result<EmbeddingProgress, rusqlite::Error> {
+    let total: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM job_cv WHERE job_id = ?1",
+            [job_id],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    Ok(EmbeddingProgress {
+        job_id: job_id.to_string(),
+        done: total,
+        total,
+        failed: 0,
+        active: false,
+    })
 }
 
-pub fn get_embedding_progress(conn: &Connection, job_id: &str, model_id: &str) -> Result<EmbeddingProgress, rusqlite::Error> {
-    let total: i64 = conn.query_row("SELECT COUNT(*) FROM job_cv WHERE job_id = ?1", [job_id], |r| r.get(0)).unwrap_or(0);
+pub fn get_embedding_progress(
+    conn: &Connection,
+    job_id: &str,
+    model_id: &str,
+) -> Result<EmbeddingProgress, rusqlite::Error> {
+    let total: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM job_cv WHERE job_id = ?1",
+            [job_id],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
     let done: i64 = if model_id.is_empty() {
         total
     } else {
@@ -40,8 +65,20 @@ pub fn get_embedding_progress(conn: &Connection, job_id: &str, model_id: &str) -
             |r| r.get(0),
         ).unwrap_or(0)
     };
-    let running: i64 = conn.query_row("SELECT COALESCE((SELECT running FROM waves_rank_state WHERE job_id=?1),0)", [job_id], |r| r.get(0)).unwrap_or(0);
-    Ok(EmbeddingProgress { job_id: job_id.to_string(), done, total, failed: 0, active: running != 0 })
+    let running: i64 = conn
+        .query_row(
+            "SELECT COALESCE((SELECT running FROM waves_rank_state WHERE job_id=?1),0)",
+            [job_id],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    Ok(EmbeddingProgress {
+        job_id: job_id.to_string(),
+        done,
+        total,
+        failed: 0,
+        active: running != 0,
+    })
 }
 
 pub fn get_rank_progress(conn: &Connection, job_id: &str) -> Result<RankProgress, rusqlite::Error> {
@@ -62,6 +99,10 @@ pub fn get_rank_progress(conn: &Connection, job_id: &str) -> Result<RankProgress
             converged: row.get::<_, i64>(7)? != 0,
         })
     } else {
-        Ok(RankProgress { job_id: job_id.to_string(), stage: "waves".to_string(), ..Default::default() })
+        Ok(RankProgress {
+            job_id: job_id.to_string(),
+            stage: "waves".to_string(),
+            ..Default::default()
+        })
     }
 }

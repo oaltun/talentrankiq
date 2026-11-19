@@ -148,7 +148,7 @@ fn auto_start_cascade(state: &Arc<ServeState>, job_id: &str) {
         let conn = match state.db.0.lock() {
             Ok(c) => c,
             Err(e) => {
-                log::error!("import: db lock failed, cascade not started: {e}");
+                tracing::error!("import: db lock failed, cascade not started: {e}");
                 return;
             }
         };
@@ -163,8 +163,8 @@ fn auto_start_cascade(state: &Arc<ServeState>, job_id: &str) {
         return;
     }
     match crate::serve::handlers::rank::process_in_waves(state, job_id) {
-        Ok(_) => log::info!("import: waves run started for job {job_id} ({extracted} CVs)"),
-        Err(e) => log::warn!("import: could not start waves run for job {job_id}: {e}"),
+        Ok(_) => tracing::info!("import: waves run started for job {job_id} ({extracted} CVs)"),
+        Err(e) => tracing::warn!("import: could not start waves run for job {job_id}: {e}"),
     }
 }
 

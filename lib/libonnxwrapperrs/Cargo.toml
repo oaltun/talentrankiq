@@ -14,7 +14,7 @@ sysinfo = "0.34"
 # For the memory reading in `probe` (libsyscap::mem), not for the policy.
 libsyscap = { path = "../libsyscap" }
 libc = "0.2"
-log = "0.4"
+tracing = "0.1"
 ndarray = "0.17"
 
 # On Apple Silicon the CoreML execution provider is compiled in by default

@@ -22,11 +22,13 @@ pub mod forward;
 pub mod tournament;
 
 pub use artifact::{ArtifactMeta, FeatureSpec, JudgeArtifact, LayerWeights, ParityPair};
-pub use datamaker_import::{load_datamaker_export, DatamakerExportConfig, DatamakerJobGroup, DatamakerDoc, JudgeRow};
+pub use datamaker_import::{
+    DatamakerDoc, DatamakerExportConfig, DatamakerJobGroup, JudgeRow, load_datamaker_export,
+};
 pub use extract::{ChunkCache, EvidenceCache, FeatureExtractor, TextEmbedder};
 pub use features::{
-    assemble_engineered_pair, assemble_fused_pair, assemble_raw_pair, doc_features, DocFeatures,
-    TextPrep,
+    DocFeatures, TextPrep, assemble_engineered_pair, assemble_fused_pair, assemble_raw_pair,
+    doc_features,
 };
 pub use forward::JudgeModel;
 pub use tournament::{bradley_terry, cycle_rate, pairwise_prob_matrix, win_rate_scores};
@@ -39,11 +41,7 @@ pub enum JudgeError {
     #[error("dimension mismatch: expected {expected}, got {got}")]
     DimMismatch { expected: usize, got: usize },
     #[error("parity fixture failed on vector {index}: burn={burn} hand-rolled={hand} (tol 1e-4)")]
-    ParityFailed {
-        index: usize,
-        burn: f64,
-        hand: f64,
-    },
+    ParityFailed { index: usize, burn: f64, hand: f64 },
     #[error("{0}")]
     Other(String),
 }

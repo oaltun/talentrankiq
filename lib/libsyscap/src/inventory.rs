@@ -46,9 +46,7 @@ impl Inventory {
                 eff_cores,
                 simd: detect_simd(),
             },
-            mem: MemInfo {
-                total_bytes: total,
-            },
+            mem: MemInfo { total_bytes: total },
             gpus: detect_gpus(),
             accel: AccelInfo {
                 ane_present: Some(vendor == CpuVendor::Apple && cfg!(target_arch = "aarch64")),
@@ -241,7 +239,11 @@ fn detect_on_battery() -> Option<bool> {
             discharging = true;
         }
     }
-    if present { Some(discharging) } else { None }
+    if present {
+        Some(discharging)
+    } else {
+        None
+    }
 }
 
 #[cfg(not(unix))]

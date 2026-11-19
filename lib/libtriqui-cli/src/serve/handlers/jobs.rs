@@ -11,7 +11,7 @@ use uuid::Uuid;
 use libtriqui_client::protocol::ProtocolError;
 use libtriqui_client::types::{
     Criterion, DomainError, ExtractionStatus, FileType, Job, JobDetail, JobSummary, JobUiState,
-    QuestionKind, RankState, RubricQuestion, TriqiItem, SortReport,
+    QuestionKind, RankState, RubricQuestion, SortReport, TriqiItem,
 };
 use libtriqui_core::app_config;
 
@@ -236,7 +236,7 @@ pub fn create_job(state: &Arc<ServeState>) -> Result<Value, ProtocolError> {
     // The new job is (about to be) the viewed one: point the single watcher
     // at it. This also creates the fresh CV folder on disk.
     watch::watch_job(state, &id);
-    log::info!("created job {id} with cv dir {cv_dir}");
+    tracing::info!("created job {id} with cv dir {cv_dir}");
     ok_json(job)
 }
 
@@ -381,8 +381,7 @@ pub fn update_job(
         )
         .map_err(db_err)?;
 
-    let inputs_changed =
-        current.job_ad_text != job_ad_text || current.triqui_size != triqui_size;
+    let inputs_changed = current.job_ad_text != job_ad_text || current.triqui_size != triqui_size;
 
     let sql = if inputs_changed {
         "UPDATE jobs SET title = ?1, job_ad_text = ?2, triqui_size = ?3, updated_at = datetime('now'), inputs_updated_at = datetime('now'), inputs_version = inputs_version + 1 WHERE id = ?4"
@@ -427,11 +426,15 @@ pub fn update_job(
         let ad_edited = !ad_lands_first_time;
         let invalidation =
             libtriqui_core::rescore::inputs_changed(&state.runtime, job_id, ad_edited)?;
-        log::info!(
+        tracing::info!(
             "update_job: {job_id} re-projected — {} candidates, {} rubric vector(s) embedded{}",
             invalidation.rescored,
             invalidation.embedded,
-            if ad_edited { ", judge pool cleared" } else { "" },
+            if ad_edited {
+                ", judge pool cleared"
+            } else {
+                ""
+            },
         );
     }
     // Re-judging is the only expensive part an edit can leave behind, and only a run
@@ -439,16 +442,15 @@ pub fn update_job(
     // spawn itself and will pick the work up at its next wave boundary). An ad that
     // lands on a job that had none used to need this too — its import-time run had
     // already converged with nothing scoreable.
-    let start_cascade = inputs_changed
-        && {
-            conn.query_row(
-                "SELECT COUNT(*) FROM candidates WHERE job_id = ?1 AND extraction_status = 'Extracted'",
-                rusqlite::params![job_id],
-                |r| r.get::<_, i64>(0),
-            )
-            .unwrap_or(0)
-                > 0
-        };
+    let start_cascade = inputs_changed && {
+        conn.query_row(
+            "SELECT COUNT(*) FROM candidates WHERE job_id = ?1 AND extraction_status = 'Extracted'",
+            rusqlite::params![job_id],
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap_or(0)
+            > 0
+    };
     let job = conn
         .query_row(
             &format!("SELECT {JOB_COLS} FROM jobs WHERE id = ?1"),
@@ -459,8 +461,8 @@ pub fn update_job(
     drop(conn);
     if start_cascade {
         match crate::serve::handlers::rank::process_in_waves(state, job_id) {
-            Ok(_) => log::info!("rank: inputs changed for {job_id} — waves run started"),
-            Err(e) => log::warn!("rank: could not start waves run for {job_id}: {e}"),
+            Ok(_) => tracing::info!("rank: inputs changed for {job_id} — waves run started"),
+            Err(e) => tracing::warn!("rank: could not start waves run for {job_id}: {e}"),
         }
     }
     ok_json(job)
@@ -506,7 +508,7 @@ pub fn update_job_weights(
     // nothing cancelled. The judge never read a weight — its grade is a win-rate
     // and `ad_weight` only scales it — so every memoized verdict still holds.
     let invalidation = libtriqui_core::rescore::inputs_changed(&state.runtime, job_id, false)?;
-    log::info!(
+    tracing::info!(
         "update_job_weights: {job_id} re-projected ({} candidates, capacity now {:.1})",
         invalidation.rescored,
         invalidation.rescored as f64,
@@ -551,7 +553,7 @@ pub fn empty_candidates(state: &Arc<ServeState>, job_id: &str) -> Result<Value, 
         rusqlite::params![job_id],
     )
     .map_err(db_err)?;
-    log::info!("emptied {deleted} candidates for job {job_id}");
+    tracing::info!("emptied {deleted} candidates for job {job_id}");
     ok_json(deleted as i32)
 }
 
@@ -640,7 +642,7 @@ pub fn job_ui_state(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Prot
                     inputs_version, ranked_version
              FROM jobs WHERE jobs.id = ?1",
             rusqlite::params![job_id],
-             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
         )
         .map_err(|e| match e {
             rusqlite::Error::QueryReturnedNoRows => domain(&DomainError::NotFound {

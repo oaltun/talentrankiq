@@ -9,7 +9,8 @@ use rusqlite::Connection;
 use crate::db::db_err;
 use crate::types::{
     AdSource, CandidateDetail, CandidateNeighbors, CandidatePage, CandidateSummary,
-    ChunkExplanation, DomainError, ExtractionStatus, FileType, GradeSpace, QuestionKind, RubricScore,
+    ChunkExplanation, DomainError, ExtractionStatus, FileType, GradeSpace, QuestionKind,
+    RubricScore,
 };
 
 /// Column list for the browser + triqui rows (positional read by
@@ -91,9 +92,11 @@ fn browser_clause(like: &Option<String>, sort: &SortCol, asc: bool) -> (String, 
     // exactly when the candidate has been embedded, and the judge row exactly when
     // it has been compared, so those two probes *are* the axes — no separate
     // bookkeeping column to fall out of sync with the scores.
-    let in_heavy = "(EXISTS (SELECT 1 FROM candidate_scores cs WHERE cs.candidate_id = candidates.id \
+    let in_heavy =
+        "(EXISTS (SELECT 1 FROM candidate_scores cs WHERE cs.candidate_id = candidates.id \
                       AND cs.kind = 'Ad'))";
-    let judged = "(EXISTS (SELECT 1 FROM candidate_scores cs WHERE cs.candidate_id = candidates.id \
+    let judged =
+        "(EXISTS (SELECT 1 FROM candidate_scores cs WHERE cs.candidate_id = candidates.id \
                    AND cs.kind = 'AdJudge'))";
     let order = match sort {
         // Space tier first, then total. A better space always leads, because its
@@ -307,9 +310,8 @@ pub fn list_candidates(
             if let Some(scores) = by_cand.get(&item.id) {
                 item.scores = scores.clone();
             }
-            item.grade_space = Some(
-                GradeSpace::from_scores(&item.scores).unwrap_or(GradeSpace::Scout),
-            );
+            item.grade_space =
+                Some(GradeSpace::from_scores(&item.scores).unwrap_or(GradeSpace::Scout));
             item.ad_source = AdSource::from_scores(&item.scores);
         }
     }

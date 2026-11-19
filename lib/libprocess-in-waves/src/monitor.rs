@@ -13,7 +13,10 @@ pub fn monitor_loop(
 ) {
     let conn = match Connection::open(&db_path) {
         Ok(c) => c,
-        Err(e) => { log::warn!("monitor: open db failed: {e}"); return; }
+        Err(e) => {
+            tracing::warn!("monitor: open db failed: {e}");
+            return;
+        }
     };
     let _ = conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;");
     loop {
@@ -26,7 +29,11 @@ pub fn monitor_loop(
     let _ = (db_path, thread::current().id());
 }
 
-fn poll_once(conn: &Connection, config: &MonitorConfig, events: &EventSink) -> Result<(), rusqlite::Error> {
+fn poll_once(
+    conn: &Connection,
+    config: &MonitorConfig,
+    events: &EventSink,
+) -> Result<(), rusqlite::Error> {
     let progress = queries::get_rank_progress(conn, &config.job_id)?;
     events.emit("rank-progress", &progress);
     let quick = queries::get_embedding_progress(conn, &config.job_id, &config.quick_model)?;
@@ -40,7 +47,9 @@ fn poll_once(conn: &Connection, config: &MonitorConfig, events: &EventSink) -> R
 pub struct EventSink(mpsc::Sender<String>);
 
 impl EventSink {
-    pub fn new(tx: mpsc::Sender<String>) -> Self { EventSink(tx) }
+    pub fn new(tx: mpsc::Sender<String>) -> Self {
+        EventSink(tx)
+    }
     pub fn emit<D: serde::Serialize>(&self, name: &str, data: &D) {
         let event = serde_json::json!({"event": name, "data": data});
         if let Ok(line) = serde_json::to_string(&event) {
@@ -70,7 +79,12 @@ pub struct MonitorConfig {
 
 impl Default for MonitorConfig {
     fn default() -> Self {
-        Self { poll_interval: std::time::Duration::from_secs(2), job_id: String::new(), quick_model: String::new(), deep_model: String::new() }
+        Self {
+            poll_interval: std::time::Duration::from_secs(2),
+            job_id: String::new(),
+            quick_model: String::new(),
+            deep_model: String::new(),
+        }
     }
 }
 
@@ -81,8 +95,14 @@ pub struct MonitorHandle {
 
 impl MonitorHandle {
     pub fn shutdown(mut self) -> thread::Result<()> {
-        if let Some(tx) = self.shutdown_tx.take() { let _ = tx.send(()); }
-        if let Some(t) = self.thread.take() { t.join() } else { Ok(()) }
+        if let Some(tx) = self.shutdown_tx.take() {
+            let _ = tx.send(());
+        }
+        if let Some(t) = self.thread.take() {
+            t.join()
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -95,41 +115,61 @@ pub fn spawn_monitor(
     let handle = thread::spawn(move || {
         monitor_loop(db_path, config, events, rx);
     });
-    Ok(MonitorHandle { shutdown_tx: Some(tx), thread: Some(handle) })
+    Ok(MonitorHandle {
+        shutdown_tx: Some(tx),
+        thread: Some(handle),
+    })
 }
 
 pub mod queries {
     use super::*;
 
-    pub fn get_rank_progress(conn: &Connection, job_id: &str) -> Result<RankProgress, rusqlite::Error> {
-        let wave: i64 = conn.query_row(
-            "SELECT wave FROM waves_rank_state WHERE job_id = ?1",
-            [job_id],
-            |r| r.get(0),
-        ).unwrap_or(0);
-        let candidates: i64 = conn.query_row(
-            "SELECT candidates FROM waves_rank_state WHERE job_id = ?1",
-            [job_id],
-            |r| r.get(0),
-        ).unwrap_or(0);
-        let embedded_done: i64 = conn.query_row(
-            "SELECT embedded_done FROM waves_rank_state WHERE job_id = ?1",
-            [job_id],
-            |r| r.get(0),
-        ).unwrap_or(0);
-        let compared: i64 = conn.query_row(
-            "SELECT compared FROM waves_rank_state WHERE job_id = ?1",
-            [job_id],
-            |r| r.get(0),
-        ).unwrap_or(0);
-        let running: i64 = conn.query_row(
-            "SELECT running FROM waves_rank_state WHERE job_id = ?1",
-            [job_id],
-            |r| r.get(0),
-        ).unwrap_or(0);
+    pub fn get_rank_progress(
+        conn: &Connection,
+        job_id: &str,
+    ) -> Result<RankProgress, rusqlite::Error> {
+        let wave: i64 = conn
+            .query_row(
+                "SELECT wave FROM waves_rank_state WHERE job_id = ?1",
+                [job_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        let candidates: i64 = conn
+            .query_row(
+                "SELECT candidates FROM waves_rank_state WHERE job_id = ?1",
+                [job_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        let embedded_done: i64 = conn
+            .query_row(
+                "SELECT embedded_done FROM waves_rank_state WHERE job_id = ?1",
+                [job_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        let compared: i64 = conn
+            .query_row(
+                "SELECT compared FROM waves_rank_state WHERE job_id = ?1",
+                [job_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        let running: i64 = conn
+            .query_row(
+                "SELECT running FROM waves_rank_state WHERE job_id = ?1",
+                [job_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
         Ok(RankProgress {
             job_id: job_id.to_string(),
-            stage: if running != 0 { "embed".into() } else { "done".into() },
+            stage: if running != 0 {
+                "embed".into()
+            } else {
+                "done".into()
+            },
             wave: wave as u32,
             embedded_done: embedded_done as u32,
             embedded_total: candidates as u32,
@@ -141,27 +181,35 @@ pub mod queries {
         })
     }
 
-    pub fn get_embedding_progress(conn: &Connection, job_id: &str, model_id: &str) -> Result<EmbeddingProgress, rusqlite::Error> {
-        let total: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM cv WHERE job_id = ?1",
-            [job_id],
-            |r| r.get(0),
-        ).unwrap_or(0);
-        let done: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM cv_embedding WHERE job_id = ?1 AND model_id = ?2",
-            [job_id, model_id],
-            |r| r.get(0),
-        ).unwrap_or(0);
+    pub fn get_embedding_progress(
+        conn: &Connection,
+        job_id: &str,
+        model_id: &str,
+    ) -> Result<EmbeddingProgress, rusqlite::Error> {
+        let total: i64 = conn
+            .query_row("SELECT COUNT(*) FROM cv WHERE job_id = ?1", [job_id], |r| {
+                r.get(0)
+            })
+            .unwrap_or(0);
+        let done: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM cv_embedding WHERE job_id = ?1 AND model_id = ?2",
+                [job_id, model_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
         let failed: i64 = conn.query_row(
             "SELECT COUNT(*) FROM cv_embedding WHERE job_id = ?1 AND model_id = ?2 AND error IS NOT NULL",
             [job_id, model_id],
             |r| r.get(0),
         ).unwrap_or(0);
-        let running: i64 = conn.query_row(
-            "SELECT running FROM waves_rank_state WHERE job_id = ?1",
-            [job_id],
-            |r| r.get(0),
-        ).unwrap_or(0);
+        let running: i64 = conn
+            .query_row(
+                "SELECT running FROM waves_rank_state WHERE job_id = ?1",
+                [job_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
         Ok(EmbeddingProgress {
             job_id: job_id.to_string(),
             done,

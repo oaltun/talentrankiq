@@ -15,8 +15,8 @@ libtriqui-core = { path = "../lib/libtriqui-core" }
 libconfigreader = { path = "../lib/libconfigreader" }
 libtriqui-license = { path = "../lib/libtriqui-license" }
 libmodeldownloader = { path = "../lib/libmodeldownloader" }
-log = "0.4"
-env_logger = "0.11"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter", "registry", "std"] }
 dirs = "6"
 clap = { version = "4", features = ["derive"] }
 

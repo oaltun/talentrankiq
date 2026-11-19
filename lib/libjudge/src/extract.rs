@@ -10,13 +10,14 @@ use libcvevidence::CvEvidence;
 use libtokenizer::TokenizerHandle;
 use sha2::{Digest, Sha256};
 
+use crate::JudgeError;
 use crate::artifact::{ChunkingMode, Contextual, FeatureSpec, FeatureVariant};
 use crate::evidence::{ad_terms, build_vocabulary, compute_features, today_utc, x_block};
-use crate::features::{doc_features, DocFeatures, TextPrep};
-use crate::JudgeError;
+use crate::features::{DocFeatures, TextPrep, doc_features};
 
 /// Contextual prefixes — must match bench step 14 byte-for-byte.
-pub const RESUME_PREFIX: &str = "This is a chunk from a CV of an applicant applying for a position. ";
+pub const RESUME_PREFIX: &str =
+    "This is a chunk from a CV of an applicant applying for a position. ";
 pub const JOB_PREFIX: &str = "This is a chunk from a job advertisement describing a position. ";
 
 /// Embedding backend seam. `libmodelcallerclient`'s client adapts into this
@@ -43,7 +44,9 @@ impl ChunkCache {
     }
 
     pub fn disabled() -> Self {
-        Self { dir: PathBuf::new() }
+        Self {
+            dir: PathBuf::new(),
+        }
     }
 
     pub fn enabled(&self) -> bool {
@@ -70,7 +73,11 @@ impl ChunkCache {
         }
         let data = std::fs::read_to_string(self.path(&Self::key(model, text))).ok()?;
         let val: serde_json::Value = serde_json::from_str(&data).ok()?;
-        val.get("embedding")?.as_array()?.iter().map(|v| v.as_f64()).collect()
+        val.get("embedding")?
+            .as_array()?
+            .iter()
+            .map(|v| v.as_f64())
+            .collect()
     }
 
     pub fn put(&self, model: &str, text: &str, embedding: &[f64]) {
@@ -83,7 +90,11 @@ impl ChunkCache {
 }
 
 /// Chunking parameters — same formula as bench `chunk_params` (step 14).
-pub fn chunk_params(mode: ChunkingMode, max_ctx: usize, explicit_size: Option<usize>) -> (usize, usize) {
+pub fn chunk_params(
+    mode: ChunkingMode,
+    max_ctx: usize,
+    explicit_size: Option<usize>,
+) -> (usize, usize) {
     match mode {
         ChunkingMode::None => (max_ctx, 0),
         ChunkingMode::CtxSize => {
@@ -112,13 +123,18 @@ pub struct EvidenceCache {
 
 impl EvidenceCache {
     pub fn new(dir: &str) -> Result<Self, JudgeError> {
-        std::fs::create_dir_all(dir)
-            .map_err(|e| JudgeError::Other(format!("failed to create evidence cache dir '{dir}': {e}")))?;
-        Ok(Self { dir: PathBuf::from(dir) })
+        std::fs::create_dir_all(dir).map_err(|e| {
+            JudgeError::Other(format!("failed to create evidence cache dir '{dir}': {e}"))
+        })?;
+        Ok(Self {
+            dir: PathBuf::from(dir),
+        })
     }
 
     pub fn disabled() -> Self {
-        Self { dir: PathBuf::new() }
+        Self {
+            dir: PathBuf::new(),
+        }
     }
 
     pub fn enabled(&self) -> bool {
@@ -253,10 +269,9 @@ impl FeatureExtractor {
                 Ok(vec![format!("{prefix}{truncated}")])
             }
             ChunkingMode::CtxSize | ChunkingMode::Fixed => {
-                let tokenizer = self
-                    .tokenizer
-                    .as_ref()
-                    .ok_or_else(|| JudgeError::Other("chunking requested but no tokenizer loaded".into()))?;
+                let tokenizer = self.tokenizer.as_ref().ok_or_else(|| {
+                    JudgeError::Other("chunking requested but no tokenizer loaded".into())
+                })?;
                 let (cs, overlap) = chunk_params(self.chunking, self.max_ctx, self.chunk_size);
                 let chunks = tokenizer
                     .chunk_text(&preprocessed, cs, overlap)
@@ -278,12 +293,18 @@ impl FeatureExtractor {
         }
         self.cache_misses += 1;
         let embs = self.embedder.embed(&[text.to_string()])?;
-        match embs.into_iter().next().filter(|e| !e.iter().all(|&v| v == 0.0)) {
+        match embs
+            .into_iter()
+            .next()
+            .filter(|e| !e.iter().all(|&v| v == 0.0))
+        {
             Some(emb) => {
                 self.cache.put(&self.model, text, &emb);
                 Ok(emb)
             }
-            None => Err(JudgeError::Other("embedding returned empty or zero vector".into())),
+            None => Err(JudgeError::Other(
+                "embedding returned empty or zero vector".into(),
+            )),
         }
     }
 
@@ -291,10 +312,7 @@ impl FeatureExtractor {
     /// derived from the ad's chunk embeddings. All cache misses are
     /// deduplicated and embedded in batches of `embed_batch` texts per call.
     /// Returns one `DocFeatures` per resume, in input order.
-    pub fn extract(
-        &mut self,
-        texts: ObservationTexts<'_>,
-    ) -> Result<Vec<DocFeatures>, JudgeError> {
+    pub fn extract(&mut self, texts: ObservationTexts<'_>) -> Result<Vec<DocFeatures>, JudgeError> {
         let job_chunk_texts = self.chunk_texts(texts.job_text, true)?;
         let resume_chunk_texts: Vec<Vec<String>> = texts
             .resume_texts
@@ -340,7 +358,9 @@ impl FeatureExtractor {
             }
             for (t, emb) in batch.iter().zip(embs.into_iter()) {
                 if emb.iter().all(|&v| v == 0.0) {
-                    return Err(JudgeError::Other("embedding returned empty or zero vector".into()));
+                    return Err(JudgeError::Other(
+                        "embedding returned empty or zero vector".into(),
+                    ));
                 }
                 self.cache.put(&self.model, t, &emb);
                 emb_by_text.insert(t.clone(), emb);
@@ -383,7 +403,11 @@ fn fill_evidence_blocks(
     texts: ObservationTexts<'_>,
     docs: &mut [DocFeatures],
 ) -> Result<(), JudgeError> {
-    let resume_texts: Vec<String> = texts.resume_texts.iter().map(|t| (*t).to_string()).collect();
+    let resume_texts: Vec<String> = texts
+        .resume_texts
+        .iter()
+        .map(|t| (*t).to_string())
+        .collect();
     let vocabulary = build_vocabulary(&resume_texts, 1500);
     let terms = ad_terms(texts.job_text, &vocabulary);
     let now = today_utc();
@@ -393,7 +417,9 @@ fn fill_evidence_blocks(
     };
 
     if docs.len() != texts.resume_texts.len() {
-        return Err(JudgeError::Other("internal: doc/chunk count mismatch".into()));
+        return Err(JudgeError::Other(
+            "internal: doc/chunk count mismatch".into(),
+        ));
     }
     for (i, text) in texts.resume_texts.iter().enumerate() {
         let key = EvidenceCache::key("stage-a", "-", "schema-1", text);
@@ -434,13 +460,7 @@ mod tests {
 
     fn extractor(spec: &FeatureSpec, evidence_dir: Option<&str>) -> FeatureExtractor {
         let cache = ChunkCache::disabled();
-        let mut ex = FeatureExtractor::from_spec(
-            spec,
-            4096,
-            None,
-            cache,
-            Box::new(ConstEmbedder),
-        );
+        let mut ex = FeatureExtractor::from_spec(spec, 4096, None, cache, Box::new(ConstEmbedder));
         if let Some(dir) = evidence_dir {
             ex.evidence_cache = EvidenceCache::new(dir).unwrap();
         }
@@ -456,9 +476,21 @@ mod tests {
 
     #[test]
     fn raw_variant_leaves_x_empty() {
-        let spec = FeatureSpec::raw_pair("m", 8, ChunkingMode::None, None, Contextual::Off, TextPrep::None);
+        let spec = FeatureSpec::raw_pair(
+            "m",
+            8,
+            ChunkingMode::None,
+            None,
+            Contextual::Off,
+            TextPrep::None,
+        );
         let mut ex = extractor(&spec, None);
-        let docs = ex.extract(observation("java job", vec!["Experience04/2018toCurrentJava DevAcme", "nothing here"])).unwrap();
+        let docs = ex
+            .extract(observation(
+                "java job",
+                vec!["Experience04/2018toCurrentJava DevAcme", "nothing here"],
+            ))
+            .unwrap();
         assert_eq!(docs.len(), 2);
         assert!(docs.iter().all(|d| d.x.is_empty()));
     }
@@ -467,7 +499,14 @@ mod tests {
     fn fused_variant_fills_x_and_reuses_evidence_cache() {
         let dir = std::env::temp_dir().join("lj_fused_cache_test");
         let _ = std::fs::remove_dir_all(&dir);
-        let spec = FeatureSpec::fused_pair("m", 8, ChunkingMode::None, None, Contextual::Off, TextPrep::None);
+        let spec = FeatureSpec::fused_pair(
+            "m",
+            8,
+            ChunkingMode::None,
+            None,
+            Contextual::Off,
+            TextPrep::None,
+        );
         let mut ex = extractor(&spec, Some(dir.to_str().unwrap()));
         let rich = "Experience04/2018toCurrentSenior Java DeveloperAcmeCorp-Lyon,FR,Built kafka pipelines with spring boot";
         // filler resumes keep the per-observation vocabulary non-degenerate
@@ -478,11 +517,19 @@ mod tests {
             "java microservices docker tooling years",
             "completely unrelated warehouse operator",
         ];
-        let docs = ex.extract(observation(
-            "senior java developer with kafka",
-            vec![rich, "no evidence at all", fillers[0], fillers[1], fillers[2], fillers[3]],
-        ))
-        .unwrap();
+        let docs = ex
+            .extract(observation(
+                "senior java developer with kafka",
+                vec![
+                    rich,
+                    "no evidence at all",
+                    fillers[0],
+                    fillers[1],
+                    fillers[2],
+                    fillers[3],
+                ],
+            ))
+            .unwrap();
         assert_eq!(docs[0].x.len(), X_BLOCK_LEN);
         assert_eq!(docs[1].x.len(), X_BLOCK_LEN);
         // the evidenced cv must show depth + coverage; the bare one must not
@@ -491,13 +538,24 @@ mod tests {
         assert_eq!(docs[1].x[9], 0.0);
 
         // second run: same texts -> cache hits, identical blocks
-        let hits_before = ex.evidence_cache.get(&EvidenceCache::key("stage-a", "-", "schema-1", rich)).is_some();
+        let hits_before = ex
+            .evidence_cache
+            .get(&EvidenceCache::key("stage-a", "-", "schema-1", rich))
+            .is_some();
         assert!(hits_before);
-        let docs2 = ex.extract(observation(
-            "senior java developer with kafka",
-            vec![rich, "no evidence at all", fillers[0], fillers[1], fillers[2], fillers[3]],
-        ))
-        .unwrap();
+        let docs2 = ex
+            .extract(observation(
+                "senior java developer with kafka",
+                vec![
+                    rich,
+                    "no evidence at all",
+                    fillers[0],
+                    fillers[1],
+                    fillers[2],
+                    fillers[3],
+                ],
+            ))
+            .unwrap();
         assert_eq!(docs[0].x, docs2[0].x);
     }
 

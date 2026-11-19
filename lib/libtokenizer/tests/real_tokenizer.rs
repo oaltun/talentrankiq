@@ -19,7 +19,9 @@ fn find_real_tokenizer() -> Option<PathBuf> {
 }
 
 fn dirs_home() -> PathBuf {
-    std::env::var("HOME").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("/tmp"))
+    std::env::var("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("/tmp"))
 }
 
 #[test]
@@ -47,10 +49,13 @@ fn real_tokenizer_chunk_long_text() {
         }
     };
     let t = TokenizerHandle::from_file(&path).unwrap();
-    let long_text = "Senior software engineer with 10 years of experience in distributed systems, "
-        .repeat(50);
+    let long_text =
+        "Senior software engineer with 10 years of experience in distributed systems, ".repeat(50);
     let total_tokens = t.count_tokens(&long_text);
-    assert!(total_tokens > 100, "expected >100 tokens, got {total_tokens}");
+    assert!(
+        total_tokens > 100,
+        "expected >100 tokens, got {total_tokens}"
+    );
 
     let chunk_size = 128;
     let overlap = 19;

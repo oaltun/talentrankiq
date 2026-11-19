@@ -19,10 +19,13 @@
 //!   work finishes — progress always travels as events, never in the response;
 //! - a dedicated writer thread owns the response stream so response/event
 //!   lines from concurrent threads never interleave;
-//! - all logs go through the `log` crate (stderr for the stdio shell, the
-//!   gui's Tauri backend in-process); the response stream is protocol only.
+//! - all logs go through the `tracing` crate (stderr for the stdio shell, the
+//!   gui's Tauri backend in-process); the response stream is protocol only. Per
+//!   request, events are routed to a timestamped file in the resolved log dir
+//!   (see [`crate::serve::logging`]).
 
 pub mod handlers;
+pub mod logging;
 pub mod watch;
 
 use std::io::{BufRead, Write};
@@ -32,9 +35,9 @@ use std::time::Duration;
 
 use libtriqui_client::protocol::{Request, MAX_LINE_BYTES};
 use libtriqui_client::types::RuntimeStatusInfo;
-use serde::Serialize;
 use libtriqui_core::db::{self, DbConnection, ImportState};
 use libtriqui_core::runtime::{EngineRuntime, RuntimeConfig};
+use serde::Serialize;
 
 use crate::serve::watch::WatchHandle;
 
@@ -56,8 +59,12 @@ pub const PROGRESS_MIN_INTERVAL: Duration = Duration::from_millis(100);
 pub struct EventSink(std::sync::mpsc::Sender<String>);
 
 impl EventSink {
-    pub fn new(tx: std::sync::mpsc::Sender<String>) -> Self { EventSink(tx) }
-    pub fn inner(&self) -> std::sync::mpsc::Sender<String> { self.0.clone() }
+    pub fn new(tx: std::sync::mpsc::Sender<String>) -> Self {
+        EventSink(tx)
+    }
+    pub fn inner(&self) -> std::sync::mpsc::Sender<String> {
+        self.0.clone()
+    }
     pub fn emit<D: Serialize>(&self, name: &str, data: &D) {
         let event = libtriqui_client::Event {
             event: name.to_string(),
@@ -100,30 +107,34 @@ pub struct ServeState {
 
 /// Run the stdio serve loop until stdin EOF (the gui closing stdin is the
 /// shutdown signal), then tear the engine down and return. Thin shell for the
-/// `triqui-cli serve` subcommand: only logger setup, then [`run_over`].
-pub fn run(app_dir: Option<PathBuf>, app_version: String) -> Result<(), String> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
-        .format_timestamp_secs()
-        .try_init()
-        .ok();
+/// `triqui-cli serve` subcommand: logger setup, then [`run_over`].
+pub fn run(
+    app_dir: Option<PathBuf>,
+    app_version: String,
+    log_dir: Option<PathBuf>,
+) -> Result<(), String> {
+    crate::serve::logging::init();
     run_over(
         app_dir,
         app_version,
         std::io::stdin().lock(),
         std::io::stdout(),
+        log_dir,
     )
 }
 
 /// The serve loop over arbitrary byte streams — the library core the gui runs
 /// in-process (one binary, no child; `gui/design/app1/thin-gui.md`). `input`/`output`
 /// are the request/response channels; EOF on `input` shuts the engine down.
-/// Logging is the caller's business: the stdio shell inits `env_logger`, the
-/// in-process gui keeps its own Tauri log backend.
+/// `log_dir` resolves the per-request log directory (CLI flag > `TRIQ_LOG_DIR` >
+/// saved prefs > OS default); `None` disables per-request files (the in-process
+/// gui keeps its own Tauri log backend).
 pub fn run_over<R: BufRead, W: Write + Send + 'static>(
     app_dir: Option<PathBuf>,
     app_version: String,
     input: R,
     output: W,
+    log_dir: Option<PathBuf>,
 ) -> Result<(), String> {
     let app_dir = match app_dir {
         Some(dir) => dir,
@@ -133,14 +144,20 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
     let db_path = app_dir.join("triqui.db");
     let conn = db::open_connection_at(&db_path)?;
 
+    crate::serve::logging::init();
+    let resolved_log_dir =
+        crate::serve::logging::resolve_log_dir(Some(&app_dir), log_dir.as_deref());
+
     // No cascade thread exists yet, so a rank_state row still claiming a run in
     // flight is a leftover from a previous process (quit/crash mid-cascade).
     // Recover it before anything reads the state, or the job reports running
     // forever and refuses every new cascade (the wedged-job bug).
     match db::recover_stale_running_cascades(&conn) {
         Ok(0) => {}
-        Ok(n) => log::info!("serve: recovered {n} stale running cascade(s) from a previous run"),
-        Err(e) => log::warn!("serve: could not recover stale cascade states: {e}"),
+        Ok(n) => {
+            tracing::info!("serve: recovered {n} stale running cascade(s) from a previous run")
+        }
+        Err(e) => tracing::warn!("serve: could not recover stale cascade states: {e}"),
     }
 
     // User preference overrides from AppPreferences.
@@ -230,7 +247,7 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
             .map_err(|e| format!("spawn ad watch coordinator: {e}"))?;
     }
 
-    log::info!("serve: ready");
+    tracing::info!("serve: ready");
 
     // Request loop: read, spawn a handler thread, never block on a command.
     // Handler panics are caught and answered with an error envelope — in the
@@ -248,30 +265,37 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
             continue;
         }
         if trimmed.len() as u64 > MAX_LINE_BYTES {
-            log::error!("serve: over-long request line dropped");
+            tracing::error!("serve: over-long request line dropped");
             continue;
         }
         let request = match serde_json::from_str::<Request>(trimmed) {
             Ok(r) => r,
             Err(e) => {
-                log::warn!("serve: unparsable request line: {e}");
+                tracing::warn!("serve: unparsable request line: {e}");
                 continue;
             }
         };
         let state = Arc::clone(&state);
         let events = events.clone();
         let user_ovr = user_ovr_opt.clone();
+        let request_log_file = resolved_log_dir
+            .as_ref()
+            .and_then(|dir| crate::serve::logging::open_request_log(dir, &request.cmd));
+        let had_request_log = request_log_file.is_some();
         std::thread::Builder::new()
             .name(format!("cmd-{}", request.cmd))
             .spawn(move || {
                 libtriqui_core::app_config::set_user_overrides(user_ovr);
-                let response = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(
-                    || handlers::handle(&state, &request),
-                )) {
+                if let Some(file) = request_log_file.clone() {
+                    crate::serve::logging::set_current_request_log(file);
+                }
+                let response = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    handlers::handle(&state, &request)
+                })) {
                     Ok(response) => response,
                     Err(panic) => {
                         let msg = panic_message(&panic);
-                        log::error!("serve: handler for '{}' panicked: {msg}", request.cmd);
+                        tracing::error!("serve: handler for '{}' panicked: {msg}", request.cmd);
                         libtriqui_client::protocol::Response::err(
                             request.id,
                             libtriqui_client::protocol::ProtocolError::internal(format!(
@@ -281,12 +305,15 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
                         )
                     }
                 };
+                if had_request_log {
+                    crate::serve::logging::clear_current_request_log();
+                }
                 events.send_line(serde_json::to_string(&response).expect("response serializes"));
             })
             .ok();
     }
 
-    log::info!("serve: stdin closed — shutting down");
+    tracing::info!("serve: stdin closed — shutting down");
     state.runtime.shutdown();
     Ok(())
 }

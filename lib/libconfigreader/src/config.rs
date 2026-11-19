@@ -519,7 +519,11 @@ impl Config {
             .by_embedder
             .get(embedder_slug)
             .map(|p| p.to_str().unwrap_or(""))
-            .or(self.gui_judge_artifact.default.as_deref().and_then(|p| p.to_str()))
+            .or(self
+                .gui_judge_artifact
+                .default
+                .as_deref()
+                .and_then(|p| p.to_str()))
             .unwrap_or("")
     }
 
@@ -744,7 +748,10 @@ impl std::str::FromStr for EmbedSessions {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_ascii_lowercase().as_str() {
             "auto" => Ok(EmbedSessions::Auto),
-            n => n.parse::<u32>().map(EmbedSessions::Fixed).map_err(|_| format!("invalid embed_sessions: {s}")),
+            n => n
+                .parse::<u32>()
+                .map(EmbedSessions::Fixed)
+                .map_err(|_| format!("invalid embed_sessions: {s}")),
         }
     }
 }
@@ -1134,10 +1141,12 @@ pub struct ConfigError {
 }
 
 impl ConfigError {
+    #[allow(dead_code)]
     fn new(msg: impl Into<String>) -> Self {
         ConfigError { msg: msg.into() }
     }
 
+    #[allow(dead_code)]
     fn conflict(field: &str, cli: &str, cfg: &str) -> Self {
         ConfigError::new(format!(
             "--{} '{}' conflicts with config value '{}'",

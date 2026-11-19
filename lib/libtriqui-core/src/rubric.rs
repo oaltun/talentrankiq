@@ -79,8 +79,13 @@ impl Rubric {
     /// Read a job's rubric from the database. Loads **no** vectors — call
     /// [`Rubric::with_vectors`] for each space the caller intends to score in.
     pub fn load(conn: &Connection, job_id: &str) -> Result<Rubric, DomainError> {
-        let (ad_weight, fb_job_weight, fb_profile_weight, ad_text): (f64, f64, f64, Option<String>) =
-            conn.query_row(
+        let (ad_weight, fb_job_weight, fb_profile_weight, ad_text): (
+            f64,
+            f64,
+            f64,
+            Option<String>,
+        ) = conn
+            .query_row(
                 "SELECT COALESCE(ad_weight, 1.0), COALESCE(fb_job_weight, 0.0),
                         COALESCE(fb_profile_weight, 0.0), job_ad_text
                  FROM jobs WHERE id = ?1",
@@ -279,7 +284,8 @@ pub fn ensure_vectors(
         .and_then(|b| bytes_to_vector(b, None).ok())
         .filter(|v| embeddings::vector_is_sane(v))
     {
-        crate::db::put_rubric_vector(conn, &rubric.job_id, FB_PROFILE_Q, space, &v).map_err(dberr)?;
+        crate::db::put_rubric_vector(conn, &rubric.job_id, FB_PROFILE_Q, space, &v)
+            .map_err(dberr)?;
     }
 
     // The ad and the criteria: text, so embed them.
@@ -328,13 +334,8 @@ pub fn ensure_vectors(
                 Some(bytes) => {
                     if let Ok(v) = bytes_to_vector(&bytes, None) {
                         if embeddings::vector_is_sane(&v) {
-                            let _ = crate::db::put_rubric_vector(
-                                conn,
-                                &rubric.job_id,
-                                qid,
-                                space,
-                                &v,
-                            );
+                            let _ =
+                                crate::db::put_rubric_vector(conn, &rubric.job_id, qid, space, &v);
                             embedded += 1;
                             return false;
                         }
@@ -360,11 +361,12 @@ pub fn ensure_vectors(
     for (qid, text) in &still_missing {
         match embeddings::embed_text_cached(conn, &owned, space, tok, cfg, text) {
             Ok(v) if embeddings::vector_is_sane(&v) => {
-                crate::db::put_rubric_vector(conn, &rubric.job_id, qid, space, &v).map_err(dberr)?;
+                crate::db::put_rubric_vector(conn, &rubric.job_id, qid, space, &v)
+                    .map_err(dberr)?;
                 embedded += 1;
             }
-            Ok(_) => log::warn!("rubric: question {qid} in {space} failed its sanity check"),
-            Err(e) => log::warn!("rubric: cannot embed question {qid} in {space}: {e}"),
+            Ok(_) => tracing::warn!("rubric: question {qid} in {space} failed its sanity check"),
+            Err(e) => tracing::warn!("rubric: cannot embed question {qid} in {space}: {e}"),
         }
     }
     Ok(embedded)
@@ -458,11 +460,7 @@ pub fn score_candidates_in_space(
         };
         for (qid, vector) in &queries {
             let (sim, _idx) = chunked.max_sim_top_k(vector, 1);
-            rows.push((
-                cid.clone(),
-                (space.to_string(), (*qid).to_string()),
-                sim,
-            ));
+            rows.push((cid.clone(), (space.to_string(), (*qid).to_string()), sim));
         }
         scored += 1;
     }

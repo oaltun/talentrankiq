@@ -305,7 +305,7 @@ pub fn export_job(
             files_written += 1;
         } else {
             files_missing += 1;
-            log::warn!("bundle export: source file missing, skipping: {src}");
+            tracing::warn!("bundle export: source file missing, skipping: {src}");
         }
 
         result_rows.push(BundleResultRow {
@@ -491,7 +491,7 @@ pub fn extract_bundle_candidates(path: &Path, dest_dir: &Path) -> Result<(i64, i
             || rest == ".."
             || rest.contains('\0')
         {
-            log::warn!("bundle import: skipping unsafe/nested entry {name:?}");
+            tracing::warn!("bundle import: skipping unsafe/nested entry {name:?}");
             skipped += 1;
             continue;
         }
@@ -499,7 +499,7 @@ pub fn extract_bundle_candidates(path: &Path, dest_dir: &Path) -> Result<(i64, i
         let mut out = match std::fs::File::create(&dest) {
             Ok(f) => f,
             Err(e) => {
-                log::warn!("bundle import: cannot create {}: {e}", dest.display());
+                tracing::warn!("bundle import: cannot create {}: {e}", dest.display());
                 skipped += 1;
                 continue;
             }
@@ -507,7 +507,7 @@ pub fn extract_bundle_candidates(path: &Path, dest_dir: &Path) -> Result<(i64, i
         match std::io::copy(&mut member, &mut out) {
             Ok(_) => extracted += 1,
             Err(e) => {
-                log::warn!("bundle import: cannot extract {name:?}: {e}");
+                tracing::warn!("bundle import: cannot extract {name:?}: {e}");
                 skipped += 1;
             }
         }
@@ -900,10 +900,8 @@ mod tests {
         let src_dir =
             std::env::temp_dir().join(format!("bundle-test-src2-{}", uuid::Uuid::new_v4()));
         let job_id = seed_job(&conn, &src_dir);
-        let out = std::env::temp_dir().join(format!(
-            "bundle-test2-{}.triquijob",
-            uuid::Uuid::new_v4()
-        ));
+        let out =
+            std::env::temp_dir().join(format!("bundle-test2-{}.triquijob", uuid::Uuid::new_v4()));
         export_job(
             &conn,
             &job_id,

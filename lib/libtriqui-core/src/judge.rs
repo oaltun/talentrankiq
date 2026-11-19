@@ -304,7 +304,7 @@ pub fn stage_for(rt: &std::sync::Arc<crate::runtime::EngineRuntime>) -> Option<J
     match JudgeStage::load(&path) {
         Ok(stage) => Some(stage),
         Err(e) => {
-            log::warn!("judge: artifact {path:?} failed to load, stage disabled: {e}");
+            tracing::warn!("judge: artifact {path:?} failed to load, stage disabled: {e}");
             None
         }
     }
@@ -361,7 +361,7 @@ pub fn run_pool(
             .ok()
             .flatten();
         if !job_eligible(ad_text.as_deref(), min_resume_chars(&conn, job_id)?) {
-            log::info!(
+            tracing::info!(
                 "judge: pool of {} not eligible (ad >= {AD_MIN_CHARS} chars, every CV >= {RESUME_MIN_CHARS}) — using the embedder's cosine",
                 pending.len()
             );
@@ -374,7 +374,7 @@ pub fn run_pool(
         None => return Ok(None),
     };
     if !stage.matches(&model, ead.len()) {
-        log::info!(
+        tracing::info!(
             "judge: artifact trained for embedder '{}' (dim {}), selected is '{model}' (dim {}) — using the cosine ad row",
             stage.spec_embedder(),
             stage.spec_dim(),
@@ -434,7 +434,6 @@ pub fn run_pool(
     write_grades(&conn, job_id, &ids, &wins)?;
     Ok(Some(stats))
 }
-
 
 /// The shortest extracted CV in the job — the judge's resume-length floor.
 fn min_resume_chars(conn: &rusqlite::Connection, job_id: &str) -> Result<Option<usize>, String> {

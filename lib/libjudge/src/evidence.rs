@@ -30,14 +30,14 @@ pub const X_FEATURES: [&str; X_BLOCK_LEN] = [
 const STOPWORDS: &[&str] = &[
     "a", "an", "and", "are", "as", "at", "be", "but", "by", "for", "if", "in", "into", "is", "it",
     "no", "not", "of", "on", "or", "such", "that", "the", "their", "then", "there", "these",
-    "they", "this", "to", "was", "will", "with", "i", "you", "your", "we", "our", "us", "my",
-    "me", "him", "her", "his", "its", "our", "can", "could", "would", "should", "may", "might",
-    "shall", "must", "have", "has", "had", "do", "does", "did", "doing", "done", "been", "being",
-    "am", "from", "also", "just", "about", "up", "out", "how", "what", "when", "where", "which",
-    "who", "whom", "so", "than", "too", "very", "more", "most", "only", "own", "same", "other",
-    "each", "every", "all", "any", "some", "few", "many", "much", "well", "back", "even",
-    "still", "way", "take", "come", "get", "make", "know", "like", "long", "look", "most", "new",
-    "now", "also", "one", "two", "first", "last", "over", "after", "before",
+    "they", "this", "to", "was", "will", "with", "i", "you", "your", "we", "our", "us", "my", "me",
+    "him", "her", "his", "its", "our", "can", "could", "would", "should", "may", "might", "shall",
+    "must", "have", "has", "had", "do", "does", "did", "doing", "done", "been", "being", "am",
+    "from", "also", "just", "about", "up", "out", "how", "what", "when", "where", "which", "who",
+    "whom", "so", "than", "too", "very", "more", "most", "only", "own", "same", "other", "each",
+    "every", "all", "any", "some", "few", "many", "much", "well", "back", "even", "still", "way",
+    "take", "come", "get", "make", "know", "like", "long", "look", "most", "new", "now", "also",
+    "one", "two", "first", "last", "over", "after", "before",
 ];
 
 pub fn tokenize(text: &str) -> Vec<String> {
@@ -101,12 +101,26 @@ pub fn ad_terms(job_text: &str, vocabulary: &[String]) -> Vec<String> {
 fn seniority_score(title: &str) -> f64 {
     let t = title.to_lowercase();
     let lead = [
-        "lead", "principal", "staff", "head", "director", "manager", "architect", "chef",
+        "lead",
+        "principal",
+        "staff",
+        "head",
+        "director",
+        "manager",
+        "architect",
+        "chef",
         "responsable",
     ];
     let senior = ["senior", "sr.", "sr ", "snr", "expert", "confirmé"];
     let junior = [
-        "junior", "jr.", "jr ", "intern", "stage", "stagiaire", "trainee", "apprentice",
+        "junior",
+        "jr.",
+        "jr ",
+        "intern",
+        "stage",
+        "stagiaire",
+        "trainee",
+        "apprentice",
         "assistant",
     ];
     if lead.iter().any(|w| t.contains(w)) {
@@ -190,10 +204,7 @@ pub fn compute_features(job_text: &str, ev: &CvEvidence, ad_terms: &[String]) ->
     // years matching: max months evidenced under any ad term
     let mut years_matching_max = 0.0f64;
     for r in &ev.roles {
-        let evidences = r
-            .skills
-            .iter()
-            .any(|s| ad_terms.binary_search(s).is_ok());
+        let evidences = r.skills.iter().any(|s| ad_terms.binary_search(s).is_ok());
         if let Some(m) = r.months {
             if evidences {
                 years_matching_max = years_matching_max.max(m as f64 / 12.0);
@@ -214,7 +225,10 @@ pub fn compute_features(job_text: &str, ev: &CvEvidence, ad_terms: &[String]) ->
         .iter()
         .max_by_key(|r| r.start.clone().unwrap_or_default())
     {
-        (seniority_score(&mr.title), title_similarity(&mr.title, &job_lower))
+        (
+            seniority_score(&mr.title),
+            title_similarity(&mr.title, &job_lower),
+        )
     } else {
         (0.0, 0.0)
     };
@@ -383,6 +397,13 @@ mod tests {
         assert!(terms.windows(2).all(|w| w[0] <= w[1]), "sorted");
         // 2 vocab hits < 5 → fallback still merges the ad's own tokens
         let hit = ad_terms("senior java kafka", &vocab);
-        assert_eq!(hit, vec!["java".to_string(), "kafka".to_string(), "senior".to_string()]);
+        assert_eq!(
+            hit,
+            vec![
+                "java".to_string(),
+                "kafka".to_string(),
+                "senior".to_string()
+            ]
+        );
     }
 }

@@ -283,7 +283,7 @@ impl ModelCallerClient {
         let registry = libmodelcaller::Registry::from_config(&cfg);
         let (backend, exec_provider) = effective_engine_io(&engine, &cfg);
         let model_dir = expand_home(cfg.model_dir.to_str().unwrap_or(""));
-         let args = libmodelcaller::StdioArgs {
+        let args = libmodelcaller::StdioArgs {
             model_dir: Some(model_dir),
             revision: cfg.revision.clone(),
             backend,
@@ -305,7 +305,7 @@ impl ModelCallerClient {
         std::thread::Builder::new()
             .name("modelcaller".into())
             .spawn(move || {
-                 if let Err(e) = libmodelcaller::run_stdio_over(
+                if let Err(e) = libmodelcaller::run_stdio_over(
                     registry,
                     args,
                     engine,
@@ -315,7 +315,7 @@ impl ModelCallerClient {
                     std::io::BufReader::new(b_read),
                     b_write,
                 ) {
-                    log::error!("in-process modelcaller exited: {e}");
+                    tracing::error!("in-process modelcaller exited: {e}");
                 }
             })
             .map_err(|e| {
@@ -375,7 +375,9 @@ impl ModelCallerClient {
     pub fn load(&self, model: &str) -> Result<(), ModelCallerError> {
         let resp = self.send_request(json!({ "cmd": "load", "model": model }))?;
         if let Some(error) = resp.get("error") {
-            return Err(ModelCallerError::Protocol(format!("modelcaller load error: {error}")));
+            return Err(ModelCallerError::Protocol(format!(
+                "modelcaller load error: {error}"
+            )));
         }
         Ok(())
     }
@@ -413,7 +415,9 @@ impl ModelCallerClient {
                 }
             }
         }
-        Err(ModelCallerError::Protocol(format!("model not found in registry: {model}")))
+        Err(ModelCallerError::Protocol(format!(
+            "model not found in registry: {model}"
+        )))
     }
 
     /// Embed `texts`. `texts_role` is optional; when present it must have the
@@ -521,7 +525,10 @@ impl ModelCallerClient {
                     relevance_score = s;
                 }
             }
-            vec.push(RerankResult { index, relevance_score });
+            vec.push(RerankResult {
+                index,
+                relevance_score,
+            });
         }
         Ok(vec)
     }
@@ -598,12 +605,20 @@ impl ModelCallerClient {
         let dropped: Vec<String> = resp
             .get("dropped")
             .and_then(|v| v.as_array())
-            .map(|a| a.iter().filter_map(|s| s.as_str().map(String::from)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|s| s.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
         let issues: Vec<String> = resp
             .get("issues")
             .and_then(|v| v.as_array())
-            .map(|a| a.iter().filter_map(|s| s.as_str().map(String::from)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|s| s.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
         let gen_ms = resp.get("gen_ms").and_then(|v| v.as_u64()).unwrap_or(0);
         Ok(ExtractOutput {
@@ -632,8 +647,8 @@ impl ModelCallerClient {
             payload,
         };
 
-        let line = serde_json::to_string(&envelope)
-            .map_err(|e| ModelCallerError::Json(e.to_string()))?;
+        let line =
+            serde_json::to_string(&envelope).map_err(|e| ModelCallerError::Json(e.to_string()))?;
         if let Some(stdin) = &mut inner.stdin {
             writeln!(stdin, "{}", line).map_err(|e| ModelCallerError::Write(e.to_string()))?;
             stdin
@@ -757,8 +772,10 @@ pub fn parse_multi_vec_response(
             )));
         }
         let data = bytes
-            .chunks_exact(4)
-            .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|c| f32::from_le_bytes(*c))
             .collect();
         out.push(MultiVecEmbedding {
             dim,
@@ -790,12 +807,16 @@ mod tests {
     fn config_with_engine(yaml_engine: &str) -> libconfigreader::Config {
         let dir = std::env::temp_dir().join(format!("ikmc-io-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join(format!("cfg-{}.yaml", yaml_engine.len() as u64 * 31 + yaml_engine.as_bytes().iter().map(|&b| b as u64).sum::<u64>()));
-        std::fs::write(
-            &path,
-            format!("models: []\nfamilies: []\n{yaml_engine}"),
-        )
-        .unwrap();
+        let path = dir.join(format!(
+            "cfg-{}.yaml",
+            yaml_engine.len() as u64 * 31
+                + yaml_engine
+                    .as_bytes()
+                    .iter()
+                    .map(|&b| b as u64)
+                    .sum::<u64>()
+        ));
+        std::fs::write(&path, format!("models: []\nfamilies: []\n{yaml_engine}")).unwrap();
         libconfigreader::Config::load()
     }
 
@@ -808,8 +829,14 @@ mod tests {
         let cfg = config_with_engine("engine:\n  backend: auto\n");
         let (backend, exec_provider) =
             effective_engine_io(&engine_section(Some(libconfigreader::Backend::Ort)), &cfg);
-        assert_eq!(backend, "ort", "the clamped section must win over the config");
-        assert_eq!(exec_provider, "auto", "unset falls through to the config/default");
+        assert_eq!(
+            backend, "ort",
+            "the clamped section must win over the config"
+        );
+        assert_eq!(
+            exec_provider, "auto",
+            "unset falls through to the config/default"
+        );
 
         // No pin in the section: the config's `auto` falls through.
         let (backend, _) = effective_engine_io(&engine_section(None), &cfg);

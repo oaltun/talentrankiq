@@ -117,7 +117,7 @@ fn walk_supported_files(dir: &Path, out: &mut Vec<PathBuf>) {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
         Err(e) => {
-            log::warn!("import: cannot read {}: {e}", dir.display());
+            tracing::warn!("import: cannot read {}: {e}", dir.display());
             return;
         }
     };
@@ -146,7 +146,7 @@ pub fn run_import(
     let conn = match rt.open_conn() {
         Ok(c) => c,
         Err(e) => {
-            log::error!("import: failed to open db: {e}");
+            tracing::error!("import: failed to open db: {e}");
             finish_import(import_state, job_id, 0, files.len() as i64, 0, progress);
             return;
         }
@@ -215,7 +215,7 @@ pub fn run_import(
                         "DELETE FROM candidates WHERE id = ?1",
                         rusqlite::params![&cid],
                     );
-                    log::info!("import: skipping duplicate content {}", path.display());
+                    tracing::info!("import: skipping duplicate content {}", path.display());
                 } else {
                     let _ = conn.execute(
                         "UPDATE candidates SET extraction_status = 'Extracted', extracted_text = ?1, content_hash = ?2 WHERE id = ?3",
@@ -224,7 +224,7 @@ pub fn run_import(
                 }
             }
             Err(e) => {
-                log::warn!("import: failed to parse {}: {e}", path.display());
+                tracing::warn!("import: failed to parse {}: {e}", path.display());
                 failed += 1;
                 let _ = conn.execute(
                     "UPDATE candidates SET extraction_status = 'Failed' WHERE id = ?1",
@@ -257,7 +257,7 @@ fn finish_import(
         let mut active = state.0.lock().expect("import state lock poisoned");
         active.remove(job_id);
     }
-    log::info!("import finished for job {job_id}: {done}/{total} done, {failed} failed");
+    tracing::info!("import finished for job {job_id}: {done}/{total} done, {failed} failed");
 }
 
 #[cfg(test)]

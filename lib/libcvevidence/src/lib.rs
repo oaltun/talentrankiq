@@ -130,7 +130,8 @@ impl CvEvidence {
                 }
             }
             if let (Some(s), Some(e)) = (&role.start, &role.end) {
-                if let (Some((sy, sm)), Some((ey, em))) = (parse_year_month(s), parse_year_month(e)) {
+                if let (Some((sy, sm)), Some((ey, em))) = (parse_year_month(s), parse_year_month(e))
+                {
                     if (ey, em) < (sy, sm) {
                         issues.push(format!("roles[{i}] end {e} before start {s}"));
                     }
@@ -150,8 +151,7 @@ impl CvEvidence {
         }
         if self.extensions.is_some() != self.extensions_schema.is_some() {
             issues.push(
-                "extensions and extensions_schema must be set together (or both null)"
-                    .to_string(),
+                "extensions and extensions_schema must be set together (or both null)".to_string(),
             );
         }
         if issues.is_empty() {
@@ -184,10 +184,7 @@ pub fn parse_year_month(s: &str) -> Option<(i32, u32)> {
     let s = s.trim();
     let mut parts = s.split('-');
     let year: i32 = parts.next()?.trim().parse().ok()?;
-    let month: u32 = match parts.next() {
-        Some(m) => m.trim().parse().ok()?,
-        None => return None,
-    };
+    let month: u32 = parts.next()?.trim().parse().ok()?;
     if !(1..=12).contains(&month) || !(1850..=2200).contains(&year) {
         return None;
     }
@@ -267,7 +264,10 @@ pub struct ExtractionSchema {
 
 impl ExtractionSchema {
     pub fn new(fields: Vec<SchemaField>) -> Self {
-        Self { base: "v1".to_string(), fields }
+        Self {
+            base: "v1".to_string(),
+            fields,
+        }
     }
 
     /// stable content hash (first 6 hex of sha256 of the canonical json),
@@ -285,7 +285,11 @@ impl ExtractionSchema {
     pub fn validate_extensions(
         &self,
         ext: &serde_json::Map<String, serde_json::Value>,
-    ) -> (serde_json::Map<String, serde_json::Value>, Vec<String>, Vec<String>) {
+    ) -> (
+        serde_json::Map<String, serde_json::Value>,
+        Vec<String>,
+        Vec<String>,
+    ) {
         let mut cleaned = serde_json::Map::new();
         let mut dropped = Vec::new();
         let mut issues = Vec::new();
@@ -301,9 +305,7 @@ impl ExtractionSchema {
                 Some(value) => {
                     let mut ok = field.kind.check(value);
                     if ok {
-                        if let (Some(allowed), Some(s)) =
-                            (&field.enum_values, value.as_str())
-                        {
+                        if let (Some(allowed), Some(s)) = (&field.enum_values, value.as_str()) {
                             ok = allowed.iter().any(|a| a == s);
                             if !ok {
                                 issues.push(format!(
@@ -379,7 +381,11 @@ mod tests {
             }],
             birth_year: Some(1985),
             total_months: 96,
-            coverage: Coverage { roles: true, projects: true, skills: true },
+            coverage: Coverage {
+                roles: true,
+                projects: true,
+                skills: true,
+            },
             extensions: None,
             extensions_schema: None,
         }
@@ -498,8 +504,7 @@ mod tests {
         assert!(dropped.is_empty());
         assert!(issues.iter().any(|i| i.contains("required")));
 
-        let (cleaned2, _, issues2) =
-            schema.validate_extensions(&serde_json::Map::new());
+        let (cleaned2, _, issues2) = schema.validate_extensions(&serde_json::Map::new());
         assert!(cleaned2.is_empty());
         assert!(issues2.iter().any(|i| i.contains("required")));
     }

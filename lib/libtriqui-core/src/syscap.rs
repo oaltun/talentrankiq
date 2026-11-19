@@ -91,7 +91,10 @@ mod tests {
 
     #[test]
     fn holding_code_only_for_hold() {
-        assert_eq!(holding_code(&budget_of(Verdict::Hold, 0.0, None)).as_deref(), Some(HOLDING));
+        assert_eq!(
+            holding_code(&budget_of(Verdict::Hold, 0.0, None)).as_deref(),
+            Some(HOLDING)
+        );
         assert_eq!(holding_code(&budget_of(Verdict::Full, 1.0, None)), None);
         assert_eq!(holding_code(&budget_of(Verdict::Polite, 0.5, None)), None);
         assert_eq!(holding_code(&budget_of(Verdict::Backoff, 0.25, None)), None);
@@ -114,9 +117,17 @@ mod tests {
     #[test]
     fn effective_embed_batch_prefers_the_budget_and_floors_at_one() {
         let b = budget_of(Verdict::Polite, 0.5, Some(4));
-        assert_eq!(effective_embed_batch(&b), 4, "a configured batch scales via the budget");
+        assert_eq!(
+            effective_embed_batch(&b),
+            4,
+            "a configured batch scales via the budget"
+        );
         let none = budget_of(Verdict::Full, 1.0, None);
-        assert_eq!(effective_embed_batch(&none), 2, "no config batch -> the thread cap");
+        assert_eq!(
+            effective_embed_batch(&none),
+            2,
+            "no config batch -> the thread cap"
+        );
     }
 
     #[test]

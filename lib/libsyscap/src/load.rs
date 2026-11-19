@@ -122,7 +122,10 @@ mod tests {
             assert!(snap.mem_total_bytes > 0);
             assert!(snap.mem_available_bytes <= snap.mem_total_bytes);
             assert!((0.0..=1.0).contains(&snap.mem_pressure));
-            assert_eq!(snap.free_mem_frac(), snap.mem_available_bytes as f64 / snap.mem_total_bytes as f64);
+            assert_eq!(
+                snap.free_mem_frac(),
+                snap.mem_available_bytes as f64 / snap.mem_total_bytes as f64
+            );
         }
     }
 

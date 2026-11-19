@@ -19,7 +19,10 @@ fn db_roundtrip() {
     db.insert_cv("h1", "text").unwrap();
     assert!(db.cv_has("h1").unwrap());
     db.insert_job_cv("job1", "h1").unwrap();
-    assert_eq!(db.get_all_cv_hashes_for_job("job1").unwrap(), vec!["h1".to_string()]);
+    assert_eq!(
+        db.get_all_cv_hashes_for_job("job1").unwrap(),
+        vec!["h1".to_string()]
+    );
     assert_eq!(db.get_job_cv_count("job1").unwrap(), 1);
     assert_eq!(db.get_job_cv_embedded_count("job1", "m").unwrap(), 0);
 }

@@ -65,7 +65,7 @@ impl Wrapper {
                         // when `libmlxembed::AVAILABLE`, so this is a loud
                         // refusal rather than a silent ONNX-shaped no-op.
                         if !libmlxembed::AVAILABLE {
-                            log::error!("mlx wrapper requested but this build has no MLX arm");
+                            tracing::error!("mlx wrapper requested but this build has no MLX arm");
                         } else {
                             libmlxembed::run_stdio_over(BufReader::new(req_read), resp_write);
                         }
@@ -83,7 +83,7 @@ impl Wrapper {
                 )
             })?;
 
-        log::info!("wrapper running in-process on dedicated thread");
+        tracing::info!("wrapper running in-process on dedicated thread");
         Ok(Wrapper {
             stdin: Some(Box::new(req_write)),
             stdout: BufReader::new(Box::new(resp_read)),

@@ -269,14 +269,41 @@ pub fn parse_layout(text: &str) -> ParsedCV {
 // ---------------------------------------------------------------------------
 
 const MONTHS_EN_FR: &[(&str, u32)] = &[
-    ("january", 1), ("february", 2), ("march", 3), ("april", 4), ("may", 5),
-    ("june", 6), ("july", 7), ("august", 8), ("september", 9), ("october", 10),
-    ("november", 11), ("december", 12),
-    ("janvier", 1), ("fevrier", 2), ("mars", 3), ("avril", 4), ("juin", 6),
-    ("juillet", 7), ("aout", 8), ("septembre", 9), ("octobre", 10),
-    ("novembre", 11), ("decembre", 12),
-    ("jan", 1), ("feb", 2), ("mar", 3), ("apr", 4), ("jun", 6), ("jul", 7),
-    ("aug", 8), ("sept", 9), ("sep", 9), ("oct", 10), ("nov", 11), ("dec", 12),
+    ("january", 1),
+    ("february", 2),
+    ("march", 3),
+    ("april", 4),
+    ("may", 5),
+    ("june", 6),
+    ("july", 7),
+    ("august", 8),
+    ("september", 9),
+    ("october", 10),
+    ("november", 11),
+    ("december", 12),
+    ("janvier", 1),
+    ("fevrier", 2),
+    ("mars", 3),
+    ("avril", 4),
+    ("juin", 6),
+    ("juillet", 7),
+    ("aout", 8),
+    ("septembre", 9),
+    ("octobre", 10),
+    ("novembre", 11),
+    ("decembre", 12),
+    ("jan", 1),
+    ("feb", 2),
+    ("mar", 3),
+    ("apr", 4),
+    ("jun", 6),
+    ("jul", 7),
+    ("aug", 8),
+    ("sept", 9),
+    ("sep", 9),
+    ("oct", 10),
+    ("nov", 11),
+    ("dec", 12),
 ];
 
 fn month_number(name: &str) -> Option<u32> {
@@ -342,8 +369,10 @@ fn present_regex() -> &'static Regex {
     // prefix match on purpose: cvs glue "Current" into the next word
     // ("04/2018toCurrentSenior Analyst…")
     RE.get_or_init(|| {
-        Regex::new(r"(?i)^(?:current|present|now|today|présent|actual|aujourd|en\s*poste|ce\s*jour)")
-            .unwrap()
+        Regex::new(
+            r"(?i)^(?:current|present|now|today|présent|actual|aujourd|en\s*poste|ce\s*jour)",
+        )
+        .unwrap()
     })
 }
 
@@ -390,7 +419,11 @@ pub fn find_date_ranges(text: &str) -> Vec<DateRange> {
         match end_year {
             Some(y) => {
                 end_present = false;
-                match resolve_date(y, caps.name("mo2").map(|m| m.as_str()), caps.name("m2").map(|m| m.as_str())) {
+                match resolve_date(
+                    y,
+                    caps.name("mo2").map(|m| m.as_str()),
+                    caps.name("m2").map(|m| m.as_str()),
+                ) {
                     Some(d) => end = d,
                     None => continue,
                 }
@@ -467,7 +500,12 @@ fn clean_title(s: &str) -> String {
 }
 
 fn tail_chars(s: &str, n: usize) -> String {
-    let skip = s.char_indices().rev().nth(n.saturating_sub(1)).map(|(i, _)| i).unwrap_or(0);
+    let skip = s
+        .char_indices()
+        .rev()
+        .nth(n.saturating_sub(1))
+        .map(|(i, _)| i)
+        .unwrap_or(0);
     s[skip..].to_string()
 }
 
@@ -488,10 +526,27 @@ fn clean_org(word: &str) -> Option<String> {
 
 /// words that start bullet sentences, not titles — format-B title guard
 const BULLET_VERBS: &[&str] = &[
-    "built", "created", "working", "worked", "responsible", "prepared",
-    "managed", "developed", "developing", "experience", "proficient",
-    "delivered", "conducted", "monitor", "leading", "lead", "uses", "using",
-    "skills", "ability", "excels",
+    "built",
+    "created",
+    "working",
+    "worked",
+    "responsible",
+    "prepared",
+    "managed",
+    "developed",
+    "developing",
+    "experience",
+    "proficient",
+    "delivered",
+    "conducted",
+    "monitor",
+    "leading",
+    "lead",
+    "uses",
+    "using",
+    "skills",
+    "ability",
+    "excels",
 ];
 
 /// extract (title, org) for a role from the text around its date range.
@@ -517,7 +572,11 @@ fn extract_title_org(before: &str, after: &str) -> (String, Option<String>) {
         let is_titleish = !title_candidate.is_empty()
             && wc <= 6
             && title_candidate.chars().count() <= 80
-            && title_candidate.chars().filter(|c| c.is_alphabetic()).count() >= 3
+            && title_candidate
+                .chars()
+                .filter(|c| c.is_alphabetic())
+                .count()
+                >= 3
             && !title_candidate.contains(':')
             && !title_candidate.contains('@')
             && !BULLET_VERBS.contains(&first_word.as_str());
@@ -535,10 +594,7 @@ fn extract_title_org(before: &str, after: &str) -> (String, Option<String>) {
     let tail = tail
         .trim()
         .trim_start_matches(|c: char| c.is_whitespace() || ",;:".contains(c));
-    if let Some((org_part, title_part)) = tail
-        .split_once('-')
-        .or_else(|| tail.split_once('–'))
-    {
+    if let Some((org_part, title_part)) = tail.split_once('-').or_else(|| tail.split_once('–')) {
         let t = clean_title(title_part);
         if t.chars().count() > 2 {
             let o = org_part
@@ -613,14 +669,16 @@ fn extract_birth_year(header: &str, now: (i32, u32)) -> Option<i32> {
     // only unambiguous forms: "age: 34", "aged 34 years", "34 years old".
     // bare "34 ans" is rejected (matches "25 ans d'expérience")
     let age_explicit = AGE_EXPLICIT.get_or_init(|| {
-        Regex::new(r"(?ix)
+        Regex::new(
+            r"(?ix)
             (?:
                 (?:age|âge)\s*[:\-]?\s*(\d{2})
                 |
                 (?:aged|âge?e?)\s*(?:de\s+)?(\d{2})\s*(?:years|ans)\b
                 |
                 (\d{2})\s*years\s*old
-            )")
+            )",
+        )
         .unwrap()
     });
     if let Some(caps) = birth_date.captures(header) {
@@ -765,11 +823,13 @@ pub fn parse_evidence(text: &str, opts: &EvidenceOptions) -> CvEvidence {
     // --- education ----------------------------------------------------------
     static DEGREE: OnceLock<Regex> = OnceLock::new();
     let degree_re = DEGREE.get_or_init(|| {
-        Regex::new(r"(?ix)\b(
+        Regex::new(
+            r"(?ix)\b(
             b\.?\s*c\.?\s*s|b\.?\s*sc|bachelor|licence|license|m\.?\s*c\.?\s*s|m\.?\s*sc|
             master|mba|ph\.?\s*d|doctorate|doctorat|ingénieur|ingenieur|engineer|diploma|
             diplôme|diplome|associate|high\s*school|bac\b
-        )")
+        )",
+        )
         .unwrap()
     });
     static YEAR: OnceLock<Regex> = OnceLock::new();
@@ -846,7 +906,10 @@ fn split_chunks(s: &str) -> Vec<String> {
     if !cur.trim().is_empty() {
         chunks.push(cur);
     }
-    chunks.into_iter().filter(|c| c.trim().chars().count() > 10).collect()
+    chunks
+        .into_iter()
+        .filter(|c| c.trim().chars().count() > 10)
+        .collect()
 }
 
 #[cfg(test)]
@@ -878,7 +941,8 @@ mod tests {
 
     #[test]
     fn date_ranges_glued_and_present() {
-        let ranges = find_date_ranges("04/2018toCurrentSenior Analyst04/2012to04/2015X02/2008to04/2012Y");
+        let ranges =
+            find_date_ranges("04/2018toCurrentSenior Analyst04/2012to04/2015X02/2008to04/2012Y");
         assert_eq!(ranges.len(), 3, "{ranges:?}");
         assert!(ranges[0].end_present);
         assert_eq!((ranges[0].start.year, ranges[0].start.month), (2018, 4));
@@ -888,7 +952,8 @@ mod tests {
 
     #[test]
     fn date_ranges_year_only_and_names() {
-        let ranges = find_date_ranges("2019 - 2022 Engineermar 2019 — Present Stuff2005to04/2006 Z");
+        let ranges =
+            find_date_ranges("2019 - 2022 Engineermar 2019 — Present Stuff2005to04/2006 Z");
         assert_eq!(ranges.len(), 3, "{ranges:?}");
         assert_eq!(ranges[0].start.month, 6); // year-only → mid-year
         assert!(ranges[1].end_present);
@@ -906,7 +971,11 @@ mod tests {
         assert_eq!(first.org.as_deref(), Some("Milliman"));
         assert_eq!(first.start.as_deref(), Some("2018-04"));
         assert_eq!(first.end.as_deref(), Some("2026-09"));
-        assert!(first.skills.contains(&"sql".to_string()), "{:?}", first.skills);
+        assert!(
+            first.skills.contains(&"sql".to_string()),
+            "{:?}",
+            first.skills
+        );
         let last = &ev.roles[2];
         assert_eq!(last.title, "Business Analyst");
         assert_eq!(last.org.as_deref(), Some("Honeywell"));
@@ -976,7 +1045,10 @@ mod tests {
         let cv = "Projects\n- Billing migration: java, kafka, kubernetes\n- Data platform on python and airflow";
         let ev = parse_evidence(cv, &opts(&["java", "kafka", "python"]));
         assert!(ev.coverage.projects, "{ev:?}");
-        assert!(ev.projects.iter().any(|p| p.tech.contains(&"kafka".to_string())));
+        assert!(ev
+            .projects
+            .iter()
+            .any(|p| p.tech.contains(&"kafka".to_string())));
     }
 
     #[test]

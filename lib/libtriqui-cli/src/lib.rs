@@ -44,7 +44,7 @@ pub fn run(db_path: Option<PathBuf>, model: Option<String>, cmd: Cmd) {
             app_dir,
             app_version,
         } => {
-            if let Err(e) = serve::run(app_dir, app_version) {
+            if let Err(e) = serve::run(app_dir, app_version, None) {
                 eprintln!("serve error: {e}");
                 std::process::exit(1);
             }
@@ -77,14 +77,17 @@ pub fn open(db_path: &std::path::Path) -> rusqlite::Connection {
 }
 
 /// Spawn the engine and block until ready (or exit with the error).
-pub fn start_engine(model: &Option<String>, db_path: &std::path::Path) -> std::sync::Arc<EngineRuntime> {
+pub fn start_engine(
+    model: &Option<String>,
+    db_path: &std::path::Path,
+) -> std::sync::Arc<EngineRuntime> {
     let rt = EngineRuntime::new(
         RuntimeConfig::discover(model.clone()),
         db_path.to_path_buf(),
     );
     // Surface status changes as info logs instead of UI events.
     rt.set_status_hook(std::sync::Arc::new(|info| {
-        log::info!("engine: {} (model {:?})", info.status, info.model);
+        tracing::info!("engine: {} (model {:?})", info.status, info.model);
     }));
     rt.start();
     match rt.wait_until_ready(std::time::Duration::from_secs(300)) {

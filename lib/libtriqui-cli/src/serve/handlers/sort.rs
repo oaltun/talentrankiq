@@ -16,7 +16,6 @@ use crate::serve::ServeState;
 
 pub fn sort_job(state: &Arc<ServeState>, job_id: &str) -> Result<Value, ProtocolError> {
     let emit = embedding_progress_emitter(state, job_id);
-    let triqui =
-        sort::sort_job_blocking(&state.runtime, job_id, &emit).map_err(|e| domain(&e))?;
+    let triqui = sort::sort_job_blocking(&state.runtime, job_id, &emit).map_err(|e| domain(&e))?;
     ok_json(triqui)
 }

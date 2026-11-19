@@ -8,7 +8,7 @@ description = "Shared stdio-JSONL client to the libmodelcaller inference backend
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
-log = "0.4"
+tracing = "0.1"
 base64 = "0.22"
 libconfigreader = { path = "../libconfigreader" }
 # In-process engine (feature `inprocess`): the libmodelcaller JSONL loop runs

@@ -44,19 +44,20 @@ pub fn load_app_preferences(state: &ServeState) -> AppPreferences {
     }
 }
 
+#[tracing::instrument(name = "load_preferences", skip(state))]
 pub fn load_preferences(state: &ServeState) -> Result<Value, ProtocolError> {
-    log::debug!("loading preferences from disk");
+    tracing::debug!("loading preferences from disk");
     let path = preferences_path(state);
     if !path.exists() {
-        log::info!("preferences file not found, using defaults");
+        tracing::info!("preferences file not found, using defaults");
         return ok_json(AppPreferences::default());
     }
     let contents = std::fs::read_to_string(&path).map_err(|e| {
-        log::error!("failed to read preferences file: {e}");
+        tracing::error!("failed to read preferences file: {e}");
         string_err(format!("Failed to read preferences file: {e}"))
     })?;
     let mut preferences: AppPreferences = serde_json::from_str(&contents).map_err(|e| {
-        log::error!("failed to parse preferences JSON: {e}");
+        tracing::error!("failed to parse preferences JSON: {e}");
         ProtocolError::string(format!("Failed to parse preferences: {e}"))
     })?;
     // Migrate old slugs
@@ -74,7 +75,7 @@ pub fn save_preferences(
     validate_theme(&preferences.theme).map_err(string_err)?;
     validate_color_theme(&preferences.color_theme).map_err(string_err)?;
 
-    log::debug!("saving preferences to disk: {preferences:?}");
+    tracing::debug!("saving preferences to disk: {preferences:?}");
     let prefs_path = preferences_path(state);
 
     let json_content = serde_json::to_string_pretty(&preferences)
@@ -87,17 +88,17 @@ pub fn save_preferences(
         .map_err(|e| string_err(format!("Failed to write preferences file: {e}")))?;
 
     if let Err(rename_err) = std::fs::rename(&temp_path, &prefs_path) {
-        log::error!("failed to finalize preferences file: {rename_err}");
+        tracing::error!("failed to finalize preferences file: {rename_err}");
         // Clean up the temp file to avoid leaving orphaned files on disk
         if let Err(remove_err) = std::fs::remove_file(&temp_path) {
-            log::warn!("failed to remove temp file after rename failure: {remove_err}");
+            tracing::warn!("failed to remove temp file after rename failure: {remove_err}");
         }
         return Err(string_err(format!(
             "Failed to finalize preferences file: {rename_err}"
         )));
     }
 
-    log::info!("saved preferences to {prefs_path:?}");
+    tracing::info!("saved preferences to {prefs_path:?}");
     Ok(())
 }
 

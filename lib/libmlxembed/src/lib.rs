@@ -24,7 +24,6 @@ pub mod checkpoint;
 // feature is what actually brings the vendored dependency in, so gating on it
 // keeps a default build of this crate to pure-Rust config parsing.
 
-
 #[cfg(all(target_os = "macos", feature = "mlx"))]
 pub mod gemma3;
 #[cfg(all(target_os = "macos", feature = "mlx"))]
@@ -38,7 +37,7 @@ pub mod qwen3;
 mod encode;
 
 #[cfg(all(target_os = "macos", feature = "mlx"))]
-pub use encode::{Embedder, EmbedError};
+pub use encode::{EmbedError, Embedder};
 
 #[cfg(all(target_os = "macos", feature = "mlx"))]
 pub use protocol::run_stdio_over;
@@ -53,7 +52,7 @@ pub use protocol::run_stdio_over;
 /// wire instead of failing open.
 #[cfg(not(all(target_os = "macos", feature = "mlx")))]
 pub fn run_stdio_over(input: impl std::io::BufRead, mut output: impl std::io::Write) {
-    log::error!("libmlxembed: MLX arm not built in (macOS + --features mlx required)");
+    tracing::error!("libmlxembed: MLX arm not built in (macOS + --features mlx required)");
     for line in input.lines() {
         let id = line
             .ok()

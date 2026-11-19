@@ -3,7 +3,7 @@
 //! Bradley-Terry fallback aggregator.
 
 use crate::artifact::FeatureSpec;
-use crate::features::{assemble_pair, DocFeatures};
+use crate::features::{DocFeatures, assemble_pair};
 use crate::forward::JudgeModel;
 use rayon::prelude::*;
 
@@ -130,8 +130,7 @@ fn fill_tile(
     docs: &[DocFeatures],
 ) {
     let dim = spec.input_dim.max(1);
-    rows
-        .par_chunks_exact_mut(2 * dim)
+    rows.par_chunks_exact_mut(2 * dim)
         .zip(pairs.par_iter())
         .for_each(|(slot, &(i, j))| {
             let (a, b) = slot.split_at_mut(dim);
@@ -238,13 +237,21 @@ mod tests {
         let layers = vec![
             LayerWeights {
                 w: (0..hidden)
-                    .map(|o| (0..spec.input_dim).map(|i| ((o * 31 + i * 7) % 23) as f32 * 0.01 - 0.1).collect())
+                    .map(|o| {
+                        (0..spec.input_dim)
+                            .map(|i| ((o * 31 + i * 7) % 23) as f32 * 0.01 - 0.1)
+                            .collect()
+                    })
                     .collect(),
                 b: vec![0.0; hidden],
             },
             LayerWeights {
                 w: (0..1)
-                    .map(|o| (0..hidden).map(|i| ((o * 13 + i * 3) % 11) as f32 * 0.02).collect())
+                    .map(|o| {
+                        (0..hidden)
+                            .map(|i| ((o * 13 + i * 3) % 11) as f32 * 0.02)
+                            .collect()
+                    })
                     .collect(),
                 b: vec![0.1],
             },

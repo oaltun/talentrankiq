@@ -22,8 +22,8 @@ libmodeldownloader = { path = "../libmodeldownloader" }
 libtokenizer = { path = "../libtokenizer" }
 libembedrank = { path = "../libembedrank" }
 
-log = "0.4"
-env_logger = "0.11"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter", "registry", "std"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
@@ -42,3 +42,4 @@ libtriqui-license = { path = "../libtriqui-license" }
 
 # Tokio runtime for async license operations (activate, verify)
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+chrono = { version = "0.4", features = ["serde"] }

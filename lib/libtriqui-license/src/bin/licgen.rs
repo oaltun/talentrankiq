@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use clap::{Parser, Subcommand};
-use ed25519_dalek::{SigningKey, Signer, Verifier};
+use ed25519_dalek::{Signer, SigningKey, Verifier};
 use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
 const LICENSE_FORMAT: u32 = 1;
 
@@ -77,9 +77,13 @@ struct SignedPayload {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Generate { customer, expires, artifacts, output, key } => {
-            generate_license(customer, expires, artifacts, output, key)?
-        }
+        Commands::Generate {
+            customer,
+            expires,
+            artifacts,
+            output,
+            key,
+        } => generate_license(customer, expires, artifacts, output, key)?,
         Commands::Verify { license, pubkey } => verify_license(license, pubkey)?,
         Commands::Keygen { out_dir } => generate_keypair(out_dir)?,
     }
@@ -208,8 +212,10 @@ fn parse_private_key(pem: &str) -> Result<SigningKey, Box<dyn std::error::Error>
     let b64 = pem
         .strip_prefix("-----BEGIN PRIVATE KEY-----")
         .and_then(|s| s.strip_suffix("-----END PRIVATE KEY-----"))
-        .or_else(|| pem.strip_prefix("-----BEGIN ED25519 PRIVATE KEY-----")
-            .and_then(|s| s.strip_suffix("-----END ED25519 PRIVATE KEY-----")))
+        .or_else(|| {
+            pem.strip_prefix("-----BEGIN ED25519 PRIVATE KEY-----")
+                .and_then(|s| s.strip_suffix("-----END ED25519 PRIVATE KEY-----"))
+        })
         .ok_or("Invalid PEM format")?
         .trim();
     let bytes = BASE64.decode(b64)?;

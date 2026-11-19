@@ -54,8 +54,7 @@ pub fn ensure_file(path: &Path) -> Result<(), String> {
     if path.exists() {
         return Ok(());
     }
-    std::fs::write(path, "")
-        .map_err(|e| format!("Cannot create {}: {e}", path.display()))
+    std::fs::write(path, "").map_err(|e| format!("Cannot create {}: {e}", path.display()))
 }
 
 /// Read the ad text. A missing file reads as empty (the user deleted it, or the
@@ -66,9 +65,7 @@ pub fn read_text(path: &Path) -> Result<String, String> {
     }
     match std::fs::metadata(path) {
         Err(_) => return Ok(String::new()),
-        Ok(m) if !m.is_file() => {
-            return Err(format!("Not a regular file: {}", path.display()))
-        }
+        Ok(m) if !m.is_file() => return Err(format!("Not a regular file: {}", path.display())),
         Ok(m) if m.len() > MAX_JOB_AD_BYTES => {
             return Err(format!(
                 "Job ad file is too large ({} bytes, limit {MAX_JOB_AD_BYTES})",

@@ -21,7 +21,11 @@ impl PartialOrd for ScoredItem {
 impl Ord for ScoredItem {
     fn cmp(&self, other: &Self) -> Ordering {
         // max-heap by score, tie-break by cv_hash ascending for determinism
-        match self.score.partial_cmp(&other.score).unwrap_or(Ordering::Equal) {
+        match self
+            .score
+            .partial_cmp(&other.score)
+            .unwrap_or(Ordering::Equal)
+        {
             Ordering::Equal => other.cv_hash.cmp(&self.cv_hash),
             o => o,
         }
@@ -33,15 +37,23 @@ pub struct MaxPriorityQueueByScore {
 }
 
 impl MaxPriorityQueueByScore {
-    pub fn new() -> Self { Self { heap: BinaryHeap::new() } }
+    pub fn new() -> Self {
+        Self {
+            heap: BinaryHeap::new(),
+        }
+    }
     pub fn push(&mut self, cv_hash: String, score: f64) {
         self.heap.push(ScoredItem { cv_hash, score });
     }
     pub fn pop(&mut self) -> Option<String> {
         self.heap.pop().map(|s| s.cv_hash)
     }
-    pub fn len(&self) -> usize { self.heap.len() }
-    pub fn is_empty(&self) -> bool { self.heap.is_empty() }
+    pub fn len(&self) -> usize {
+        self.heap.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.heap.is_empty()
+    }
     pub fn iter(&self) -> impl Iterator<Item = &String> {
         self.heap.iter().map(|s| &s.cv_hash)
     }
@@ -54,5 +66,7 @@ impl MaxPriorityQueueByScore {
 }
 
 impl Default for MaxPriorityQueueByScore {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }

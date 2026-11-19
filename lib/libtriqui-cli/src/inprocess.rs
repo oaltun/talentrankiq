@@ -65,8 +65,8 @@ impl InProcessServe {
         let handle = thread::Builder::new()
             .name("triqui-serve".into())
             .spawn(move || {
-                if let Err(e) = serve::run_over(Some(app_dir), app_version, b_read, b_write) {
-                    log::error!("in-process serve loop failed: {e}");
+                if let Err(e) = serve::run_over(Some(app_dir), app_version, b_read, b_write, None) {
+                    tracing::error!("in-process serve loop failed: {e}");
                 }
             })
             .map_err(|e| format!("spawn serve thread: {e}"))?;

@@ -127,7 +127,12 @@ impl Embedder {
 /// Right-pad to the batch's longest row. Pad id 0 is fine: every key it could
 /// be attended as is masked out, and last-token pooling reads positions from
 /// the mask.
-fn to_padded_arrays(rows: &[Vec<u32>]) -> (mlxcel_core::UniquePtr<mlxcel_core::MlxArray>, mlxcel_core::UniquePtr<mlxcel_core::MlxArray>) {
+fn to_padded_arrays(
+    rows: &[Vec<u32>],
+) -> (
+    mlxcel_core::UniquePtr<mlxcel_core::MlxArray>,
+    mlxcel_core::UniquePtr<mlxcel_core::MlxArray>,
+) {
     let b = rows.len();
     let l = rows.iter().map(|r| r.len()).max().unwrap_or(1).max(1);
     let mut ids = vec![0i32; b * l];

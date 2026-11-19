@@ -26,7 +26,8 @@ struct TestProcess {
     child: Child,
     stdin: Option<std::process::ChildStdin>,
     stdout: Option<std::process::ChildStdout>,
-    stderr: Option<std::process::ChildStderr>,
+    ready_rx: std::sync::mpsc::Receiver<()>,
+    _stderr_thread: thread::JoinHandle<()>,
 }
 
 impl TestProcess {
@@ -34,7 +35,7 @@ impl TestProcess {
         let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let binary = manifest_dir.join("../target/debug/triq");
         let binary = std::fs::canonicalize(&binary).unwrap_or_else(|_| binary);
-        
+
         let mut cmd = Command::new(&binary);
         cmd.arg("serve");
         cmd.env("TRIQ_APP_DIR", app_dir);
@@ -44,40 +45,66 @@ impl TestProcess {
         cmd.stderr(Stdio::piped());
 
         let mut child = cmd.spawn()?;
-        
+
         let stdin = child.stdin.take();
         let stdout = child.stdout.take();
-        let stderr = child.stderr.take();
+        let stderr = child.stderr.take().expect("stderr piped");
+
+        // The engine is extremely chatty on stderr (onnxruntime emits thousands
+        // of "Reserving memory in BFCArena..." lines during model loads). The
+        // pipe must be drained for the whole process lifetime or its 64 KiB
+        // buffer fills and triq blocks writing logs — stalling model loads and
+        // `try_model`. The real gui inherits stderr (a terminal drains it); the
+        // test must drain it the same way. This thread also watches for the
+        // "serve: ready" line.
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel::<()>();
+        let stderr_thread = thread::Builder::new()
+            .name("triq-stderr-drain".into())
+            .spawn(move || {
+                let reader = BufReader::new(stderr);
+                for line in reader.lines() {
+                    match line {
+                        Ok(line) => {
+                            eprintln!("[triq] {line}");
+                            if line.contains("serve: ready") {
+                                let _ = ready_tx.send(());
+                            }
+                        }
+                        Err(_) => break,
+                    }
+                }
+            })?;
 
         let process = Self {
             child,
             stdin,
             stdout,
-            stderr,
+            ready_rx,
+            _stderr_thread: stderr_thread,
         };
 
         thread::sleep(Duration::from_secs(2));
         Ok(process)
     }
 
-    fn wait_for_ready(&mut self, timeout: Duration) -> Result<(), Box<dyn std::error::Error>> {
-        let stderr = self.stderr.as_mut().unwrap();
-        let reader = BufReader::new(stderr);
-        let start = std::time::Instant::now();
-        for line in reader.lines() {
-            if start.elapsed() > timeout {
-                return Err("Timeout waiting for ready".into());
+    fn wait_for_ready(&self, timeout: Duration) -> Result<(), Box<dyn std::error::Error>> {
+        match self.ready_rx.recv_timeout(timeout) {
+            Ok(()) => Ok(()),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                Err("Timeout waiting for ready".into())
             }
-            if let Ok(line) = line {
-                if line.contains("serve: ready") {
-                    return Ok(());
-                }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                Err("Process exited before ready".into())
             }
         }
-        Err("Process exited before ready".into())
     }
 
-    fn take_stdio(&mut self) -> (Box<dyn std::io::Read + Send>, Box<dyn std::io::Write + Send>) {
+    fn take_stdio(
+        &mut self,
+    ) -> (
+        Box<dyn std::io::Read + Send>,
+        Box<dyn std::io::Write + Send>,
+    ) {
         let stdout = self.stdout.take().unwrap();
         let stdin = self.stdin.take().unwrap();
         (Box::new(stdout), Box::new(stdin))
@@ -114,15 +141,27 @@ impl TestClient {
         }
     }
 
-    fn call<T: serde::de::DeserializeOwned>(&self, cmd: &str, params: &impl serde::Serialize) -> Result<T, Box<dyn std::error::Error>> {
+    fn call<T: serde::de::DeserializeOwned>(
+        &self,
+        cmd: &str,
+        params: &impl serde::Serialize,
+    ) -> Result<T, Box<dyn std::error::Error>> {
         Ok(self.client.call_typed(cmd, params)?)
     }
 
-    fn call_raw(&self, cmd: &str, params: &impl serde::Serialize) -> Result<Value, Box<dyn std::error::Error>> {
+    fn call_raw(
+        &self,
+        cmd: &str,
+        params: &impl serde::Serialize,
+    ) -> Result<Value, Box<dyn std::error::Error>> {
         Ok(self.client.call(cmd, params)?)
     }
 
-    fn wait_for_event<F>(&self, predicate: F, timeout: Duration) -> Result<Event, Box<dyn std::error::Error>>
+    fn wait_for_event<F>(
+        &self,
+        predicate: F,
+        timeout: Duration,
+    ) -> Result<Event, Box<dyn std::error::Error>>
     where
         F: Fn(&Event) -> bool,
     {
@@ -140,7 +179,11 @@ impl TestClient {
         }
     }
 
-    fn wait_for_download_progress(&self, slug: &str, timeout: Duration) -> Result<ModelDownloadProgress, Box<dyn std::error::Error>> {
+    fn wait_for_download_progress(
+        &self,
+        slug: &str,
+        timeout: Duration,
+    ) -> Result<ModelDownloadProgress, Box<dyn std::error::Error>> {
         let event = self.wait_for_event(
             |e| e.event == "model-download-progress" && e.data["repo_id"].as_str() == Some(slug),
             timeout,
@@ -148,7 +191,11 @@ impl TestClient {
         Ok(serde_json::from_value(event.data)?)
     }
 
-    fn wait_for_download_complete(&self, slug: &str, timeout: Duration) -> Result<ModelDownloadComplete, Box<dyn std::error::Error>> {
+    fn wait_for_download_complete(
+        &self,
+        slug: &str,
+        timeout: Duration,
+    ) -> Result<ModelDownloadComplete, Box<dyn std::error::Error>> {
         let event = self.wait_for_event(
             |e| e.event == "model-download-complete" && e.data["slug"].as_str() == Some(slug),
             timeout,
@@ -157,7 +204,10 @@ impl TestClient {
     }
 }
 
-fn copy_benchmark_cvs(src: &std::path::Path, dst: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+fn copy_benchmark_cvs(
+    src: &std::path::Path,
+    dst: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error>> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;
@@ -171,7 +221,8 @@ fn copy_benchmark_cvs(src: &std::path::Path, dst: &std::path::Path) -> Result<()
 }
 
 fn list_embedders(client: &TestClient) -> Result<Vec<GuiEmbedder>, Box<dyn std::error::Error>> {
-    let result: Vec<GuiEmbedder> = client.call("list_embedders", &libtriqui_client::params::EmptyParams {})?;
+    let result: Vec<GuiEmbedder> =
+        client.call("list_embedders", &libtriqui_client::params::EmptyParams {})?;
     Ok(result)
 }
 
@@ -181,20 +232,25 @@ fn find_embedder<'a>(embedders: &'a [GuiEmbedder], slug: &str) -> Option<&'a Gui
 
 #[test]
 fn test_cli_model_workflow() {
-    let _ = env_logger::try_init();
+    let _ = tracing_subscriber::fmt::try_init();
 
-    let benchmark_src = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../gui/src-tauri/benchmark-cvs");
+    let benchmark_src =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/benchmark-cvs");
 
     let temp_dir = TempDir::new().expect("create temp dir");
     let app_dir = temp_dir.path().to_path_buf();
     let benchmark_dst = app_dir.join("benchmark-cvs");
 
     copy_benchmark_cvs(&benchmark_src, &benchmark_dst).expect("copy benchmark CVs");
-    assert!(benchmark_dst.join("cv-01-geologist.txt").exists(), "CV files copied");
+    assert!(
+        benchmark_dst.join("cv-01-geologist.txt").exists(),
+        "CV files copied"
+    );
 
     let mut process = TestProcess::spawn(&app_dir).expect("spawn triq serve");
-    process.wait_for_ready(Duration::from_secs(30)).expect("wait for ready");
+    process
+        .wait_for_ready(Duration::from_secs(30))
+        .expect("wait for ready");
 
     let (read, write) = process.take_stdio();
     let client = TestClient::new(read, write);
@@ -210,27 +266,44 @@ fn test_cli_model_workflow() {
         let embedders = list_embedders(&client).expect("list_embedders before download");
         let embedder = find_embedder(&embedders, slug).expect("embedder found");
         let expected_default = slug == "harrier-oss-v1-270m-ONNX-q4f16";
-        assert_eq!(embedder.is_default, expected_default, "default status for {}", slug);
+        assert_eq!(
+            embedder.is_default, expected_default,
+            "default status for {}",
+            slug
+        );
 
         let was_downloaded = embedder.downloaded;
         if !was_downloaded {
-            let download_result = client
-                .call_raw("download_embedder", &libtriqui_client::params::DownloadEmbedderParams { slug: slug.to_string() });
+            let download_result = client.call_raw(
+                "download_embedder",
+                &libtriqui_client::params::DownloadEmbedderParams {
+                    slug: slug.to_string(),
+                },
+            );
 
             if download_result.is_err() {
-                eprintln!("Download failed for {}: {:?}, skipping to next embedder", slug, download_result);
+                eprintln!(
+                    "Download failed for {}: {:?}, skipping to next embedder",
+                    slug, download_result
+                );
                 continue;
             }
             download_result.expect("download_embedder request");
 
             let progress_result = client.wait_for_download_progress(slug, Duration::from_secs(600));
             if progress_result.is_err() {
-                eprintln!("Download progress timeout for {}: {:?}, skipping to next embedder", slug, progress_result);
+                eprintln!(
+                    "Download progress timeout for {}: {:?}, skipping to next embedder",
+                    slug, progress_result
+                );
                 continue;
             }
             let complete_result = client.wait_for_download_complete(slug, Duration::from_secs(600));
             if complete_result.is_err() {
-                eprintln!("Download complete timeout for {}: {:?}, skipping to next embedder", slug, complete_result);
+                eprintln!(
+                    "Download complete timeout for {}: {:?}, skipping to next embedder",
+                    slug, complete_result
+                );
                 continue;
             }
         }
@@ -241,7 +314,12 @@ fn test_cli_model_workflow() {
         assert!(embedder.size_bytes > 0, "size_bytes > 0 for {}", slug);
 
         let result: TryModelResult = client
-            .call("try_model", &libtriqui_client::params::TryModelParams { slug: slug.to_string() })
+            .call(
+                "try_model",
+                &libtriqui_client::params::TryModelParams {
+                    slug: slug.to_string(),
+                },
+            )
             .expect("try_model");
 
         assert_eq!(result.per_cv_ms.len(), 11, "11 CVs processed for {}", slug);
@@ -250,14 +328,26 @@ fn test_cli_model_workflow() {
         assert_eq!(result.labels.len(), 11, "11 labels for {}", slug);
 
         let twin_pair = result.pairs.iter().find(|p| {
-            (p.label_i == "CV 10 — Mechanical Engineer" && p.label_j == "CV 11 — Mechanical Engineer [twin]")
-                || (p.label_i == "CV 11 — Mechanical Engineer [twin]" && p.label_j == "CV 10 — Mechanical Engineer")
+            (p.label_i == "CV 10 — Mechanical Engineer"
+                && p.label_j == "CV 11 — Mechanical Engineer [twin]")
+                || (p.label_i == "CV 11 — Mechanical Engineer [twin]"
+                    && p.label_j == "CV 10 — Mechanical Engineer")
         });
         let twin_similarity = twin_pair.expect("twin pair exists").similarity;
-        assert!(twin_similarity > 0.95, "twin similarity > 0.95 for {}, got {}", slug, twin_similarity);
+        assert!(
+            twin_similarity > 0.95,
+            "twin similarity > 0.95 for {}, got {}",
+            slug,
+            twin_similarity
+        );
 
         client
-            .call_raw("set_embedding_model", &libtriqui_client::params::SetEmbeddingModelParams { slug: slug.to_string() })
+            .call_raw(
+                "set_embedding_model",
+                &libtriqui_client::params::SetEmbeddingModelParams {
+                    slug: slug.to_string(),
+                },
+            )
             .expect("set_embedding_model");
 
         let embedders = list_embedders(&client).expect("list_embedders after set default");
@@ -271,13 +361,26 @@ fn test_cli_model_workflow() {
         }
 
         client
-            .call_raw("remove_embedder", &libtriqui_client::params::RemoveEmbedderParams { slug: slug.to_string() })
+            .call_raw(
+                "remove_embedder",
+                &libtriqui_client::params::RemoveEmbedderParams {
+                    slug: slug.to_string(),
+                },
+            )
             .expect("remove_embedder");
 
         let embedders = list_embedders(&client).expect("list_embedders after remove");
         let embedder = find_embedder(&embedders, slug).expect("embedder found");
-        assert!(!embedder.downloaded, "not downloaded after remove: {}", slug);
-        assert_eq!(embedder.size_bytes, 0, "size_bytes = 0 after remove: {}", slug);
+        assert!(
+            !embedder.downloaded,
+            "not downloaded after remove: {}",
+            slug
+        );
+        assert_eq!(
+            embedder.size_bytes, 0,
+            "size_bytes = 0 after remove: {}",
+            slug
+        );
     }
 
     client.client.shutdown();

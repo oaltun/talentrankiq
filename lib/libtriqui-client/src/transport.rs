@@ -60,13 +60,17 @@ pub fn duplex() -> (DuplexWriter, DuplexReader, DuplexWriter, DuplexReader) {
         closed: Mutex::new(false),
     });
     (
-        DuplexWriter { shared: Arc::clone(&a2b) },
+        DuplexWriter {
+            shared: Arc::clone(&a2b),
+        },
         DuplexReader {
             shared: Arc::clone(&b2a),
             scratch: Vec::new(),
             scratch_pos: 0,
         },
-        DuplexWriter { shared: Arc::clone(&b2a) },
+        DuplexWriter {
+            shared: Arc::clone(&b2a),
+        },
         DuplexReader {
             shared: Arc::clone(&a2b),
             scratch: Vec::new(),
@@ -122,17 +126,15 @@ impl Read for DuplexReader {
         if out.is_empty() {
             return Ok(0);
         }
-        loop {
-            self.refill_scratch()?;
-            if self.scratch_pos < self.scratch.len() {
-                let n = out.len().min(self.scratch.len() - self.scratch_pos);
-                out[..n].copy_from_slice(&self.scratch[self.scratch_pos..self.scratch_pos + n]);
-                self.scratch_pos += n;
-                return Ok(n);
-            }
-            // EOF (refill found an empty, closed buffer).
-            return Ok(0);
+        self.refill_scratch()?;
+        if self.scratch_pos < self.scratch.len() {
+            let n = out.len().min(self.scratch.len() - self.scratch_pos);
+            out[..n].copy_from_slice(&self.scratch[self.scratch_pos..self.scratch_pos + n]);
+            self.scratch_pos += n;
+            return Ok(n);
         }
+        // EOF (refill found an empty, closed buffer).
+        Ok(0)
     }
 }
 

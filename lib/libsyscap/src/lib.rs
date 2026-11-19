@@ -25,9 +25,11 @@ pub mod load;
 pub mod mem;
 
 pub use budget::{
-    build_jobs, build_jobs_now, budget, effective_inter_threads, effective_intra_threads, Budget,
+    budget, build_jobs, build_jobs_now, effective_inter_threads, effective_intra_threads, Budget,
     Verdict,
 };
 pub use guard::machine_busy;
-pub use inventory::{AccelInfo, CpuInfo, CpuVendor, DiskInfo, Gpu, GpuVendor, Inventory, MemInfo, PowerInfo};
+pub use inventory::{
+    AccelInfo, CpuInfo, CpuVendor, DiskInfo, Gpu, GpuVendor, Inventory, MemInfo, PowerInfo,
+};
 pub use load::{LoadSampler, LoadSnapshot};

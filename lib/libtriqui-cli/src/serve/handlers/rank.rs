@@ -12,7 +12,9 @@ use std::thread;
 use serde_json::Value;
 
 use libtriqui_client::protocol::ProtocolError;
-use libtriqui_client::types::{EmbeddingProgress, RankProgress, RankState, SortReport, SystemBudget, SystemLoad};
+use libtriqui_client::types::{
+    EmbeddingProgress, RankProgress, RankState, SortReport, SystemBudget, SystemLoad,
+};
 use libtriqui_core::cascade::{freeze_pool, project, run_scout_stage, run_wave, CascadeBudget};
 use libtriqui_core::config::CascadeConfig;
 use libtriqui_core::db::{rank_state_for_job, set_rank_state};
@@ -156,7 +158,7 @@ impl CascadeRunner {
         let conn = match libtriqui_core::db::open_connection_at(&self.db_path) {
             Ok(c) => c,
             Err(e) => {
-                log::error!("cascade: failed to open db for {}: {}", self.job_id, e);
+                tracing::error!("cascade: failed to open db for {}: {}", self.job_id, e);
                 return;
             }
         };
@@ -164,7 +166,7 @@ impl CascadeRunner {
         // A runner that was already superseded while waiting to start must not
         // even do the free stages — its writes would land on the newer run.
         if self.superseded() {
-            log::info!(
+            tracing::info!(
                 "cascade: runner for {} superseded before it started — exiting",
                 self.job_id
             );
@@ -212,51 +214,73 @@ impl CascadeRunner {
         let mut scout_deferred = false;
         let job_id_clone = self.job_id.clone();
         let events_clone = self.events.clone();
-        match run_scout_stage(&self.runtime, &self.job_id, &move |done, total, failed, active| {
-            events_clone.emit("job-quick-progress", &EmbeddingProgress {
-                job_id: job_id_clone.clone(),
-                done,
-                total,
-                failed,
-                active,
-            });
-        }) {
+        match run_scout_stage(
+            &self.runtime,
+            &self.job_id,
+            &move |done, total, failed, active| {
+                events_clone.emit(
+                    "job-quick-progress",
+                    &EmbeddingProgress {
+                        job_id: job_id_clone.clone(),
+                        done,
+                        total,
+                        failed,
+                        active,
+                    },
+                );
+            },
+        ) {
             Ok(Some(outcome)) => {
                 scout_deferred = outcome.deferred;
-                log::info!(
+                tracing::info!(
                     "cascade: scout stage done for {} (model {:?}, embedded {}, graded {}{})",
                     self.job_id,
                     scout_model,
                     outcome.embedded,
                     outcome.graded,
-                    if outcome.deferred { ", grading deferred" } else { "" },
+                    if outcome.deferred {
+                        ", grading deferred"
+                    } else {
+                        ""
+                    },
                 );
             }
             Ok(None) => {}
             // A scout failure must not sink the run: the waves still converge, they
             // just have nothing to gate them on until the heavy embedder lands. Log
             // loudly and carry on.
-            Err(e) => log::warn!("cascade: scout stage failed for {}: {}", self.job_id, e),
+            Err(e) => tracing::warn!("cascade: scout stage failed for {}: {}", self.job_id, e),
         }
 
         // The scout has graded the whole corpus, so the sheet can be projected —
         // this is the "ok sorting in front of the user as soon as possible"
         // moment: a complete, if coarse, ranking for every CV.
         match project(&self.runtime, &self.job_id) {
-            Ok(report) => log::info!(
+            Ok(report) => tracing::info!(
                 "cascade: scout pass projected for {} ({} graded, {} still scout-only)",
                 self.job_id,
                 report.scored,
                 report.scout_only
             ),
-            Err(e) => log::warn!("cascade: scout projection failed for {}: {}", self.job_id, e),
+            Err(e) => tracing::warn!(
+                "cascade: scout projection failed for {}: {}",
+                self.job_id,
+                e
+            ),
         }
 
         // Freeze the judge pool now, from the projected order. One pool per run.
         if pool_size > 0 {
             match freeze_pool(&self.runtime, &self.job_id, pool_size) {
-                Ok(n) => log::info!("cascade: judge pool frozen for {} with {n} members", self.job_id),
-                Err(e) => log::warn!("cascade: could not freeze the pool for {}: {}", self.job_id, e),
+                Ok(n) => tracing::info!(
+                    "cascade: judge pool frozen for {} with {n} members",
+                    self.job_id
+                ),
+                Err(e) => tracing::warn!(
+                    "cascade: could not freeze the pool for {}: {}",
+                    self.job_id,
+                    e
+                ),
             }
         }
 
@@ -272,14 +296,18 @@ impl CascadeRunner {
             // cancelled — writing `finish(false)` here is exactly the
             // cancel-then-respawn clobber this guard exists for.
             if self.superseded() {
-                log::info!(
+                tracing::info!(
                     "cascade: runner for {} superseded — exiting without writing",
                     self.job_id
                 );
                 return;
             }
             if self.cancelled() {
-                log::info!("cascade: cancelled before wave {} for {}", wave + 1, self.job_id);
+                tracing::info!(
+                    "cascade: cancelled before wave {} for {}",
+                    wave + 1,
+                    self.job_id
+                );
                 self.finish(false);
                 return;
             }
@@ -293,18 +321,25 @@ impl CascadeRunner {
             if scout_deferred && self.job_has_ad(&conn) {
                 let job_id_clone = self.job_id.clone();
                 let events_clone = self.events.clone();
-                match run_scout_stage(&self.runtime, &self.job_id, &move |done, total, failed, active| {
-                    events_clone.emit("job-quick-progress", &EmbeddingProgress {
-                        job_id: job_id_clone.clone(),
-                        done,
-                        total,
-                        failed,
-                        active,
-                    });
-                }) {
+                match run_scout_stage(
+                    &self.runtime,
+                    &self.job_id,
+                    &move |done, total, failed, active| {
+                        events_clone.emit(
+                            "job-quick-progress",
+                            &EmbeddingProgress {
+                                job_id: job_id_clone.clone(),
+                                done,
+                                total,
+                                failed,
+                                active,
+                            },
+                        );
+                    },
+                ) {
                     Ok(Some(outcome)) if outcome.graded > 0 => {
                         scout_deferred = false;
-                        log::info!(
+                        tracing::info!(
                             "cascade: scout caught up for {} after a query landed ({} graded)",
                             self.job_id,
                             outcome.graded
@@ -313,7 +348,7 @@ impl CascadeRunner {
                     }
                     Ok(_) => {}
                     Err(e) => {
-                        log::warn!("cascade: scout catch-up failed for {}: {}", self.job_id, e)
+                        tracing::warn!("cascade: scout catch-up failed for {}: {}", self.job_id, e)
                     }
                 }
             }
@@ -326,22 +361,25 @@ impl CascadeRunner {
             // lifts — no wave, no writes, no busy loop.
             let sys = syscap::budget_now(&self.syscap, &self.engine);
             if !sys.verdict.heavy_ok() {
-                log::warn!(
+                tracing::warn!(
                     "cascade: system budget holds heavy work for {} (free memory low) — pausing waves",
                     self.job_id
                 );
-                self.events.emit("rank-progress", &RankProgress {
-                    job_id: self.job_id.clone(),
-                    stage: "embed".into(),
-                    wave,
-                    embedded_done: total_embedded as u32,
-                    embedded_total: self.candidate_count,
-                    judged: total_judged,
-                    compared: total_judged,
-                    candidates: self.candidate_count,
-                    running: true,
-                    reason: syscap::holding_code(&sys),
-                });
+                self.events.emit(
+                    "rank-progress",
+                    &RankProgress {
+                        job_id: self.job_id.clone(),
+                        stage: "embed".into(),
+                        wave,
+                        embedded_done: total_embedded as u32,
+                        embedded_total: self.candidate_count,
+                        judged: total_judged,
+                        compared: total_judged,
+                        candidates: self.candidate_count,
+                        running: true,
+                        reason: syscap::holding_code(&sys),
+                    },
+                );
                 thread::sleep(HOLD_POLL);
                 continue;
             }
@@ -360,26 +398,32 @@ impl CascadeRunner {
                 // below always pass, so counts stay exact at every edge.
                 if !active || self.throttle.allow() {
                     // Emit rank-progress for the rank cascade UI
-                    self.events.emit("rank-progress", &RankProgress {
-                        job_id: self.job_id.clone(),
-                        stage: "embed".into(),
-                        wave,
-                        embedded_done: (total_embedded + done) as u32,
-                        embedded_total: (total_embedded + total) as u32,
-                        judged: total_judged,
-                        compared: total_judged,
-                        candidates: self.candidate_count,
-                        running: active,
-                        reason: None,
-                    });
+                    self.events.emit(
+                        "rank-progress",
+                        &RankProgress {
+                            job_id: self.job_id.clone(),
+                            stage: "embed".into(),
+                            wave,
+                            embedded_done: (total_embedded + done) as u32,
+                            embedded_total: (total_embedded + total) as u32,
+                            judged: total_judged,
+                            compared: total_judged,
+                            candidates: self.candidate_count,
+                            running: active,
+                            reason: None,
+                        },
+                    );
                     // Emit job-deep-progress for the embedding progress UI
-                    events_clone.emit("job-deep-progress", &EmbeddingProgress {
-                        job_id: job_id_clone.clone(),
-                        done: total_embedded + done,
-                        total: total_embedded + total,
-                        failed,
-                        active,
-                    });
+                    events_clone.emit(
+                        "job-deep-progress",
+                        &EmbeddingProgress {
+                            job_id: job_id_clone.clone(),
+                            done: total_embedded + done,
+                            total: total_embedded + total,
+                            failed,
+                            active,
+                        },
+                    );
                 }
             };
             match run_wave(&self.runtime, &self.job_id, wave, budget, progress) {
@@ -388,32 +432,38 @@ impl CascadeRunner {
                     if outcome.judge_ran {
                         total_judged += outcome.judge_pairs_fresh;
                     }
-                    self.events.emit("rank-progress", &RankProgress {
-                        job_id: self.job_id.clone(),
-                        stage: "embed".into(),
-                        wave,
-                        embedded_done: total_embedded as u32,
-                        embedded_total: self.candidate_count,
-                        judged: total_judged,
-                        compared: total_judged,
-                        candidates: self.candidate_count,
-                        running: !outcome.converged,
-                        reason: None,
-                    });
+                    self.events.emit(
+                        "rank-progress",
+                        &RankProgress {
+                            job_id: self.job_id.clone(),
+                            stage: "embed".into(),
+                            wave,
+                            embedded_done: total_embedded as u32,
+                            embedded_total: self.candidate_count,
+                            judged: total_judged,
+                            compared: total_judged,
+                            candidates: self.candidate_count,
+                            running: !outcome.converged,
+                            reason: None,
+                        },
+                    );
                     // Emit final job-deep-progress for this wave
-                    self.events.emit("job-deep-progress", &EmbeddingProgress {
-                        job_id: self.job_id.clone(),
-                        done: total_embedded,
-                        total: self.candidate_count as i64,
-                        failed: 0,
-                        active: !outcome.converged,
-                    });
+                    self.events.emit(
+                        "job-deep-progress",
+                        &EmbeddingProgress {
+                            job_id: self.job_id.clone(),
+                            done: total_embedded,
+                            total: self.candidate_count as i64,
+                            failed: 0,
+                            active: !outcome.converged,
+                        },
+                    );
                     if outcome.converged {
                         break;
                     }
                 }
                 Err(e) => {
-                    log::warn!("cascade: wave {} failed for {}: {}", wave, self.job_id, e);
+                    tracing::warn!("cascade: wave {} failed for {}: {}", wave, self.job_id, e);
                     self.fail();
                     return;
                 }
@@ -424,7 +474,7 @@ impl CascadeRunner {
         // complete: every candidate is embedded and the last wave was a full
         // pass. The only other exits were the cancel (handled above) and a
         // wave failure, both of which return early.
-        log::info!(
+        tracing::info!(
             "cascade: converged for {} after {wave} wave(s) (embedded {total_embedded}, small_job: {is_small_job})",
             self.job_id
         );
@@ -440,7 +490,7 @@ impl CascadeRunner {
                 .map(|rs| rs.cancelled)
                 .unwrap_or(false),
             Err(e) => {
-                log::warn!("cascade: cannot read rank state for {}: {}", self.job_id, e);
+                tracing::warn!("cascade: cannot read rank state for {}: {}", self.job_id, e);
                 false
             }
         }
@@ -455,7 +505,7 @@ impl CascadeRunner {
         // A superseded runner's terminal write would clobber the run that
         // replaced it — skip everything, including the progress event.
         if self.superseded() {
-            log::info!(
+            tracing::info!(
                 "cascade: runner for {} superseded — terminal write skipped",
                 self.job_id
             );
@@ -464,7 +514,7 @@ impl CascadeRunner {
         let conn = match libtriqui_core::db::open_connection_at(&self.db_path) {
             Ok(c) => c,
             Err(e) => {
-                log::warn!("cascade: cannot read back for {}: {}", self.job_id, e);
+                tracing::warn!("cascade: cannot read back for {}: {}", self.job_id, e);
                 return;
             }
         };
@@ -474,7 +524,11 @@ impl CascadeRunner {
         let reports_json = libtriqui_core::rescore::read_triqui(&conn, &self.job_id)
             .map(|(_, report)| serde_json::to_string(&vec![report]).unwrap_or_default())
             .unwrap_or_else(|e| {
-                log::warn!("cascade: convergence read failed for {}: {}", self.job_id, e);
+                tracing::warn!(
+                    "cascade: convergence read failed for {}: {}",
+                    self.job_id,
+                    e
+                );
                 "[]".to_string()
             });
         // A run that stops short of convergence is *cancelled*, not still
@@ -491,27 +545,37 @@ impl CascadeRunner {
             converged,
             !converged,
         );
-        self.events.emit("rank-progress", &RankProgress {
-            job_id: self.job_id.clone(),
-            stage: if converged { "done".into() } else { "stopped".into() },
-            wave: 0,
-            embedded_done: 0,
-            embedded_total: 0,
-            judged: 0,
-            compared: 0,
-            candidates: 0,
-            running: false,
-            reason: None,
-        });
+        self.events.emit(
+            "rank-progress",
+            &RankProgress {
+                job_id: self.job_id.clone(),
+                stage: if converged {
+                    "done".into()
+                } else {
+                    "stopped".into()
+                },
+                wave: 0,
+                embedded_done: 0,
+                embedded_total: 0,
+                judged: 0,
+                compared: 0,
+                candidates: 0,
+                running: false,
+                reason: None,
+            },
+        );
         // Emit final job-deep-progress to show completion
         if converged {
-            self.events.emit("job-deep-progress", &EmbeddingProgress {
-                job_id: self.job_id.clone(),
-                done: self.candidate_count as i64,
-                total: self.candidate_count as i64,
-                failed: 0,
-                active: false,
-            });
+            self.events.emit(
+                "job-deep-progress",
+                &EmbeddingProgress {
+                    job_id: self.job_id.clone(),
+                    done: self.candidate_count as i64,
+                    total: self.candidate_count as i64,
+                    failed: 0,
+                    active: false,
+                },
+            );
         }
     }
 
@@ -519,7 +583,7 @@ impl CascadeRunner {
         // Same rule as `finish`: an error state written by a superseded
         // runner would mask the run that replaced it.
         if self.superseded() {
-            log::info!(
+            tracing::info!(
                 "cascade: runner for {} superseded — error write skipped",
                 self.job_id
             );
@@ -530,18 +594,21 @@ impl CascadeRunner {
             Err(_) => return,
         };
         let _ = libtriqui_core::db::set_rank_state(&conn, &self.job_id, "error", "[]", true, true);
-        self.events.emit("rank-progress", &RankProgress {
-            job_id: self.job_id.clone(),
-            stage: "error".into(),
-            wave: 0,
-            embedded_done: 0,
-            embedded_total: 0,
-            judged: 0,
-            compared: 0,
-            candidates: 0,
-            running: false,
-            reason: None,
-        });
+        self.events.emit(
+            "rank-progress",
+            &RankProgress {
+                job_id: self.job_id.clone(),
+                stage: "error".into(),
+                wave: 0,
+                embedded_done: 0,
+                embedded_total: 0,
+                judged: 0,
+                compared: 0,
+                candidates: 0,
+                running: false,
+                reason: None,
+            },
+        );
     }
 
     /// Whether the job has job-ad text to score against (a blank or NULL ad is
@@ -678,7 +745,11 @@ pub fn spawn_cascade(state: &Arc<ServeState>, job_id: &str) -> Result<bool, Stri
 /// contract (design §9).
 pub fn start_rank(state: &Arc<ServeState>, job_id: &str) -> Result<Value, ProtocolError> {
     {
-        let conn = state.db.0.lock().map_err(|e| string_err(format!("db lock: {e}")))?;
+        let conn = state
+            .db
+            .0
+            .lock()
+            .map_err(|e| string_err(format!("db lock: {e}")))?;
         let (cvs, ad_set): (i64, bool) = conn
             .query_row(
                 "SELECT (SELECT COUNT(*) FROM candidates
@@ -689,7 +760,9 @@ pub fn start_rank(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Protoc
                 |r| Ok((r.get(0)?, r.get::<_, i64>(1)? != 0)),
             )
             .map_err(|e| match e {
-                rusqlite::Error::QueryReturnedNoRows => string_err(format!("job {job_id} not found")),
+                rusqlite::Error::QueryReturnedNoRows => {
+                    string_err(format!("job {job_id} not found"))
+                }
                 e => string_err(format!("db: {e}")),
             })?;
         if cvs < 1 {
@@ -724,7 +797,11 @@ pub fn start_rank(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Protoc
 
 /// Request cancellation of the job's running cascade.
 pub fn cancel_rank(state: &Arc<ServeState>, job_id: &str) -> Result<Value, ProtocolError> {
-    let mut conn = state.db.0.lock().map_err(|e| string_err(format!("db lock: {}", e)))?;
+    let mut conn = state
+        .db
+        .0
+        .lock()
+        .map_err(|e| string_err(format!("db lock: {}", e)))?;
     let _ = set_rank_state(&mut conn, job_id, "sort", "[]", true, true);
     ok_json(Value::Null)
 }
@@ -764,7 +841,11 @@ fn sample_budget_for_state() -> (libsyscap::Budget, libsyscap::LoadSnapshot) {
 /// ad-less embed-prefill run); `ranking` = in flight **and** the job has an
 /// ad — the flag the gui's rank buttons spin on.
 pub fn get_rank_state(state: &Arc<ServeState>, job_id: &str) -> Result<Value, ProtocolError> {
-    let conn = state.db.0.lock().map_err(|e| string_err(format!("db lock: {}", e)))?;
+    let conn = state
+        .db
+        .0
+        .lock()
+        .map_err(|e| string_err(format!("db lock: {}", e)))?;
     // A job the cascade has not touched yet has no `rank_state` row. That is a
     // normal state a poll lands in routinely — between an import-done event
     // and the auto-started run's first write, or on an ad-less job whose
@@ -904,12 +985,20 @@ pub fn mark_candidate_viewed(
     state: &Arc<ServeState>,
     candidate_id: &str,
 ) -> Result<Value, ProtocolError> {
-    let conn = state.db.0.lock().map_err(|e| string_err(format!("db lock: {}", e)))?;
+    let conn = state
+        .db
+        .0
+        .lock()
+        .map_err(|e| string_err(format!("db lock: {}", e)))?;
     conn.execute(
         "UPDATE candidates SET viewed_at = datetime('now') WHERE id = ?1",
         rusqlite::params![candidate_id],
     )
-    .map_err(|e| domain(&libtriqui_core::types::DomainError::DbError { message: e.to_string() }))?;
+    .map_err(|e| {
+        domain(&libtriqui_core::types::DomainError::DbError {
+            message: e.to_string(),
+        })
+    })?;
     ok_json(Value::Null)
 }
 
@@ -935,14 +1024,26 @@ mod tests {
     /// reason at all.
     #[test]
     fn rank_reason_maps_cancel_and_hold_only() {
-        assert_eq!(state_reason(true, &budget_of(Verdict::Hold)).as_deref(), Some("cancelled"),
-            "cancel wins even mid-hold");
-        assert_eq!(state_reason(false, &budget_of(Verdict::Hold)).as_deref(), Some("holding"));
+        assert_eq!(
+            state_reason(true, &budget_of(Verdict::Hold)).as_deref(),
+            Some("cancelled"),
+            "cancel wins even mid-hold"
+        );
+        assert_eq!(
+            state_reason(false, &budget_of(Verdict::Hold)).as_deref(),
+            Some("holding")
+        );
         assert_eq!(state_reason(false, &budget_of(Verdict::Full)), None);
-        assert_eq!(state_reason(false, &budget_of(Verdict::Polite)), None,
-            "polite adapts silently");
-        assert_eq!(state_reason(false, &budget_of(Verdict::Backoff)), None,
-            "backoff adapts silently");
+        assert_eq!(
+            state_reason(false, &budget_of(Verdict::Polite)),
+            None,
+            "polite adapts silently"
+        );
+        assert_eq!(
+            state_reason(false, &budget_of(Verdict::Backoff)),
+            None,
+            "backoff adapts silently"
+        );
     }
 
     /// The generation guard's whole contract: a spawn supersedes the current
@@ -984,12 +1085,14 @@ mod tests {
         assert!(!gens.is_current("j", b));
     }
 }
-use libprocess_in_waves::{ProcessConfig, run_process_in_waves};
+use libprocess_in_waves::{run_process_in_waves, ProcessConfig};
 
 /// Start the new `process_in_waves` pipeline for a job. Returns immediately
 /// with an initial RankState; work runs on a background thread and progress is
-/// emitted via the waves DB monitor.
+/// emitted via the waves DB monitor. The per-request log file (set by the serve
+/// loop on the handling thread) rides along to the background wave thread.
 pub fn process_in_waves(state: &Arc<ServeState>, job_id: &str) -> Result<Value, ProtocolError> {
+    let request_log_file = crate::serve::logging::current_request_log();
     let rank_state = run_process_in_waves(
         state.db_path.clone(),
         state.app_dir.clone(),
@@ -997,6 +1100,7 @@ pub fn process_in_waves(state: &Arc<ServeState>, job_id: &str) -> Result<Value, 
         state.events.inner(),
         job_id,
         ProcessConfig::default(),
+        request_log_file,
     )?;
     ok_json(rank_state)
 }

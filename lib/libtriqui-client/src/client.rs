@@ -186,7 +186,7 @@ fn reader_loop(inner: Arc<Inner>, stdout: Box<dyn Read + Send>) {
         {
             Ok(n) => n,
             Err(e) => {
-                log::warn!("triqui-cli stdout read error: {e}");
+                tracing::warn!("triqui-cli stdout read error: {e}");
                 break;
             }
         };
@@ -194,7 +194,7 @@ fn reader_loop(inner: Arc<Inner>, stdout: Box<dyn Read + Send>) {
             break; // EOF
         }
         if n as u64 >= MAX_LINE_BYTES {
-            log::error!("triqui-cli sent an over-long line; dropping it");
+            tracing::error!("triqui-cli sent an over-long line; dropping it");
             continue;
         }
         let line = match std::str::from_utf8(&buf[..n]) {
@@ -221,7 +221,7 @@ fn reader_loop(inner: Arc<Inner>, stdout: Box<dyn Read + Send>) {
                 let _ = inner.events_tx.send(event);
             }
             Err(e) => {
-                log::warn!("triqui-cli sent an unparsable line: {e}");
+                tracing::warn!("triqui-cli sent an unparsable line: {e}");
             }
         }
     }

@@ -9,7 +9,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use zip::ZipArchive;
@@ -105,21 +105,21 @@ impl Default for DatamakerExportConfig {
 /// Load a datamaker export and build job groups with pairwise comparison data.
 pub fn load_datamaker_export(config: DatamakerExportConfig) -> Result<Vec<DatamakerJobGroup>> {
     let export_dir = &config.export_dir;
-    
+
     // 1. Load index.jsonl to map sha256 -> (bundle, doc_id)
     let index_path = export_dir.join("bundles").join("index.jsonl");
     let index = load_index(&index_path)?;
-    
+
     // 2. Load judge_results.jsonl and collect all needed sha256s
     let results_path = export_dir.join("judge_results.jsonl");
     let (rows, needed_shas) = load_judgments(&results_path, &config)?;
-    
+
     // 3. Extract needed documents from bundle zips
     let doc_texts = extract_docs(export_dir, &index, &needed_shas)?;
-    
+
     // 4. Build job groups from judgments
     let job_groups = build_job_groups(&rows, &doc_texts, &config)?;
-    
+
     Ok(job_groups)
 }
 
@@ -148,7 +148,7 @@ fn load_judgments(
     let mut rows = Vec::new();
     let mut needed_shas = Vec::new();
     let mut seen_shas = std::collections::HashSet::new();
-    
+
     let reader = BufReader::with_capacity(128 * 1024, File::open(results_path)?);
     for line in reader.lines() {
         let line = line?;
@@ -157,7 +157,7 @@ fn load_judgments(
         }
         let row: JudgeRow = serde_json::from_str(&line)
             .with_context(|| format!("bad JSON line in {}", results_path.display()))?;
-        
+
         // Filter
         if config.only_ok && row.status != "ok" {
             continue;
@@ -170,17 +170,17 @@ fn load_judgments(
                 continue;
             }
         }
-        
+
         // Collect needed sha256s
         for sha in [&row.jobad_id, &row.cv_a_id, &row.cv_b_id] {
             if seen_shas.insert(sha.clone()) {
                 needed_shas.push(sha.clone());
             }
         }
-        
+
         rows.push(row);
     }
-    
+
     Ok((rows, needed_shas))
 }
 
@@ -193,20 +193,21 @@ fn extract_docs(
     // Group needed shas by bundle
     let mut by_bundle: BTreeMap<String, Vec<&String>> = BTreeMap::new();
     for sha in needed_shas {
-        let entry = index.get(sha)
+        let entry = index
+            .get(sha)
             .with_context(|| format!("sha256 not in index: {}", sha))?;
         by_bundle.entry(entry.bundle.clone()).or_default().push(sha);
     }
-    
+
     let mut texts = HashMap::new();
-    
+
     for (bundle_name, shas) in by_bundle {
         let zip_path = export_dir.join("bundles").join(&bundle_name);
-        let file = File::open(&zip_path)
-            .with_context(|| format!("open bundle {}", zip_path.display()))?;
-        let mut zf = ZipArchive::new(file)
-            .with_context(|| format!("read zip {}", zip_path.display()))?;
-        
+        let file =
+            File::open(&zip_path).with_context(|| format!("open bundle {}", zip_path.display()))?;
+        let mut zf =
+            ZipArchive::new(file).with_context(|| format!("read zip {}", zip_path.display()))?;
+
         for sha in shas {
             // Try .txt extension (files are stored as <sha256>.<lang>.txt)
             // We need to find the actual member name in the zip
@@ -219,7 +220,13 @@ fn extract_docs(
                     member.read_to_end(&mut raw)?;
                     let got = sha256_hex(&raw);
                     if got != *sha {
-                        bail!("sha256 mismatch for {} in {}: expected {}, got {}", name, bundle_name, sha, got);
+                        bail!(
+                            "sha256 mismatch for {} in {}: expected {}, got {}",
+                            name,
+                            bundle_name,
+                            sha,
+                            got
+                        );
                     }
                     texts.insert(sha.clone(), String::from_utf8_lossy(&raw).into_owned());
                     found = true;
@@ -231,7 +238,7 @@ fn extract_docs(
             }
         }
     }
-    
+
     Ok(texts)
 }
 
@@ -243,48 +250,52 @@ fn build_job_groups(
 ) -> Result<Vec<DatamakerJobGroup>> {
     // Group by jobad_id
     let mut job_map: HashMap<String, DatamakerJobGroupBuilder> = HashMap::new();
-    
+
     for row in rows {
-        let job_text = doc_texts.get(&row.jobad_id)
+        let job_text = doc_texts
+            .get(&row.jobad_id)
             .with_context(|| format!("jobad text not found: {}", row.jobad_id))?;
-        let cv_a_text = doc_texts.get(&row.cv_a_id)
+        let cv_a_text = doc_texts
+            .get(&row.cv_a_id)
             .with_context(|| format!("cv_a text not found: {}", row.cv_a_id))?;
-        let cv_b_text = doc_texts.get(&row.cv_b_id)
+        let cv_b_text = doc_texts
+            .get(&row.cv_b_id)
             .with_context(|| format!("cv_b text not found: {}", row.cv_b_id))?;
-        
+
         let preferred = row.preferred.as_deref().unwrap_or("");
         if preferred.is_empty() {
             continue; // skip ties/refusals
         }
-        
+
         // Determine winner and loser
         let (winner_id, loser_id, winner_text, loser_text) = if preferred == "a" {
             (&row.cv_a_id, &row.cv_b_id, cv_a_text, cv_b_text)
         } else {
             (&row.cv_b_id, &row.cv_a_id, cv_b_text, cv_a_text)
         };
-        
-        let job = job_map.entry(row.jobad_id.clone())
-            .or_insert_with(|| DatamakerJobGroupBuilder::new(row.jobad_id.clone(), job_text.clone()));
-        
+
+        let job = job_map.entry(row.jobad_id.clone()).or_insert_with(|| {
+            DatamakerJobGroupBuilder::new(row.jobad_id.clone(), job_text.clone())
+        });
+
         // Add/update winner
         job.add_or_update_doc(winner_id, winner_text, true, loser_id, row.confidence);
         // Add/update loser
         job.add_or_update_doc(loser_id, loser_text, false, winner_id, row.confidence);
     }
-    
+
     // Convert builders to final job groups
     let mut job_groups: Vec<DatamakerJobGroup> = job_map
         .into_iter()
         .map(|(_, builder)| builder.build())
         .collect();
-    
+
     // Sort for determinism
     job_groups.sort_by(|a, b| a.job_id.cmp(&b.job_id));
     for job in &mut job_groups {
         job.docs.sort_by(|a, b| a.resume_id.cmp(&b.resume_id));
     }
-    
+
     Ok(job_groups)
 }
 
@@ -310,7 +321,7 @@ impl DatamakerJobGroupBuilder {
             docs: HashMap::new(),
         }
     }
-    
+
     fn add_or_update_doc(
         &mut self,
         resume_id: &str,
@@ -319,23 +330,27 @@ impl DatamakerJobGroupBuilder {
         other_id: &str,
         confidence: f64,
     ) {
-        let doc = self.docs.entry(resume_id.to_string())
+        let doc = self
+            .docs
+            .entry(resume_id.to_string())
             .or_insert_with(|| DatamakerDocBuilder {
                 resume_id: resume_id.to_string(),
                 resume_text: resume_text.to_string(),
                 wins_against: Vec::new(),
                 loses_to: Vec::new(),
             });
-        
+
         if is_winner {
             doc.wins_against.push((other_id.to_string(), confidence));
         } else {
             doc.loses_to.push((other_id.to_string(), confidence));
         }
     }
-    
+
     fn build(self) -> DatamakerJobGroup {
-        let docs = self.docs.into_iter()
+        let docs = self
+            .docs
+            .into_iter()
             .map(|(_, b)| DatamakerDoc {
                 resume_id: b.resume_id,
                 resume_text: b.resume_text,
@@ -343,7 +358,7 @@ impl DatamakerJobGroupBuilder {
                 loses_to: b.loses_to,
             })
             .collect();
-        
+
         DatamakerJobGroup {
             job_id: self.job_id,
             job_text: self.job_text,
@@ -366,11 +381,14 @@ mod tests {
     use super::*;
     use std::io::Write;
     use tempfile::tempdir;
-    
+
     #[test]
     fn test_sha256_hex() {
         let hash = sha256_hex(b"hello");
         assert_eq!(hash.len(), 64);
-        assert_eq!(hash, "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824");
+        assert_eq!(
+            hash,
+            "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        );
     }
 }

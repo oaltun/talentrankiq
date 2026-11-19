@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use libconfigreader::{Config, EngineConfig, UserOverrides, expand_home};
+use libconfigreader::{expand_home, Config, EngineConfig, UserOverrides};
 
 /// Load the embedded configuration.
 /// User preference overrides (from `AppPreferences`) are applied if set.
@@ -74,10 +74,7 @@ pub fn gui_idle_unload_secs() -> u64 {
 /// unset, the batch derives from the libsyscap budget.
 pub fn engine_embed_batch() -> usize {
     let cfg = load_triq();
-    let b = crate::syscap::budget_now(
-        &cfg.syscap,
-        &cfg.engine,
-    );
+    let b = crate::syscap::budget_now(&cfg.syscap, &cfg.engine);
     crate::syscap::effective_embed_batch(&b)
 }
 
@@ -92,6 +89,56 @@ pub fn engine_no_cache() -> bool {
 /// Judge stage artifacts for the gui rubric.
 pub fn gui_judge_artifacts() -> libconfigreader::GuiJudgeArtifact {
     load_triq().gui_judge_artifact
+}
+
+/// Default per-request log directory (OS-conventional):
+/// - macOS: `~/Library/Logs/com.talentrankiq.triqi`
+/// - Linux: `$XDG_STATE_HOME/com.talentrankiq.triqi` (fallback `~/.local/state/...`)
+/// - Windows: `%LOCALAPPDATA%\com.talentrankiq.triqi\logs`
+pub fn default_log_dir() -> Option<PathBuf> {
+    if cfg!(target_os = "macos") {
+        return dirs::home_dir().map(|h| {
+            h.join("Library")
+                .join("Logs")
+                .join("com.talentrankiq.triqi")
+        });
+    }
+    if cfg!(target_os = "windows") {
+        return dirs::data_local_dir().map(|d| d.join("com.talentrankiq.triqi").join("logs"));
+    }
+    dirs::state_dir()
+        .map(|d| d.join("com.talentrankiq.triqi"))
+        .or_else(|| {
+            dirs::home_dir().map(|h| {
+                h.join(".local")
+                    .join("state")
+                    .join("com.talentrankiq.triqi")
+            })
+        })
+}
+
+/// The saved `AppPreferences.log_dir` (if any) for the given app dir.
+fn prefs_log_dir(app_dir: &Path) -> Option<String> {
+    let path = app_dir.join("preferences.json");
+    let contents = std::fs::read_to_string(path).ok()?;
+    let prefs: libtriqui_client::types::AppPreferences = serde_json::from_str(&contents).ok()?;
+    prefs.log_dir
+}
+
+/// Resolve the per-request log directory for a serve app dir: env `TRIQ_LOG_DIR` >
+/// saved `AppPreferences.log_dir` > [`default_log_dir`].
+pub fn log_dir_for(app_dir: &Path) -> Option<PathBuf> {
+    if let Ok(p) = std::env::var("TRIQ_LOG_DIR") {
+        if !p.is_empty() {
+            return Some(expand_home(&p));
+        }
+    }
+    if let Some(dir) = prefs_log_dir(app_dir) {
+        if !dir.is_empty() {
+            return Some(expand_home(&dir));
+        }
+    }
+    default_log_dir()
 }
 
 /// Default rubric weights for new jobs and new criteria.
@@ -147,9 +194,8 @@ pub fn tokenizer_path(model_dir: &Path, slug: &str) -> Option<std::path::PathBuf
     }
 }
 
-static ENGINE_OVERRIDE: std::sync::OnceLock<
-    std::sync::RwLock<Option<EngineConfig>>,
-> = std::sync::OnceLock::new();
+static ENGINE_OVERRIDE: std::sync::OnceLock<std::sync::RwLock<Option<EngineConfig>>> =
+    std::sync::OnceLock::new();
 
 /// Replace the engine knobs every `EngineRuntime` starts with, regardless of
 /// what the embedded config says — the `--cpu-only` gui flag sets this before the
@@ -195,8 +241,7 @@ pub fn cpu_only_engine() -> EngineConfig {
 pub use libmodelcaller::{variant_status, VariantStatus};
 
 pub fn registry_ctx() -> std::sync::Arc<RegistryCtx> {
-    static CTX: std::sync::OnceLock<std::sync::Arc<RegistryCtx>> =
-        std::sync::OnceLock::new();
+    static CTX: std::sync::OnceLock<std::sync::Arc<RegistryCtx>> = std::sync::OnceLock::new();
     CTX.get_or_init(|| {
         let cfg = load_triq();
         let backend = cfg.engine.backend;

@@ -50,7 +50,9 @@ pub fn sort_job_blocking(
     // Waiting here would reload a model for a rank the cache can answer in
     // milliseconds — which is the whole difference between "switching back to the
     // previous embedder costs nothing" and it costing a model load.
-    let conn = rt.open_conn().map_err(|e| DomainError::DbError { message: e.to_string() })?;
+    let conn = rt.open_conn().map_err(|e| DomainError::DbError {
+        message: e.to_string(),
+    })?;
     let heavy = rt.model();
     let missing = crate::rescore::count_needing_embed(&conn, job_id, &heavy)?;
     if missing > 0 {
@@ -65,27 +67,32 @@ pub fn sort_job_blocking(
     drop(conn);
     // A blocking sort judges *everyone*, which is what "sorted" has always meant
     // to a caller that waits: pool size = the candidate count.
-    let count = {
-        let conn = rt.open_conn().map_err(|e| DomainError::DbError { message: e.to_string() })?;
-        crate::rescore::capacity(&conn, job_id).ok();
-        conn.query_row(
+    let count =
+        {
+            let conn = rt.open_conn().map_err(|e| DomainError::DbError {
+                message: e.to_string(),
+            })?;
+            crate::rescore::capacity(&conn, job_id).ok();
+            conn.query_row(
             "SELECT COUNT(*) FROM candidates WHERE job_id = ?1 AND extraction_status = 'Extracted'",
             rusqlite::params![job_id],
             |r| r.get::<_, i64>(0),
         )
         .map_err(|e| DomainError::DbError { message: e.to_string() })? as usize
-    };
+        };
     cascade::prepare_heavy_rubric(rt, job_id)?;
     cascade::freeze_pool(rt, job_id, count)?;
     // Report what the judge actually did — "cached" when every verdict came from the
     // memoized cache is the whole point of the verdict cache, and the gui and the
     // tests read it. Passing `None` here would report `skipped` for a run that
     // judged, which is a lie in the direction of "nothing happened".
-    let stats = crate::judge::run_pool(rt, job_id)
-        .map_err(|e| DomainError::DbError { message: e })?;
+    let stats =
+        crate::judge::run_pool(rt, job_id).map_err(|e| DomainError::DbError { message: e })?;
     cascade::project(rt, job_id)?;
 
-    let conn = rt.open_conn().map_err(|e| DomainError::DbError { message: e.to_string() })?;
+    let conn = rt.open_conn().map_err(|e| DomainError::DbError {
+        message: e.to_string(),
+    })?;
     crate::rescore::write_report(&conn, job_id, stats.as_ref(), "full", 0, true)?;
     let (triqui, _) = crate::rescore::read_triqui(&conn, job_id)?;
     Ok(triqui)
@@ -111,7 +118,9 @@ pub fn sort_small_job(
         pool_size: usize::MAX,
     };
     cascade::run_to_convergence(rt, job_id, budget, progress)?;
-    let conn = rt.open_conn().map_err(|e| DomainError::DbError { message: e.to_string() })?;
+    let conn = rt.open_conn().map_err(|e| DomainError::DbError {
+        message: e.to_string(),
+    })?;
     let (triqui, _) = crate::rescore::read_triqui(&conn, job_id)?;
     Ok(triqui)
 }

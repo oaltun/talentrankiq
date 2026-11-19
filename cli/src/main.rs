@@ -8,7 +8,9 @@ use std::sync::OnceLock;
 
 use clap::{Parser, Subcommand};
 use libconfigreader::Config;
-use libmodeldownloader::{download_url, UrlDownload, cli::Cli as MdCli, cli::Artifact, Downloader, ProgressSink};
+use libmodeldownloader::{
+    cli::Artifact, cli::Cli as MdCli, download_url, Downloader, ProgressSink, UrlDownload,
+};
 use libtriqui_cli::serve;
 
 static CONFIG: OnceLock<Config> = OnceLock::new();
@@ -27,6 +29,15 @@ enum Commands {
         /// App directory (overrides TRIQ_APP_DIR)
         #[arg(long)]
         app_dir: Option<PathBuf>,
+        /// Write per-request log files (default: on)
+        #[arg(long = "log", action = clap::ArgAction::SetTrue)]
+        log: bool,
+        /// Disable per-request log files (overrides --log)
+        #[arg(long = "no-log", action = clap::ArgAction::SetTrue)]
+        no_log: bool,
+        /// Per-request log directory override
+        #[arg(long = "log-dir")]
+        log_dir: Option<PathBuf>,
     },
     /// Download a model using libmodeldownloader
     Download {
@@ -62,15 +73,19 @@ enum Commands {
 fn main() {
     let cli = Cli::parse();
 
-    // Stderr = human-readable logs, stdout = JSONL protocol
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
-        .format_timestamp_secs()
-        .target(env_logger::Target::Stderr)
-        .init();
+    // Stderr = human-readable logs, stdout = JSONL protocol. Per-request log
+    // files (when enabled) are routed through the tracing writer (serve::logging).
+    serve::logging::init();
 
     match cli.command {
-        Commands::Serve { app_dir } => {
+        Commands::Serve {
+            app_dir,
+            log,
+            no_log,
+            log_dir,
+        } => {
             let app_dir = app_dir.unwrap_or_else(resolve_app_dir);
+            let log_enabled = !no_log || log;
 
             // Load embedded config (no more YAML file)
             let config = load_config();
@@ -78,14 +93,21 @@ fn main() {
 
             let app_version = env!("CARGO_PKG_VERSION").to_string();
 
-            log::info!("triq CLI starting (version {})", app_version);
-            log::info!("app_dir: {}", app_dir.display());
+            tracing::info!("triq CLI starting (version {})", app_version);
+            tracing::info!("app_dir: {}", app_dir.display());
+
+            let resolved_log_dir = if log_enabled {
+                serve::logging::resolve_log_dir(Some(&app_dir), log_dir.as_deref())
+            } else {
+                None
+            };
 
             if let Err(e) = serve::run_over(
                 Some(app_dir),
                 app_version,
                 std::io::stdin().lock(),
                 std::io::stdout(),
+                resolved_log_dir,
             ) {
                 eprintln!("cli error: {e}");
                 std::process::exit(1);
@@ -101,30 +123,28 @@ fn main() {
             sha256,
             artifact,
         } => {
-            let model_dir = model_dir.unwrap_or_else(|| {
-                libtriqui_core::app_config::model_dir()
-            });
+            let model_dir = model_dir.unwrap_or_else(|| libtriqui_core::app_config::model_dir());
 
-            log::info!("Downloading model: {}", slug);
-            log::info!("Model dir: {}", model_dir.display());
-            log::info!("Artifact: {:?}", artifact);
-            log::info!("Force: {}", force);
+            tracing::info!("Downloading model: {}", slug);
+            tracing::info!("Model dir: {}", model_dir.display());
+            tracing::info!("Artifact: {:?}", artifact);
+            tracing::info!("Force: {}", force);
 
             match artifact {
                 Artifact::Onnx => {
                     let url = url.expect("--url is required for ONNX artifact");
-                    log::info!("URL: {}", url);
-                    log::info!("Extra files: {:?}", extra_files);
+                    tracing::info!("URL: {}", url);
+                    tracing::info!("Extra files: {:?}", extra_files);
 
                     let mut req = UrlDownload::new(url, slug, model_dir, sha256);
                     req.extra_files = extra_files;
                     req.force = force;
 
                     match download_url(req, |ev| {
-                        log::info!("Progress: {:?}", ev);
+                        tracing::info!("Progress: {:?}", ev);
                     }) {
                         Ok(path) => {
-                            log::info!("Download complete: {}", path.display());
+                            tracing::info!("Download complete: {}", path.display());
                         }
                         Err(e) => {
                             eprintln!("Download failed: {:?}", e);
@@ -133,9 +153,10 @@ fn main() {
                     }
                 }
                 Artifact::Mlx => {
-                    let source = source.expect("--source is required for MLX artifact (e.g., hf:org/repo)");
-                    log::info!("Source: {}", source);
-                    log::info!("Extra files: {:?}", extra_files);
+                    let source =
+                        source.expect("--source is required for MLX artifact (e.g., hf:org/repo)");
+                    tracing::info!("Source: {}", source);
+                    tracing::info!("Extra files: {:?}", extra_files);
 
                     let md_cli = MdCli {
                         config: None,
@@ -156,12 +177,12 @@ fn main() {
                     };
 
                     let progress: ProgressSink = std::sync::Arc::new(std::sync::Mutex::new(|ev| {
-                        log::info!("Progress: {:?}", ev);
+                        tracing::info!("Progress: {:?}", ev);
                     }));
 
                     match Downloader::run_with_progress(md_cli, Some(progress)) {
                         Ok(path) => {
-                            log::info!("Download complete: {}", path.display());
+                            tracing::info!("Download complete: {}", path.display());
                         }
                         Err(e) => {
                             eprintln!("Download failed: {:?}", e);

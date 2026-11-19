@@ -1,8 +1,8 @@
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use sha2::{Digest, Sha256};
 
 use crate::cli::Cli;
 use crate::hf_url;
@@ -17,7 +17,11 @@ pub enum DownloadEvent {
     /// A new file starts downloading; `total` is the content-length when known.
     Started { file: String, total: Option<u64> },
     /// Byte progress within the current file (emitted at ≥5% steps).
-    Progress { file: String, done: u64, total: Option<u64> },
+    Progress {
+        file: String,
+        done: u64,
+        total: Option<u64>,
+    },
     /// A file finished downloading; `total` is its final size when known.
     Finished { file: String, total: Option<u64> },
     /// A file was already cached on disk and counted without a download.
@@ -69,7 +73,7 @@ impl Downloader {
         }
 
         if dl.cli.model.as_deref().unwrap_or("").is_empty() {
-            log::error!("--model is required (or use --url with --slug)");
+            tracing::error!("--model is required (or use --url with --slug)");
             return Err(Exit::BadArgs);
         }
 
@@ -82,16 +86,16 @@ impl Downloader {
         let extra_files = cli.extra_files.clone();
 
         let model = cli.model.as_deref().ok_or_else(|| {
-            log::error!("--model is required");
+            tracing::error!("--model is required");
             Exit::BadArgs
         })?;
         if model.is_empty() {
-            log::error!("--model is required");
+            tracing::error!("--model is required");
             return Err(Exit::BadArgs);
         }
 
         let source_str = cli.source.as_deref().ok_or_else(|| {
-            log::error!("--source is required");
+            tracing::error!("--source is required");
             Exit::BadArgs
         })?;
 
@@ -104,7 +108,7 @@ impl Downloader {
         // listing costs one API call, which the HuggingFace path makes anyway.
         if cli.artifact == crate::cli::Artifact::Mlx && cli.files.is_empty() {
             let Source::HuggingFace { repo } = &source else {
-                log::error!(
+                tracing::error!(
                     "--artifact mlx needs a HuggingFace repo source (hf:<org>/<repo>); \
                      safetensors are fetched by repo listing, not by blob url"
                 );
@@ -115,13 +119,13 @@ impl Downloader {
             let paths: Vec<String> = tree.iter().map(|t| t.path.clone()).collect();
             let files = modelcache::plan_mlx_downloads(&paths);
             if files.is_empty() {
-                log::error!("no safetensors or metadata files found in repo {repo}");
+                tracing::error!("no safetensors or metadata files found in repo {repo}");
                 return Err(Exit::NoWeights);
             }
             if cli.dry_run {
-                log::info!("--dry-run: would fetch into {target:?} (model: {model})");
+                tracing::info!("--dry-run: would fetch into {target:?} (model: {model})");
                 for f in &files {
-                    log::info!("  {f}");
+                    tracing::info!("  {f}");
                 }
                 return Ok(DownloadReport {
                     target,
@@ -130,7 +134,7 @@ impl Downloader {
                 });
             }
             fs::create_dir_all(&target).map_err(|e| {
-                log::error!("failed to create target dir {target:?}: {e}");
+                tracing::error!("failed to create target dir {target:?}: {e}");
                 Exit::DiskWrite
             })?;
             let mut report = DownloadReport {
@@ -140,7 +144,7 @@ impl Downloader {
             };
             self.fetch_huggingface(repo, &target, &files, &extra_files, &mut report)?;
             if !modelcache::verify_safetensors_present(&target) {
-                log::error!("verification failed: no .safetensors under {target:?}");
+                tracing::error!("verification failed: no .safetensors under {target:?}");
                 return Err(Exit::NoWeights);
             }
             return Ok(report);
@@ -163,7 +167,7 @@ impl Downloader {
             }
         };
         fs::create_dir_all(&target).map_err(|e| {
-            log::error!("failed to create target dir {target:?}: {e}");
+            tracing::error!("failed to create target dir {target:?}: {e}");
             Exit::DiskWrite
         })?;
 
@@ -174,31 +178,31 @@ impl Downloader {
         };
 
         if cli.dry_run {
-            log::info!("--dry-run: would fetch into {target:?}");
+            tracing::info!("--dry-run: would fetch into {target:?}");
             match &source {
                 Source::Https { url } => {
                     if is_archive_url(url) {
-                        log::info!("  (archive: {url})");
+                        tracing::info!("  (archive: {url})");
                     } else if files.is_empty() {
                         let name = https_basename(url);
-                        log::info!("  {name}");
+                        tracing::info!("  {name}");
                         for f in cli.files.iter() {
-                            log::info!("  {f}");
+                            tracing::info!("  {f}");
                         }
                     } else {
                         for f in &files {
-                            log::info!("  {f}");
+                            tracing::info!("  {f}");
                         }
                     }
                 }
                 _ => {
                     for f in &files {
-                        log::info!("  {f}");
+                        tracing::info!("  {f}");
                     }
                 }
             }
             for f in &cli.extra_files {
-                log::info!("  {f} (extra)");
+                tracing::info!("  {f} (extra)");
             }
             return Ok(report);
         }
@@ -216,7 +220,7 @@ impl Downloader {
         }
 
         if !modelcache::verify_onnx_present(&target) {
-            log::error!("verification failed: no .onnx or .onnx.gz file found in {target:?}");
+            tracing::error!("verification failed: no .onnx or .onnx.gz file found in {target:?}");
             return Err(Exit::NoOnnx);
         }
 
@@ -227,25 +231,21 @@ impl Downloader {
     /// tokenizer/config) from a HuggingFace blob url into
     /// `<model_dir>/<slug>/repo/`. Writes `<model_dir>/<slug>/meta/source.json`.
     fn execute_url(&mut self) -> Result<DownloadReport, Exit> {
-        let url = self
-            .cli
-            .url
-            .as_deref()
-            .ok_or_else(|| {
-                log::error!("--url is required in url mode");
-                Exit::BadArgs
-            })?;
+        let url = self.cli.url.as_deref().ok_or_else(|| {
+            tracing::error!("--url is required in url mode");
+            Exit::BadArgs
+        })?;
         let slug = self.cli.slug.as_deref().ok_or_else(|| {
-            log::error!("--slug is required with --url");
+            tracing::error!("--slug is required with --url");
             Exit::BadArgs
         })?;
         if slug.is_empty() {
-            log::error!("--slug must not be empty");
+            tracing::error!("--slug must not be empty");
             return Err(Exit::BadArgs);
         }
 
         let blob = hf_url::parse_hf_blob_url(url).ok_or_else(|| {
-            log::error!("--url is not a valid huggingface blob url: {url}");
+            tracing::error!("--url is not a valid huggingface blob url: {url}");
             Exit::BadArgs
         })?;
 
@@ -264,25 +264,23 @@ impl Downloader {
         let files = hf_url::plan_downloads(&blob, &tree_paths);
 
         if files.is_empty() {
-            log::error!("no files resolved from url {url}");
+            tracing::error!("no files resolved from url {url}");
             return Err(Exit::SourceNotFound);
         }
 
         if self.cli.dry_run {
-            log::info!(
-                "--dry-run: would fetch into {target:?} (slug: {slug})"
-            );
+            tracing::info!("--dry-run: would fetch into {target:?} (slug: {slug})");
             for f in &files {
-                log::info!("  {f}");
+                tracing::info!("  {f}");
             }
             for f in &self.cli.extra_files {
-                log::info!("  {f} (extra)");
+                tracing::info!("  {f} (extra)");
             }
             return Ok(report);
         }
 
         fs::create_dir_all(&target).map_err(|e| {
-            log::error!("failed to create target dir {target:?}: {e}");
+            tracing::error!("failed to create target dir {target:?}: {e}");
             Exit::DiskWrite
         })?;
 
@@ -302,7 +300,7 @@ impl Downloader {
             if !self.cli.force {
                 if let Some(local) = modelcache::local_size(&dest) {
                     if self.size_matches(local, remote) {
-                        log::info!("{dest_rel} cached ({local} bytes) -> {}", dest.display());
+                        tracing::info!("{dest_rel} cached ({local} bytes) -> {}", dest.display());
                         self.emit(DownloadEvent::Cached {
                             file: dest_rel.clone(),
                             bytes: local,
@@ -327,7 +325,7 @@ impl Downloader {
             let (remote_size,) = match tree.iter().find(|t| &t.path == extra) {
                 Some(t) => (t.size,),
                 None => {
-                    log::error!("{extra}: not found in repo {}", blob.repo);
+                    tracing::error!("{extra}: not found in repo {}", blob.repo);
                     return Err(Exit::SourceNotFound);
                 }
             };
@@ -336,7 +334,7 @@ impl Downloader {
             if !self.cli.force {
                 if let Some(local) = modelcache::local_size(&dest) {
                     if self.size_matches(local, remote_size) {
-                        log::info!("{extra} cached ({local} bytes) -> {}", dest.display());
+                        tracing::info!("{extra} cached ({local} bytes) -> {}", dest.display());
                         self.emit(DownloadEvent::Cached {
                             file: extra.clone(),
                             bytes: local,
@@ -359,9 +357,7 @@ impl Downloader {
         all_files.extend(self.cli.extra_files.iter().cloned());
 
         if !verify_onnx_present_recursive(&target) {
-            log::error!(
-                "verification failed: no .onnx file found under {target:?}"
-            );
+            tracing::error!("verification failed: no .onnx file found under {target:?}");
             return Err(Exit::NoOnnx);
         }
 
@@ -389,7 +385,7 @@ impl Downloader {
     ) -> Result<(), Exit> {
         let meta_dir = slug_dir.join(libmodelstorage::META_DIR);
         fs::create_dir_all(&meta_dir).map_err(|e| {
-            log::error!("failed to create meta dir {meta_dir:?}: {e}");
+            tracing::error!("failed to create meta dir {meta_dir:?}: {e}");
             Exit::DiskWrite
         })?;
         let meta = serde_json::json!({
@@ -400,7 +396,7 @@ impl Downloader {
             "files": files,
         });
         let text = serde_json::to_string_pretty(&meta).map_err(|e| {
-            log::error!("failed to serialize meta: {e}");
+            tracing::error!("failed to serialize meta: {e}");
             Exit::DiskWrite
         })?;
         let dest = meta_dir.join(libmodelstorage::META_FILE);
@@ -427,10 +423,10 @@ impl Downloader {
                 Some(e) => (e.path.clone(), e.size),
                 None => {
                     if self.cli.files.is_empty() {
-                        log::info!("{local_name} not found in repo, skipping");
+                        tracing::info!("{local_name} not found in repo, skipping");
                         continue;
                     }
-                    log::error!("{local_name}: not found in repo {repo}");
+                    tracing::error!("{local_name}: not found in repo {repo}");
                     return Err(Exit::SourceNotFound);
                 }
             };
@@ -443,7 +439,7 @@ impl Downloader {
                         } else {
                             String::new()
                         };
-                        log::info!("{local_name} cached{unit} -> {}", dest.display());
+                        tracing::info!("{local_name} cached{unit} -> {}", dest.display());
                         self.emit(DownloadEvent::Cached {
                             file: local_name.clone(),
                             bytes: local,
@@ -476,7 +472,10 @@ impl Downloader {
                     if !self.cli.force {
                         if let Some(local) = modelcache::local_size(&sib_dest) {
                             if self.size_matches(local, sib_size) {
-                                log::info!("{sib_name} cached ({local} bytes) -> {}", sib_dest.display());
+                                tracing::info!(
+                                    "{sib_name} cached ({local} bytes) -> {}",
+                                    sib_dest.display()
+                                );
                                 self.emit(DownloadEvent::Cached {
                                     file: sibling.clone(),
                                     bytes: local,
@@ -502,7 +501,7 @@ impl Downloader {
             let (remote_path, remote_size) = match self.match_tree_entry(&tree, extra) {
                 Some(e) => (e.path.clone(), e.size),
                 None => {
-                    log::error!("{extra}: not found in repo {repo}");
+                    tracing::error!("{extra}: not found in repo {repo}");
                     return Err(Exit::SourceNotFound);
                 }
             };
@@ -511,7 +510,7 @@ impl Downloader {
             if !self.cli.force {
                 if let Some(local) = modelcache::local_size(&dest) {
                     if self.size_matches(local, remote_size) {
-                        log::info!("{extra} cached ({local} bytes) -> {}", dest.display());
+                        tracing::info!("{extra} cached ({local} bytes) -> {}", dest.display());
                         self.emit(DownloadEvent::Cached {
                             file: extra.clone(),
                             bytes: local,
@@ -561,12 +560,12 @@ impl Downloader {
     ) -> Result<(), Exit> {
         if let Some(parent) = dest.parent() {
             fs::create_dir_all(parent).map_err(|e| {
-                log::error!("failed to create parent dir {parent:?}: {e}");
+                tracing::error!("failed to create parent dir {parent:?}: {e}");
                 Exit::DiskWrite
             })?;
         }
-        log::info!("downloading {file} from {url} -> {}", dest.display());
-        stream_response_to_file(client, url, dest, &file.to_string(), Some(self))
+        tracing::info!("downloading {file} from {url} -> {}", dest.display());
+        stream_response_to_file(client, url, dest, file, Some(self))
     }
 
     fn fetch_https(
@@ -578,7 +577,7 @@ impl Downloader {
     ) -> Result<(), Exit> {
         if is_archive_url(url) {
             let client = http_client();
-            log::info!("downloading archive from {url}");
+            tracing::info!("downloading archive from {url}");
             self.emit(DownloadEvent::Started {
                 file: https_basename(url),
                 total: None,
@@ -633,7 +632,7 @@ impl Downloader {
                         } else {
                             String::new()
                         };
-                        log::info!("{file} cached{unit} -> {}", dest.display());
+                        tracing::info!("{file} cached{unit} -> {}", dest.display());
                         self.emit(DownloadEvent::Cached {
                             file: file.to_string(),
                             bytes: local,
@@ -644,25 +643,23 @@ impl Downloader {
                 }
             }
         }
-        log::info!("downloading {file} from {url} -> {}", dest.display());
+        tracing::info!("downloading {file} from {url} -> {}", dest.display());
         self.emit(DownloadEvent::Started {
             file: file.to_string(),
             total: None,
         });
         let bytes = http_get_bytes(client, url)?;
-        
+
         // Verify sha256 if provided
         if let Some(expected) = &self.cli.sha256 {
             let actual = sha256_hex(&bytes);
             if actual != *expected {
-                log::error!(
-                    "sha256 mismatch for {file}: expected {expected}, got {actual}"
-                );
+                tracing::error!("sha256 mismatch for {file}: expected {expected}, got {actual}");
                 return Err(Exit::ChecksumMismatch);
             }
-            log::info!("sha256 verified for {file}");
+            tracing::info!("sha256 verified for {file}");
         }
-        
+
         atomic_write(dest, &bytes)?;
         self.emit(DownloadEvent::Finished {
             file: file.to_string(),
@@ -680,7 +677,7 @@ impl Downloader {
         report: &mut DownloadReport,
     ) -> Result<(), Exit> {
         if !src.is_dir() {
-            log::error!("file:// source {src:?} is not a directory");
+            tracing::error!("file:// source {src:?} is not a directory");
             return Err(Exit::SourceNotFound);
         }
         let to_fetch: Vec<String> = if files.is_empty() {
@@ -695,31 +692,31 @@ impl Downloader {
             let src_file = src.join(file);
             if !src_file.is_file() {
                 if self.cli.files.is_empty() {
-                    log::info!("{file} not found in source dir, skipping");
+                    tracing::info!("{file} not found in source dir, skipping");
                     continue;
                 }
-                log::error!("file:// source missing requested file: {file}");
+                tracing::error!("file:// source missing requested file: {file}");
                 return Err(Exit::SourceNotFound);
             }
             let data = fs::read(&src_file).map_err(|e| {
-                log::error!("failed to read {src_file:?}: {e}");
+                tracing::error!("failed to read {src_file:?}: {e}");
                 Exit::DiskWrite
             })?;
-            
+
             // Verify sha256 if provided (only for the first/main file)
             if *file == to_fetch[0] {
                 if let Some(expected) = &self.cli.sha256 {
                     let actual = sha256_hex(&data);
                     if actual != *expected {
-                        log::error!(
+                        tracing::error!(
                             "sha256 mismatch for {file}: expected {expected}, got {actual}"
                         );
                         return Err(Exit::ChecksumMismatch);
                     }
-                    log::info!("sha256 verified for {file}");
+                    tracing::info!("sha256 verified for {file}");
                 }
             }
-            
+
             let dest = target.join(file);
             atomic_write(&dest, &data)?;
             report.downloaded.push(file.clone());
@@ -758,7 +755,7 @@ impl Downloader {
             out.push(TreeFile { path, size });
         }
         if out.is_empty() {
-            log::error!("no files listed in repo {repo} (gated or empty?)");
+            tracing::error!("no files listed in repo {repo} (gated or empty?)");
             return Err(Exit::SourceNotFound);
         }
         Ok(out)
@@ -779,28 +776,28 @@ pub fn http_client() -> ureq::Agent {
 
 pub fn http_get_json(client: &ureq::Agent, url: &str) -> Result<serde_json::Value, Exit> {
     let resp = client.get(url).apply_auth().call().map_err(|e| {
-        log::error!("network error fetching JSON {url}: {e}");
+        tracing::error!("network error fetching JSON {url}: {e}");
         Exit::Network
     })?;
     let status = resp.status();
     let mut body = resp.into_body().into_reader();
     let mut bytes = Vec::new();
     body.read_to_end(&mut bytes).map_err(|e| {
-        log::error!("failed to read response body for {url}: {e}");
+        tracing::error!("failed to read response body for {url}: {e}");
         Exit::Network
     })?;
     if !status.is_success() {
         let code = status.as_u16();
         let preview = preview_bytes(&bytes);
         if code == 404 || code == 401 {
-            log::error!("source not found ({code}) for {url}: {preview}");
+            tracing::error!("source not found ({code}) for {url}: {preview}");
             return Err(Exit::SourceNotFound);
         }
-        log::error!("HTTP {code} for {url}: {preview}");
+        tracing::error!("HTTP {code} for {url}: {preview}");
         return Err(Exit::Network);
     }
     let v: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| {
-        log::error!("failed to parse JSON response from {url}: {e}");
+        tracing::error!("failed to parse JSON response from {url}: {e}");
         Exit::Network
     })?;
     Ok(v)
@@ -808,24 +805,24 @@ pub fn http_get_json(client: &ureq::Agent, url: &str) -> Result<serde_json::Valu
 
 pub fn http_get_bytes(client: &ureq::Agent, url: &str) -> Result<Vec<u8>, Exit> {
     let resp = client.get(url).apply_auth().call().map_err(|e| {
-        log::error!("network error fetching {url}: {e}");
+        tracing::error!("network error fetching {url}: {e}");
         Exit::Network
     })?;
     let status = resp.status();
     let mut body = resp.into_body().into_reader();
     let mut bytes = Vec::new();
     body.read_to_end(&mut bytes).map_err(|e| {
-        log::error!("failed to read response body for {url}: {e}");
+        tracing::error!("failed to read response body for {url}: {e}");
         Exit::Network
     })?;
     if !status.is_success() {
         let code = status.as_u16();
         let preview = preview_bytes(&bytes);
         if code == 404 || code == 401 {
-            log::error!("source not found ({code}) for {url}: {preview}");
+            tracing::error!("source not found ({code}) for {url}: {preview}");
             return Err(Exit::SourceNotFound);
         }
-        log::error!("HTTP {code} for {url}: {preview}");
+        tracing::error!("HTTP {code} for {url}: {preview}");
         return Err(Exit::Network);
     }
     Ok(bytes)
@@ -896,7 +893,7 @@ fn https_basename(url: &str) -> String {
 
 pub fn http_head(client: &ureq::Agent, url: &str) -> Result<Option<u64>, Exit> {
     let resp = client.head(url).apply_auth().call().map_err(|e| {
-        log::error!("network error HEAD {url}: {e}");
+        tracing::error!("network error HEAD {url}: {e}");
         Exit::Network
     })?;
     let code = resp.status().as_u16();
@@ -904,7 +901,7 @@ pub fn http_head(client: &ureq::Agent, url: &str) -> Result<Option<u64>, Exit> {
         return Err(Exit::SourceNotFound);
     }
     if !resp.status().is_success() {
-        log::error!("HTTP {code} for {url}");
+        tracing::error!("HTTP {code} for {url}");
         return Err(Exit::Network);
     }
     let size = resp
@@ -945,20 +942,20 @@ pub fn atomic_write(dest: &Path, data: &[u8]) -> Result<(), Exit> {
     let tmp = unique_tmp(&parent, &label);
     {
         let mut f = fs::File::create(&tmp).map_err(|e| {
-            log::error!("failed to create temp file {tmp:?}: {e}");
+            tracing::error!("failed to create temp file {tmp:?}: {e}");
             Exit::DiskWrite
         })?;
         f.write_all(data).map_err(|e| {
-            log::error!("failed to write {tmp:?}: {e}");
+            tracing::error!("failed to write {tmp:?}: {e}");
             Exit::DiskWrite
         })?;
         f.sync_all().map_err(|e| {
-            log::error!("failed to fsync {tmp:?}: {e}");
+            tracing::error!("failed to fsync {tmp:?}: {e}");
             Exit::DiskWrite
         })?;
     }
     fs::rename(&tmp, &dest).map_err(|e| {
-        log::error!("failed to rename {tmp:?} -> {dest:?}: {e}");
+        tracing::error!("failed to rename {tmp:?} -> {dest:?}: {e}");
         Exit::DiskWrite
     })?;
     Ok(())
@@ -977,13 +974,13 @@ fn stream_response_to_file(
     dl: Option<&Downloader>,
 ) -> Result<(), Exit> {
     let resp = client.get(url).apply_auth().call().map_err(|e| {
-        log::error!("network error fetching {url}: {e}");
+        tracing::error!("network error fetching {url}: {e}");
         Exit::Network
     })?;
     let status = resp.status();
     if !status.is_success() {
         let code = status.as_u16();
-        log::error!("HTTP {code} for {url}");
+        tracing::error!("HTTP {code} for {url}");
         if code == 404 || code == 401 {
             return Err(Exit::SourceNotFound);
         }
@@ -997,9 +994,15 @@ fn stream_response_to_file(
         .and_then(|s| s.parse::<u64>().ok())
         .filter(|&n| n > 0);
 
-    let file_label = dest.file_name().and_then(|n| n.to_str()).unwrap_or("download");
+    let file_label = dest
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("download");
     if let Some(t) = total {
-        log::info!("  {file_label}: {t} bytes ({:.1} MiB)", t as f64 / 1_048_576.0);
+        tracing::info!(
+            "  {file_label}: {t} bytes ({:.1} MiB)",
+            t as f64 / 1_048_576.0
+        );
     }
     if let Some(dl) = dl {
         dl.emit(DownloadEvent::Started {
@@ -1012,7 +1015,7 @@ fn stream_response_to_file(
     // A failed transfer must not leave staging bytes behind in the model dir.
     let streamed: Result<(), Exit> = (|| {
         let mut f = fs::File::create(&tmp).map_err(|e| {
-            log::error!("failed to create temp file {tmp:?}: {e}");
+            tracing::error!("failed to create temp file {tmp:?}: {e}");
             Exit::DiskWrite
         })?;
         let mut body = resp.into_body().into_reader();
@@ -1021,21 +1024,21 @@ fn stream_response_to_file(
         let mut last_logged_pct = -1i64;
         loop {
             let n = body.read(&mut buf).map_err(|e| {
-                log::error!("failed to read from {url}: {e}");
+                tracing::error!("failed to read from {url}: {e}");
                 Exit::Network
             })?;
             if n == 0 {
                 break;
             }
             f.write_all(&buf[..n]).map_err(|e| {
-                log::error!("failed to stream {url} -> {tmp:?}: {e}");
+                tracing::error!("failed to stream {url} -> {tmp:?}: {e}");
                 Exit::DiskWrite
             })?;
             done += n as u64;
             if let Some(t) = total {
                 let pct: i64 = (done as f64 / t as f64 * 100.0).floor() as i64;
                 if pct >= last_logged_pct + 5 || pct >= 100 {
-                    log::info!(
+                    tracing::info!(
                         "  {file_label}: {pct}% ({:.1}/{:.1} MiB)",
                         done as f64 / 1_048_576.0,
                         t as f64 / 1_048_576.0
@@ -1052,7 +1055,7 @@ fn stream_response_to_file(
             }
         }
         f.sync_all().map_err(|e| {
-            log::error!("failed to fsync {tmp:?}: {e}");
+            tracing::error!("failed to fsync {tmp:?}: {e}");
             Exit::DiskWrite
         })?;
         Ok(())
@@ -1064,13 +1067,13 @@ fn stream_response_to_file(
 
     if let Err(e) = fs::rename(&tmp, dest) {
         let _ = fs::remove_file(&tmp);
-        log::error!("failed to rename {tmp:?} -> {dest:?}: {e}");
+        tracing::error!("failed to rename {tmp:?} -> {dest:?}: {e}");
         return Err(Exit::DiskWrite);
     }
     if let Some(t) = total {
-        log::info!("  {file_label}: done ({:.1} MiB)", t as f64 / 1_048_576.0);
+        tracing::info!("  {file_label}: done ({:.1} MiB)", t as f64 / 1_048_576.0);
     } else {
-        log::info!("  {file_label}: done");
+        tracing::info!("  {file_label}: done");
     }
     if let Some(dl) = dl {
         dl.emit(DownloadEvent::Finished {
@@ -1086,7 +1089,7 @@ fn extract_zip(bytes: &[u8], target: &Path) -> Result<(), Exit> {
     let mut archive = match zip::ZipArchive::new(Cursor::new(bytes)) {
         Ok(a) => a,
         Err(e) => {
-            log::error!("failed to open zip archive: {e}");
+            tracing::error!("failed to open zip archive: {e}");
             return Err(Exit::SourceNotFound);
         }
     };
@@ -1094,14 +1097,14 @@ fn extract_zip(bytes: &[u8], target: &Path) -> Result<(), Exit> {
         let mut entry = match archive.by_index(i) {
             Ok(e) => e,
             Err(e) => {
-                log::error!("zip entry {i}: {e}");
+                tracing::error!("zip entry {i}: {e}");
                 return Err(Exit::SourceNotFound);
             }
         };
         let name = match entry.enclosed_name() {
             Some(n) => n.to_path_buf(),
             None => {
-                log::warn!("skipping zip entry {i}: unsafe path");
+                tracing::warn!("skipping zip entry {i}: unsafe path");
                 continue;
             }
         };
@@ -1110,21 +1113,21 @@ fn extract_zip(bytes: &[u8], target: &Path) -> Result<(), Exit> {
         }
         let dest = target.join(&name);
         if !is_within(target, &dest) {
-            log::warn!("skipping zip entry {i}: escapes target");
+            tracing::warn!("skipping zip entry {i}: escapes target");
             continue;
         }
         if let Some(parent) = dest.parent() {
             fs::create_dir_all(parent).map_err(|e| {
-                log::error!("failed to mkdir {parent:?}: {e}");
+                tracing::error!("failed to mkdir {parent:?}: {e}");
                 Exit::DiskWrite
             })?;
         }
         let mut out = fs::File::create(&dest).map_err(|e| {
-            log::error!("failed to create {dest:?}: {e}");
+            tracing::error!("failed to create {dest:?}: {e}");
             Exit::DiskWrite
         })?;
         std::io::copy(&mut entry, &mut out).map_err(|e| {
-            log::error!("failed to extract {dest:?}: {e}");
+            tracing::error!("failed to extract {dest:?}: {e}");
             Exit::DiskWrite
         })?;
     }
@@ -1143,16 +1146,16 @@ fn extract_tar(bytes: &[u8], target: &Path) -> Result<(), Exit> {
     archive
         .entries()
         .map_err(|e| {
-            log::error!("failed to open tar archive: {e}");
+            tracing::error!("failed to open tar archive: {e}");
             Exit::SourceNotFound
         })?
         .try_for_each(|entry| {
             let mut entry = entry.map_err(|e| {
-                log::error!("tar entry read failed: {e}");
+                tracing::error!("tar entry read failed: {e}");
                 Exit::SourceNotFound
             })?;
             let path = entry.path().map_err(|e| {
-                log::error!("tar entry path error: {e}");
+                tracing::error!("tar entry path error: {e}");
                 Exit::SourceNotFound
             })?;
             if entry.header().entry_type().is_dir() {
@@ -1160,21 +1163,21 @@ fn extract_tar(bytes: &[u8], target: &Path) -> Result<(), Exit> {
             }
             let dest = target.join(path);
             if !is_within(target, &dest) {
-                log::warn!("skipping tar entry: escapes target");
+                tracing::warn!("skipping tar entry: escapes target");
                 return Ok(());
             }
             if let Some(parent) = dest.parent() {
                 fs::create_dir_all(parent).map_err(|e| {
-                    log::error!("failed to mkdir {parent:?}: {e}");
+                    tracing::error!("failed to mkdir {parent:?}: {e}");
                     Exit::DiskWrite
                 })?;
             }
             let mut out = fs::File::create(&dest).map_err(|e| {
-                log::error!("failed to create {dest:?}: {e}");
+                tracing::error!("failed to create {dest:?}: {e}");
                 Exit::DiskWrite
             })?;
             std::io::copy(&mut entry, &mut out).map_err(|e| {
-                log::error!("failed to extract {dest:?}: {e}");
+                tracing::error!("failed to extract {dest:?}: {e}");
                 Exit::DiskWrite
             })?;
             Ok(())
@@ -1194,7 +1197,7 @@ fn flatten_onnx(target: &Path) {
             return;
         }
         let dest = target.join(src.file_name().unwrap_or_default());
-        log::info!("flattening {} -> {}", src.display(), dest.display());
+        tracing::info!("flattening {} -> {}", src.display(), dest.display());
         let moved = fs::rename(&src, &dest).is_ok()
             || (fs::copy(&src, &dest).is_ok() && fs::remove_file(&src).is_ok());
         if moved {
@@ -1210,7 +1213,7 @@ fn flatten_onnx(target: &Path) {
                 }
             }
         } else {
-            log::warn!("failed to flatten onnx into target root");
+            tracing::warn!("failed to flatten onnx into target root");
         }
     }
 }
@@ -1266,10 +1269,10 @@ fn ensure_config_json(target: &Path, onnx_dir: &str) -> Result<(), Exit> {
         return Ok(());
     }
     fs::write(&path, b"{}").map_err(|e| {
-        log::error!("failed to write synthesized config {path:?}: {e}");
+        tracing::error!("failed to write synthesized config {path:?}: {e}");
         Exit::DiskWrite
     })?;
-    log::info!("synthesized empty config.json at {path:?} (repo shipped none)");
+    tracing::info!("synthesized empty config.json at {path:?} (repo shipped none)");
     Ok(())
 }
 
@@ -1286,6 +1289,7 @@ fn remap_dest(dir: &str, rel: &str) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
     use crate::cli::Cli;
@@ -1323,10 +1327,10 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let file_path = temp_dir.path().join("model.onnx");
         std::fs::write(&file_path, b"test model content").unwrap();
-        
+
         let expected_sha256 = sha256_hex(b"test model content");
         let source_url = format!("file://{}", temp_dir.path().display());
-        
+
         let cli = Cli {
             config: None,
             model: Some("test-model".to_string()),
@@ -1344,9 +1348,12 @@ mod tests {
             verbose: false,
             logfile: None,
         };
-        
+
         let result = Downloader::run(cli);
-        assert!(result.is_ok(), "sha256 verification should pass with correct hash");
+        assert!(
+            result.is_ok(),
+            "sha256 verification should pass with correct hash"
+        );
     }
 
     #[test]
@@ -1354,11 +1361,11 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let file_path = temp_dir.path().join("model.onnx");
         std::fs::write(&file_path, b"test model content").unwrap();
-        
+
         // Wrong SHA256
         let wrong_sha256 = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
         let source_url = format!("file://{}", temp_dir.path().display());
-        
+
         let cli = Cli {
             config: None,
             model: Some("test-model".to_string()),
@@ -1376,9 +1383,12 @@ mod tests {
             verbose: false,
             logfile: None,
         };
-        
+
         let result = Downloader::run(cli);
-        assert!(result.is_err(), "sha256 verification should fail with wrong hash");
+        assert!(
+            result.is_err(),
+            "sha256 verification should fail with wrong hash"
+        );
         assert_eq!(result.unwrap_err().code(), Exit::ChecksumMismatch.code());
     }
 
@@ -1387,9 +1397,9 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let file_path = temp_dir.path().join("model.onnx");
         std::fs::write(&file_path, b"test model content").unwrap();
-        
+
         let source_url = format!("file://{}", temp_dir.path().display());
-        
+
         let cli = Cli {
             config: None,
             model: Some("test-model".to_string()),
@@ -1407,9 +1417,12 @@ mod tests {
             verbose: false,
             logfile: None,
         };
-        
+
         let result = Downloader::run(cli);
-        assert!(result.is_ok(), "sha256 verification should be skipped when not provided");
+        assert!(
+            result.is_ok(),
+            "sha256 verification should be skipped when not provided"
+        );
     }
 
     #[test]
@@ -1468,7 +1481,10 @@ mod tests {
         std::fs::create_dir_all(tmp.join("onnx")).unwrap();
         ensure_config_json(&tmp, "onnx").unwrap();
         let path = tmp.join("onnx/config.json");
-        assert!(path.is_file(), "config.json synthesized for a repo with none");
+        assert!(
+            path.is_file(),
+            "config.json synthesized for a repo with none"
+        );
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "{}");
         // A second run must not clobber a real config.
         std::fs::write(&path, br#"{"dim":1024}"#).unwrap();
@@ -1656,12 +1672,30 @@ mod tests {
     #[test]
     fn external_data_siblings_finds_same_dir_payloads() {
         let tree = vec![
-            TreeFile { path: "onnx/model.onnx".into(), size: 1 },
-            TreeFile { path: "onnx/model.onnx_data".into(), size: 2 },
-            TreeFile { path: "onnx/model.onnx_data_1".into(), size: 3 },
-            TreeFile { path: "onnx/model_q4.onnx".into(), size: 4 },
-            TreeFile { path: "onnx/model_q4.onnx_data".into(), size: 5 },
-            TreeFile { path: "model.onnx_data".into(), size: 6 },
+            TreeFile {
+                path: "onnx/model.onnx".into(),
+                size: 1,
+            },
+            TreeFile {
+                path: "onnx/model.onnx_data".into(),
+                size: 2,
+            },
+            TreeFile {
+                path: "onnx/model.onnx_data_1".into(),
+                size: 3,
+            },
+            TreeFile {
+                path: "onnx/model_q4.onnx".into(),
+                size: 4,
+            },
+            TreeFile {
+                path: "onnx/model_q4.onnx_data".into(),
+                size: 5,
+            },
+            TreeFile {
+                path: "model.onnx_data".into(),
+                size: 6,
+            },
         ];
         let sib = external_data_siblings(&tree, "onnx/model.onnx");
         assert_eq!(sib, vec!["onnx/model.onnx_data", "onnx/model.onnx_data_1"]);
@@ -1672,8 +1706,14 @@ mod tests {
     #[test]
     fn external_data_siblings_handles_root_and_gz() {
         let tree = vec![
-            TreeFile { path: "model.onnx".into(), size: 1 },
-            TreeFile { path: "model.onnx_data".into(), size: 2 },
+            TreeFile {
+                path: "model.onnx".into(),
+                size: 1,
+            },
+            TreeFile {
+                path: "model.onnx_data".into(),
+                size: 2,
+            },
         ];
         let sib = external_data_siblings(&tree, "model.onnx");
         assert_eq!(sib, vec!["model.onnx_data"]);

@@ -142,11 +142,7 @@ fn halve(batch: Option<usize>) -> Option<usize> {
     batch.map(|b| (b / 2).max(1))
 }
 
-fn classify(
-    inv: &Inventory,
-    load: &LoadSnapshot,
-    cfg: &libconfigreader::SyscapSection,
-) -> Verdict {
+fn classify(inv: &Inventory, load: &LoadSnapshot, cfg: &libconfigreader::SyscapSection) -> Verdict {
     let logical = inv.cpu.logical.max(1) as f64;
     let free_frac = load.free_mem_frac();
     let load_ratio = load.loadavg[0] / logical;
@@ -173,11 +169,7 @@ fn classify(
 /// Advisory allocation ceiling: free RAM beyond the user's reserve, scaled by
 /// the verdict (Full keeps the whole slice, Polite half, Backoff a quarter,
 /// Hold nothing).
-fn mem_cap_for(
-    verdict: Verdict,
-    load: &LoadSnapshot,
-    cfg: &libconfigreader::SyscapSection,
-) -> u64 {
+fn mem_cap_for(verdict: Verdict, load: &LoadSnapshot, cfg: &libconfigreader::SyscapSection) -> u64 {
     let reserve = (cfg.min_free_mem_frac() * load.mem_total_bytes as f64)
         .max(2.0 * GIB)
         .max(0.0) as u64;
@@ -239,8 +231,9 @@ pub fn build_jobs_now(
 ) -> (Budget, u32) {
     let inv = Inventory::global();
     let mut sampler = LoadSampler::new();
-    let load =
-        sampler.sample(std::time::Duration::from_millis(cfg.sample_min_interval_ms()));
+    let load = sampler.sample(std::time::Duration::from_millis(
+        cfg.sample_min_interval_ms(),
+    ));
     let b = budget(inv, &load, cfg, caps);
     let jobs = build_jobs(&cfg.build_jobs(), &b);
     (b, jobs)
@@ -254,7 +247,11 @@ mod tests {
     fn inv(perf: Option<u32>, logical: u32, on_battery: Option<bool>) -> Inventory {
         Inventory {
             cpu: CpuInfo {
-                vendor: if perf.is_some() { CpuVendor::Apple } else { CpuVendor::Intel },
+                vendor: if perf.is_some() {
+                    CpuVendor::Apple
+                } else {
+                    CpuVendor::Intel
+                },
                 brand: "test".into(),
                 logical,
                 physical: logical,
@@ -262,11 +259,18 @@ mod tests {
                 eff_cores: None,
                 simd: vec!["neon".into()],
             },
-            mem: MemInfo { total_bytes: 16 << 30 },
+            mem: MemInfo {
+                total_bytes: 16 << 30,
+            },
             gpus: Vec::new(),
-            accel: AccelInfo { ane_present: None, coreml_available: false },
+            accel: AccelInfo {
+                ane_present: None,
+                coreml_available: false,
+            },
             power: PowerInfo { on_battery },
-            disk: DiskInfo { home_free_bytes: 100 << 30 },
+            disk: DiskInfo {
+                home_free_bytes: 100 << 30,
+            },
         }
     }
 
@@ -301,18 +305,31 @@ mod tests {
 
     #[test]
     fn disabled_config_reports_caps_without_sampling() {
-        let cfg = libconfigreader::SyscapConfig { enabled: false, ..Default::default() };
-        let b = budget(&inv(Some(4), 8, Some(true)), &load(0, 50.0), &cfg, &caps(2, 4));
+        let cfg = libconfigreader::SyscapConfig {
+            enabled: false,
+            ..Default::default()
+        };
+        let b = budget(
+            &inv(Some(4), 8, Some(true)),
+            &load(0, 50.0),
+            &cfg,
+            &caps(2, 4),
+        );
         assert_eq!(b.verdict, Verdict::Full);
         assert_eq!(b.thread_cap, 2);
         assert_eq!(b.embed_batch, Some(4));
         assert_eq!(b.mem_cap_bytes, u64::MAX);
         // Disabled means untouched: a configured cap ABOVE the hardware
         // usable-core estimate must survive (pre-syscap behavior).
-        let b = budget(&inv(Some(4), 8, Some(true)), &load(0, 50.0), &cfg, &caps(8, 4));
+        let b = budget(
+            &inv(Some(4), 8, Some(true)),
+            &load(0, 50.0),
+            &cfg,
+            &caps(8, 4),
+        );
         assert_eq!(b.thread_cap, 8);
-}
- 
+    }
+
     fn caps_no_intra() -> libconfigreader::EngineSection {
         libconfigreader::EngineConfig {
             intra_threads: None,

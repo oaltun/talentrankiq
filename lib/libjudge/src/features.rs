@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::artifact::{Block, FeatureSpec, FeatureVariant};
 use crate::evidence::X_BLOCK_LEN;
-use crate::{cosine, l2_normalize, JudgeError};
+use crate::{JudgeError, cosine, l2_normalize};
 
 /// Text preprocessing applied before chunking/embedding (mirrors bench).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -46,7 +46,10 @@ pub struct DocFeatures {
 /// Build the per-document blocks `a`/`e`/`c` from raw chunk embeddings.
 /// `job_chunks` are the ad's chunk embeddings (already the preprocessed,
 /// prefixed strings' embeddings); `cv_chunks` the cv's.
-pub fn doc_features(job_chunks: &[Vec<f64>], cv_chunks: &[Vec<f64>]) -> Result<DocFeatures, JudgeError> {
+pub fn doc_features(
+    job_chunks: &[Vec<f64>],
+    cv_chunks: &[Vec<f64>],
+) -> Result<DocFeatures, JudgeError> {
     let dim = cv_chunks
         .first()
         .map(|c| c.len())
@@ -54,7 +57,11 @@ pub fn doc_features(job_chunks: &[Vec<f64>], cv_chunks: &[Vec<f64>]) -> Result<D
     if job_chunks.is_empty() {
         return Err(JudgeError::Other("job ad has no chunks".into()));
     }
-    if job_chunks.iter().chain(cv_chunks.iter()).any(|c| c.len() != dim) {
+    if job_chunks
+        .iter()
+        .chain(cv_chunks.iter())
+        .any(|c| c.len() != dim)
+    {
         return Err(JudgeError::DimMismatch {
             expected: dim,
             got: 0,
@@ -103,7 +110,12 @@ pub fn doc_features(job_chunks: &[Vec<f64>], cv_chunks: &[Vec<f64>]) -> Result<D
 /// Raw-variant input for an ordered pair (cv1 better than cv2):
 /// `x = [a; e1; e2; c1; c2]`, `5*dim` dims.
 #[allow(unused_variables)]
-pub fn assemble_raw_pair(spec: &FeatureSpec, ad: &DocFeatures, cv1: &DocFeatures, cv2: &DocFeatures) -> Vec<f32> {
+pub fn assemble_raw_pair(
+    spec: &FeatureSpec,
+    ad: &DocFeatures,
+    cv1: &DocFeatures,
+    cv2: &DocFeatures,
+) -> Vec<f32> {
     debug_assert_eq!(spec.variant, FeatureVariant::Raw);
     assemble_raw_pair_inner(ad, cv1, cv2)
 }
@@ -136,7 +148,10 @@ pub fn assemble_engineered_pair(
         let k = 3.min(sorted.len());
         let top3 = sorted[..k].iter().sum::<f64>() / k as f64;
         let coverage = sims.iter().filter(|&&s| s > tau).count() as f64 / sims.len() as f64;
-        vec![max, mean, top3, coverage].into_iter().map(|v| v as f32).collect()
+        vec![max, mean, top3, coverage]
+            .into_iter()
+            .map(|v| v as f32)
+            .collect()
     };
 
     let mut x = Vec::with_capacity(spec.input_dim);
@@ -165,7 +180,12 @@ pub fn assemble_engineered_pair(
 /// `[a; e1; e2; c1; c2; x1; x2]` — the raw embedding blocks unchanged,
 /// plus the per-cv evidence scalars. Requires both docs to carry an `x`
 /// block (the extractor fills it when the spec variant is `Fused`).
-pub fn assemble_fused_pair(spec: &FeatureSpec, ad: &DocFeatures, cv1: &DocFeatures, cv2: &DocFeatures) -> Vec<f32> {
+pub fn assemble_fused_pair(
+    spec: &FeatureSpec,
+    ad: &DocFeatures,
+    cv1: &DocFeatures,
+    cv2: &DocFeatures,
+) -> Vec<f32> {
     debug_assert_eq!(spec.variant, FeatureVariant::Fused);
     assert_eq!(
         cv1.x.len(),
@@ -194,7 +214,12 @@ fn assemble_raw_pair_inner(ad: &DocFeatures, cv1: &DocFeatures, cv2: &DocFeature
 }
 
 /// Assemble the pair input according to the spec's variant.
-pub fn assemble_pair(spec: &FeatureSpec, ad: &DocFeatures, cv1: &DocFeatures, cv2: &DocFeatures) -> Vec<f32> {
+pub fn assemble_pair(
+    spec: &FeatureSpec,
+    ad: &DocFeatures,
+    cv1: &DocFeatures,
+    cv2: &DocFeatures,
+) -> Vec<f32> {
     match spec.variant {
         FeatureVariant::Raw => assemble_raw_pair(spec, ad, cv1, cv2),
         FeatureVariant::Engineered => assemble_engineered_pair(spec, ad, cv1, cv2),
@@ -314,17 +339,45 @@ mod tests {
 
     #[test]
     fn raw_pair_layout_matches_blocks() {
-        let spec = FeatureSpec::raw_pair("m", 2, ChunkingMode::CtxSize, None, Contextual::Off, TextPrep::Lowercase);
-        let job = DocFeatures { a: vec![1.0, 1.0], e: vec![0.0; 2], c: vec![0.0; 2], n_chunks: 1, chunk_sims: vec![0.0], x: vec![] };
-        let cv1 = DocFeatures { a: vec![0.0; 2], e: vec![2.0, 2.0], c: vec![3.0, 3.0], n_chunks: 1, chunk_sims: vec![0.0], x: vec![] };
-        let cv2 = DocFeatures { a: vec![0.0; 2], e: vec![4.0, 4.0], c: vec![5.0, 5.0], n_chunks: 1, chunk_sims: vec![0.0], x: vec![] };
+        let spec = FeatureSpec::raw_pair(
+            "m",
+            2,
+            ChunkingMode::CtxSize,
+            None,
+            Contextual::Off,
+            TextPrep::Lowercase,
+        );
+        let job = DocFeatures {
+            a: vec![1.0, 1.0],
+            e: vec![0.0; 2],
+            c: vec![0.0; 2],
+            n_chunks: 1,
+            chunk_sims: vec![0.0],
+            x: vec![],
+        };
+        let cv1 = DocFeatures {
+            a: vec![0.0; 2],
+            e: vec![2.0, 2.0],
+            c: vec![3.0, 3.0],
+            n_chunks: 1,
+            chunk_sims: vec![0.0],
+            x: vec![],
+        };
+        let cv2 = DocFeatures {
+            a: vec![0.0; 2],
+            e: vec![4.0, 4.0],
+            c: vec![5.0, 5.0],
+            n_chunks: 1,
+            chunk_sims: vec![0.0],
+            x: vec![],
+        };
         let x = assemble_raw_pair(&spec, &job, &cv1, &cv2);
         assert_eq!(x.len(), 10);
-        assert_eq!(&x[0..2], &[1.0, 1.0]);       // a
-        assert_eq!(&x[2..4], &[2.0, 2.0]);       // e1
-        assert_eq!(&x[4..6], &[4.0, 4.0]);       // e2
-        assert_eq!(&x[6..8], &[3.0, 3.0]);       // c1
-        assert_eq!(&x[8..10], &[5.0, 5.0]);      // c2
+        assert_eq!(&x[0..2], &[1.0, 1.0]); // a
+        assert_eq!(&x[2..4], &[2.0, 2.0]); // e1
+        assert_eq!(&x[4..6], &[4.0, 4.0]); // e2
+        assert_eq!(&x[6..8], &[3.0, 3.0]); // c1
+        assert_eq!(&x[8..10], &[5.0, 5.0]); // c2
         for b in &spec.blocks {
             assert_eq!(b.end() <= 10, true);
         }
@@ -332,19 +385,56 @@ mod tests {
 
     #[test]
     fn fused_pair_layout_matches_blocks() {
-        let spec = FeatureSpec::fused_pair("m", 2, ChunkingMode::CtxSize, None, Contextual::Off, TextPrep::Lowercase);
+        let spec = FeatureSpec::fused_pair(
+            "m",
+            2,
+            ChunkingMode::CtxSize,
+            None,
+            Contextual::Off,
+            TextPrep::Lowercase,
+        );
         assert_eq!(spec.variant, FeatureVariant::Fused);
         assert_eq!(spec.input_dim, 5 * 2 + 2 * crate::evidence::X_BLOCK_LEN);
-        let job = DocFeatures { a: vec![1.0, 1.0], e: vec![0.0; 2], c: vec![0.0; 2], n_chunks: 1, chunk_sims: vec![0.0], x: vec![] };
+        let job = DocFeatures {
+            a: vec![1.0, 1.0],
+            e: vec![0.0; 2],
+            c: vec![0.0; 2],
+            n_chunks: 1,
+            chunk_sims: vec![0.0],
+            x: vec![],
+        };
         let x1 = vec![0.5f32; crate::evidence::X_BLOCK_LEN];
         let x2 = vec![0.25f32; crate::evidence::X_BLOCK_LEN];
-        let cv1 = DocFeatures { a: vec![0.0; 2], e: vec![2.0, 2.0], c: vec![3.0, 3.0], n_chunks: 1, chunk_sims: vec![0.0], x: x1 };
-        let cv2 = DocFeatures { a: vec![0.0; 2], e: vec![4.0, 4.0], c: vec![5.0, 5.0], n_chunks: 1, chunk_sims: vec![0.0], x: x2 };
+        let cv1 = DocFeatures {
+            a: vec![0.0; 2],
+            e: vec![2.0, 2.0],
+            c: vec![3.0, 3.0],
+            n_chunks: 1,
+            chunk_sims: vec![0.0],
+            x: x1,
+        };
+        let cv2 = DocFeatures {
+            a: vec![0.0; 2],
+            e: vec![4.0, 4.0],
+            c: vec![5.0, 5.0],
+            n_chunks: 1,
+            chunk_sims: vec![0.0],
+            x: x2,
+        };
         let x = assemble_pair(&spec, &job, &cv1, &cv2);
         assert_eq!(x.len(), spec.input_dim);
         let raw = assemble_raw_pair(
-            &FeatureSpec::raw_pair("m", 2, ChunkingMode::CtxSize, None, Contextual::Off, TextPrep::Lowercase),
-            &job, &cv1, &cv2,
+            &FeatureSpec::raw_pair(
+                "m",
+                2,
+                ChunkingMode::CtxSize,
+                None,
+                Contextual::Off,
+                TextPrep::Lowercase,
+            ),
+            &job,
+            &cv1,
+            &cv2,
         );
         assert_eq!(&x[..10], &raw[..]);
         let xw = crate::evidence::X_BLOCK_LEN;
@@ -362,10 +452,39 @@ mod tests {
     #[test]
     fn engineered_pair_layout_and_stats() {
         let dim = 2;
-        let spec = FeatureSpec::engineered_pair("m", dim, ChunkingMode::CtxSize, None, Contextual::Off, TextPrep::Lowercase, 0.5);
-        let job = DocFeatures { a: vec![1.0, 0.0], e: vec![0.0; 2], c: vec![0.0; 2], n_chunks: 2, chunk_sims: vec![0.9, 0.2], x: vec![] };
-        let cv1 = DocFeatures { a: vec![0.0; 2], e: vec![1.0, 0.0], c: vec![0.0; 2], n_chunks: 2, chunk_sims: vec![0.9, 0.2], x: vec![] };
-        let cv2 = DocFeatures { a: vec![0.0; 2], e: vec![0.0, 1.0], c: vec![0.0; 2], n_chunks: 2, chunk_sims: vec![0.2, 0.9], x: vec![] };
+        let spec = FeatureSpec::engineered_pair(
+            "m",
+            dim,
+            ChunkingMode::CtxSize,
+            None,
+            Contextual::Off,
+            TextPrep::Lowercase,
+            0.5,
+        );
+        let job = DocFeatures {
+            a: vec![1.0, 0.0],
+            e: vec![0.0; 2],
+            c: vec![0.0; 2],
+            n_chunks: 2,
+            chunk_sims: vec![0.9, 0.2],
+            x: vec![],
+        };
+        let cv1 = DocFeatures {
+            a: vec![0.0; 2],
+            e: vec![1.0, 0.0],
+            c: vec![0.0; 2],
+            n_chunks: 2,
+            chunk_sims: vec![0.9, 0.2],
+            x: vec![],
+        };
+        let cv2 = DocFeatures {
+            a: vec![0.0; 2],
+            e: vec![0.0, 1.0],
+            c: vec![0.0; 2],
+            n_chunks: 2,
+            chunk_sims: vec![0.2, 0.9],
+            x: vec![],
+        };
         let x = assemble_engineered_pair(&spec, &job, &cv1, &cv2);
         assert_eq!(x.len(), 8 * dim + 8);
         // e1 block
@@ -380,19 +499,40 @@ mod tests {
         assert_eq!(&x[8..10], &[1.0, 0.0]);
         // stats blocks at the end: [max, mean, top3, coverage] each
         let s1 = &x[x.len() - 8..x.len() - 4];
-        assert!((s1[0] - 0.9).abs() < 1e-6);              // max
-        assert!((s1[1] - 0.55).abs() < 1e-6);             // mean
-        assert!((s1[2] - 0.55).abs() < 1e-6);             // top3 = mean of both
-        assert!((s1[3] - 0.5).abs() < 1e-6);              // coverage at tau .5
+        assert!((s1[0] - 0.9).abs() < 1e-6); // max
+        assert!((s1[1] - 0.55).abs() < 1e-6); // mean
+        assert!((s1[2] - 0.55).abs() < 1e-6); // top3 = mean of both
+        assert!((s1[3] - 0.5).abs() < 1e-6); // coverage at tau .5
         // h1 = a * e1 = [1, 0]
         assert_eq!(&x[10..12], &[1.0, 0.0]);
     }
 
     #[test]
     fn pointwise_layout() {
-        let spec = FeatureSpec::pointwise("m", 3, ChunkingMode::None, None, Contextual::Off, TextPrep::Lowercase);
-        let job = DocFeatures { a: vec![1.0, 2.0, 3.0], e: vec![0.0; 3], c: vec![0.0; 3], n_chunks: 1, chunk_sims: vec![0.0], x: vec![] };
-        let cv = DocFeatures { a: vec![0.0; 3], e: vec![7.0, 8.0, 9.0], c: vec![1.0, 1.0, 1.0], n_chunks: 1, chunk_sims: vec![0.0], x: vec![] };
+        let spec = FeatureSpec::pointwise(
+            "m",
+            3,
+            ChunkingMode::None,
+            None,
+            Contextual::Off,
+            TextPrep::Lowercase,
+        );
+        let job = DocFeatures {
+            a: vec![1.0, 2.0, 3.0],
+            e: vec![0.0; 3],
+            c: vec![0.0; 3],
+            n_chunks: 1,
+            chunk_sims: vec![0.0],
+            x: vec![],
+        };
+        let cv = DocFeatures {
+            a: vec![0.0; 3],
+            e: vec![7.0, 8.0, 9.0],
+            c: vec![1.0, 1.0, 1.0],
+            n_chunks: 1,
+            chunk_sims: vec![0.0],
+            x: vec![],
+        };
         let x = assemble_pointwise(&spec, &job, &cv);
         assert_eq!(x, vec![1.0, 2.0, 3.0, 7.0, 8.0, 9.0, 1.0, 1.0, 1.0]);
     }

@@ -1689,7 +1689,7 @@ fn trim_detached_paged_to_rejects_bad_targets() {
         12
     );
 }
- 
+
 #[test]
 fn detached_paged_set_without_pool_writes_falls_back_to_nominal_bytes() {
     let layout = default_layout();

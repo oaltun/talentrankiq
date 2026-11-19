@@ -29,7 +29,9 @@ fn map_anydoc_err(e: anydoc::ConvertError) -> CvParseError {
         anydoc::ConvertError::Unsupported(msg) => CvParseError::UnsupportedFormat(msg),
         anydoc::ConvertError::Encrypted => CvParseError::Encrypted,
         anydoc::ConvertError::NeedsOcr { pages, .. } => CvParseError::NeedsOcr { pages },
-        anydoc::ConvertError::Malformed { .. } => CvParseError::Malformed("malformed document".to_string()),
+        anydoc::ConvertError::Malformed { .. } => {
+            CvParseError::Malformed("malformed document".to_string())
+        }
         other => CvParseError::Other(other.to_string()),
     }
 }
@@ -50,8 +52,7 @@ fn strip_markdown_to_text(md: &str) -> String {
                 .split('|')
                 .map(|cell| strip_inline_markdown(cell.trim()))
                 .filter(|cell| {
-                    !cell.is_empty()
-                        && !cell.chars().all(|ch| ch == '-' || ch == ':' || ch == ' ')
+                    !cell.is_empty() && !cell.chars().all(|ch| ch == '-' || ch == ':' || ch == ' ')
                 })
                 .collect();
             if !cells.is_empty() {
@@ -121,7 +122,10 @@ pub fn extract_text(path: &Path) -> Result<String, CvParseError> {
     Ok(strip_markdown_to_text(&md))
 }
 
-pub fn extract_text_from_bytes(bytes: &[u8], format_hint: Option<&str>) -> Result<String, CvParseError> {
+pub fn extract_text_from_bytes(
+    bytes: &[u8],
+    format_hint: Option<&str>,
+) -> Result<String, CvParseError> {
     let format = match format_hint {
         Some(hint) => anydoc::Format::from_extension(hint),
         None => anydoc::Format::from_bytes(bytes),
@@ -137,7 +141,10 @@ mod tests {
     #[test]
     fn test_strip_inline_markdown_basic() {
         assert_eq!(strip_inline_markdown("hello **world**"), "hello world");
-        assert_eq!(strip_inline_markdown("some *italic* text"), "some italic text");
+        assert_eq!(
+            strip_inline_markdown("some *italic* text"),
+            "some italic text"
+        );
         assert_eq!(strip_inline_markdown("`code` here"), "code here");
         assert_eq!(strip_inline_markdown("~~strikethrough~~"), "strikethrough");
     }
@@ -145,7 +152,10 @@ mod tests {
     #[test]
     fn test_strip_inline_markdown_links() {
         assert_eq!(strip_inline_markdown("[link](http://example.com)"), "link");
-        assert_eq!(strip_inline_markdown("see [docs](https://a.com) now"), "see docs now");
+        assert_eq!(
+            strip_inline_markdown("see [docs](https://a.com) now"),
+            "see docs now"
+        );
     }
 
     #[test]
@@ -156,7 +166,8 @@ mod tests {
 
     #[test]
     fn test_strip_markdown_to_text() {
-        let input = "# Heading\n\nSome **bold** text.\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\nMore text.";
+        let input =
+            "# Heading\n\nSome **bold** text.\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\nMore text.";
         let result = strip_markdown_to_text(input);
         assert!(result.contains("Heading"));
         assert!(result.contains("Some bold text."));

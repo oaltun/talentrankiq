@@ -119,17 +119,17 @@ pub fn import_job_bundle(state: &Arc<ServeState>, path: &str) -> Result<Value, P
                 if let Some(results) = &results {
                     match apply_bundle_results(&conn, &jid, results, &criterion_map, include_likes)
                     {
-                        Ok(stats) => log::info!(
+                        Ok(stats) => tracing::info!(
                             "bundle import {jid}: snapshot applied ({} matched, {} unmatched, {} liked)",
                             stats.rows_matched,
                             stats.rows_unmatched,
                             stats.liked_applied
                         ),
-                        Err(e) => log::warn!("bundle import {jid}: snapshot apply failed: {e}"),
+                        Err(e) => tracing::warn!("bundle import {jid}: snapshot apply failed: {e}"),
                     }
                 }
             }
-            Err(e) => log::warn!("bundle import {jid}: no db for snapshot: {e}"),
+            Err(e) => tracing::warn!("bundle import {jid}: no db for snapshot: {e}"),
         }
 
         // The staged dir is the job's CV directory. Under the single-watcher

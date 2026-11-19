@@ -3,7 +3,6 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-
 pub mod monitor;
 pub mod queries;
 
@@ -11,7 +10,9 @@ pub mod queries;
 pub struct EventSink(std::sync::mpsc::Sender<String>);
 
 impl EventSink {
-    pub fn new(tx: std::sync::mpsc::Sender<String>) -> Self { EventSink(tx) }
+    pub fn new(tx: std::sync::mpsc::Sender<String>) -> Self {
+        EventSink(tx)
+    }
     pub fn emit<D: serde::Serialize>(&self, name: &str, data: &D) {
         let event = serde_json::json!({"event": name, "data": data});
         if let Ok(line) = serde_json::to_string(&event) {
@@ -38,7 +39,12 @@ pub struct MonitorConfig {
 
 impl Default for MonitorConfig {
     fn default() -> Self {
-        Self { poll_interval: Duration::from_secs(2), job_id: String::new(), quick_model: String::new(), deep_model: String::new() }
+        Self {
+            poll_interval: Duration::from_secs(2),
+            job_id: String::new(),
+            quick_model: String::new(),
+            deep_model: String::new(),
+        }
     }
 }
 
@@ -49,8 +55,14 @@ pub struct MonitorHandle {
 
 impl MonitorHandle {
     pub fn shutdown(mut self) -> thread::Result<()> {
-        if let Some(tx) = self.shutdown_tx.take() { let _ = tx.send(()); }
-        if let Some(t) = self.thread.take() { t.join() } else { Ok(()) }
+        if let Some(tx) = self.shutdown_tx.take() {
+            let _ = tx.send(());
+        }
+        if let Some(t) = self.thread.take() {
+            t.join()
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -63,5 +75,8 @@ pub fn spawn_monitor(
     let handle = thread::spawn(move || {
         monitor::monitor_loop(db_path, config, events, rx);
     });
-    Ok(MonitorHandle { shutdown_tx: Some(tx), thread: Some(handle) })
+    Ok(MonitorHandle {
+        shutdown_tx: Some(tx),
+        thread: Some(handle),
+    })
 }

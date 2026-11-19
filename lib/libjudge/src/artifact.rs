@@ -3,8 +3,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::features::TextPrep;
 use crate::JudgeError;
+use crate::features::TextPrep;
 
 /// Artifact schema version. Bump on any breaking change to this file's shape
 /// or to feature semantics.
@@ -187,7 +187,14 @@ pub struct ArtifactMeta {
 
 impl FeatureSpec {
     /// Raw pair-input spec `[a; e1; e2; c1; c2]` (default, 15.4).
-    pub fn raw_pair(embedder: &str, dim: usize, chunking: ChunkingMode, chunk_size: Option<usize>, contextual: Contextual, prep: crate::features::TextPrep) -> Self {
+    pub fn raw_pair(
+        embedder: &str,
+        dim: usize,
+        chunking: ChunkingMode,
+        chunk_size: Option<usize>,
+        contextual: Contextual,
+        prep: crate::features::TextPrep,
+    ) -> Self {
         Self {
             spec_version: SPEC_VERSION,
             variant: FeatureVariant::Raw,
@@ -204,7 +211,15 @@ impl FeatureSpec {
     }
 
     /// Engineered pair-input spec (ablation, 15.4).
-    pub fn engineered_pair(embedder: &str, dim: usize, chunking: ChunkingMode, chunk_size: Option<usize>, contextual: Contextual, prep: crate::features::TextPrep, tau: f64) -> Self {
+    pub fn engineered_pair(
+        embedder: &str,
+        dim: usize,
+        chunking: ChunkingMode,
+        chunk_size: Option<usize>,
+        contextual: Contextual,
+        prep: crate::features::TextPrep,
+        tau: f64,
+    ) -> Self {
         Self {
             spec_version: SPEC_VERSION,
             variant: FeatureVariant::Engineered,
@@ -222,7 +237,14 @@ impl FeatureSpec {
 
     /// Fused pair-input spec (design 18 §18.5): raw embedding blocks
     /// `[a; e1; e2; c1; c2]` plus one evidence scalar block per cv.
-    pub fn fused_pair(embedder: &str, dim: usize, chunking: ChunkingMode, chunk_size: Option<usize>, contextual: Contextual, prep: crate::features::TextPrep) -> Self {
+    pub fn fused_pair(
+        embedder: &str,
+        dim: usize,
+        chunking: ChunkingMode,
+        chunk_size: Option<usize>,
+        contextual: Contextual,
+        prep: crate::features::TextPrep,
+    ) -> Self {
         Self {
             spec_version: SPEC_VERSION,
             variant: FeatureVariant::Fused,
@@ -239,7 +261,14 @@ impl FeatureSpec {
     }
 
     /// Pointwise spec `[a; e; c]` (m0).
-    pub fn pointwise(embedder: &str, dim: usize, chunking: ChunkingMode, chunk_size: Option<usize>, contextual: Contextual, prep: crate::features::TextPrep) -> Self {
+    pub fn pointwise(
+        embedder: &str,
+        dim: usize,
+        chunking: ChunkingMode,
+        chunk_size: Option<usize>,
+        contextual: Contextual,
+        prep: crate::features::TextPrep,
+    ) -> Self {
         Self {
             spec_version: SPEC_VERSION,
             variant: FeatureVariant::Raw,
@@ -359,8 +388,7 @@ impl JudgeArtifact {
 
     /// Serialize to pretty JSON.
     pub fn to_json(&self) -> Result<String, JudgeError> {
-        serde_json::to_string_pretty(self)
-            .map_err(|e| JudgeError::Other(format!("serialize: {e}")))
+        serde_json::to_string_pretty(self).map_err(|e| JudgeError::Other(format!("serialize: {e}")))
     }
 }
 
@@ -370,8 +398,22 @@ mod tests {
 
     fn spec(kind: JudgeKind) -> FeatureSpec {
         match kind {
-            JudgeKind::Pairwise => FeatureSpec::raw_pair("m", 4, ChunkingMode::CtxSize, None, Contextual::Off, crate::features::TextPrep::Lowercase),
-            JudgeKind::Pointwise => FeatureSpec::pointwise("m", 4, ChunkingMode::CtxSize, None, Contextual::Off, crate::features::TextPrep::Lowercase),
+            JudgeKind::Pairwise => FeatureSpec::raw_pair(
+                "m",
+                4,
+                ChunkingMode::CtxSize,
+                None,
+                Contextual::Off,
+                crate::features::TextPrep::Lowercase,
+            ),
+            JudgeKind::Pointwise => FeatureSpec::pointwise(
+                "m",
+                4,
+                ChunkingMode::CtxSize,
+                None,
+                Contextual::Off,
+                crate::features::TextPrep::Lowercase,
+            ),
         }
     }
 
@@ -381,12 +423,22 @@ mod tests {
             JudgeKind::Pairwise => 1,
             JudgeKind::Pointwise => 3,
         };
-        let w = (0..out).map(|o| (0..s.input_dim).map(|i| ((o + i) % 7) as f32 - 3.0).collect()).collect();
+        let w = (0..out)
+            .map(|o| {
+                (0..s.input_dim)
+                    .map(|i| ((o + i) % 7) as f32 - 3.0)
+                    .collect()
+            })
+            .collect();
         let b = vec![0.5f32; out];
         JudgeArtifact {
             spec_version: SPEC_VERSION,
             kind,
-            architecture: if kind == JudgeKind::Pairwise { Architecture::Linear } else { Architecture::PointwiseLinear3 },
+            architecture: if kind == JudgeKind::Pairwise {
+                Architecture::Linear
+            } else {
+                Architecture::PointwiseLinear3
+            },
             feature_spec: s,
             layers: vec![LayerWeights { w, b }],
             meta: meta(),
@@ -455,7 +507,10 @@ mod tests {
         let model = crate::forward::JudgeModel::from_artifact(&a).unwrap();
         let x = vec![0.25f32; a.feature_spec.input_dim];
         let score = model.score_ref(&x) as f32;
-        a.parity = vec![ParityPair { input: x.clone(), score }];
+        a.parity = vec![ParityPair {
+            input: x.clone(),
+            score,
+        }];
         a.verify_parity().unwrap();
 
         let mut bad = a.clone();
@@ -468,14 +523,43 @@ mod tests {
 
     #[test]
     fn spec_constructors_dims() {
-        let raw = FeatureSpec::raw_pair("m", 1024, ChunkingMode::CtxSize, None, Contextual::Off, crate::features::TextPrep::Lowercase);
+        let raw = FeatureSpec::raw_pair(
+            "m",
+            1024,
+            ChunkingMode::CtxSize,
+            None,
+            Contextual::Off,
+            crate::features::TextPrep::Lowercase,
+        );
         assert_eq!(raw.input_dim, 5120);
         assert_eq!(raw.blocks.len(), 5);
-        let eng = FeatureSpec::engineered_pair("m", 1024, ChunkingMode::CtxSize, None, Contextual::Off, crate::features::TextPrep::Lowercase, 0.5);
+        let eng = FeatureSpec::engineered_pair(
+            "m",
+            1024,
+            ChunkingMode::CtxSize,
+            None,
+            Contextual::Off,
+            crate::features::TextPrep::Lowercase,
+            0.5,
+        );
         assert_eq!(eng.input_dim, 8 * 1024 + 8);
-        let pw = FeatureSpec::pointwise("m", 1024, ChunkingMode::CtxSize, None, Contextual::Off, crate::features::TextPrep::Lowercase);
+        let pw = FeatureSpec::pointwise(
+            "m",
+            1024,
+            ChunkingMode::CtxSize,
+            None,
+            Contextual::Off,
+            crate::features::TextPrep::Lowercase,
+        );
         assert_eq!(pw.input_dim, 3072);
-        let fused = FeatureSpec::fused_pair("m", 1024, ChunkingMode::CtxSize, None, Contextual::Off, crate::features::TextPrep::Lowercase);
+        let fused = FeatureSpec::fused_pair(
+            "m",
+            1024,
+            ChunkingMode::CtxSize,
+            None,
+            Contextual::Off,
+            crate::features::TextPrep::Lowercase,
+        );
         assert_eq!(fused.input_dim, 5120 + 2 * crate::evidence::X_BLOCK_LEN);
         assert_eq!(fused.variant, FeatureVariant::Fused);
         // serde roundtrip keeps the new variant

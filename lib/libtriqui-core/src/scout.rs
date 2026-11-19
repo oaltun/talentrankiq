@@ -104,7 +104,9 @@ pub fn run_scout(
             deferred: false,
         });
     };
-    let conn = rt.open_conn().map_err(|e| DomainError::DbError { message: e.to_string() })?;
+    let conn = rt.open_conn().map_err(|e| DomainError::DbError {
+        message: e.to_string(),
+    })?;
     // Arm freshness for the scout slug (predictably `ort` — it declares no mlx
     // variant — so this records once and never clears scout rows).
     rt.ensure_backend_fresh(&conn, &model);
@@ -115,7 +117,9 @@ pub fn run_scout(
             rusqlite::params![job_id],
             |r| r.get(0),
         )
-        .map_err(|e| DomainError::DbError { message: e.to_string() })?;
+        .map_err(|e| DomainError::DbError {
+            message: e.to_string(),
+        })?;
 
     // The scout's own session, over the shared engine client. It is loaded now and
     // released at the end of the pass, before the heavy embedder loads.
@@ -127,20 +131,37 @@ pub fn run_scout(
     // when the ad changes.
     rt.gate_wait();
     rt.set_activity("scout", &job_title, Some("corpus".into()), Some(&model));
-    let (embedded, failed) =
-        embeddings::embed_candidates_with(rt, &conn, job_id, &model, embedder.clone(), None, progress)
-            .map_err(|e| DomainError::DbError { message: e.to_string() })?;
+    let (embedded, failed) = embeddings::embed_candidates_with(
+        rt,
+        &conn,
+        job_id,
+        &model,
+        embedder.clone(),
+        None,
+        progress,
+    )
+    .map_err(|e| DomainError::DbError {
+        message: e.to_string(),
+    })?;
 
     // The rubric, in the scout's space. A handful of short texts through a static
     // bag-of-words model — the ad, every criterion, and whatever feedback vectors
     // have been learned in this space.
-    let questions_embedded =
-        rubric::ensure_vectors(rt, &conn, &Rubric::load(&conn, job_id)?, &model, Some(&embedder))
-            .map_err(|e| DomainError::DbError { message: e.to_string() })?;
+    let questions_embedded = rubric::ensure_vectors(
+        rt,
+        &conn,
+        &Rubric::load(&conn, job_id)?,
+        &model,
+        Some(&embedder),
+    )
+    .map_err(|e| DomainError::DbError {
+        message: e.to_string(),
+    })?;
     // Re-read with the vectors this pass just stored, so the grading below sees
     // them (an ad that landed minutes ago has no vector in this space yet).
-    let rubric = Rubric::with_vectors(&conn, job_id, &model)
-        .map_err(|e| DomainError::DbError { message: e.to_string() })?;
+    let rubric = Rubric::with_vectors(&conn, job_id, &model).map_err(|e| DomainError::DbError {
+        message: e.to_string(),
+    })?;
 
     // Grade the whole corpus against every question this space can measure.
     let has_ad = rubric.vector(AD_Q, &model).is_some();
@@ -148,7 +169,7 @@ pub fn run_scout(
     if !has_ad && scoreable <= 1 {
         // No query at all: the corpus is embedded, the grades wait for one.
         rt.unload_secondary(&model);
-        log::info!(
+        tracing::info!(
             "scout: job {job_id} has no rubric yet — corpus embedded ({embedded}), grading deferred"
         );
         return Ok(ScoutOutcome {
@@ -167,7 +188,7 @@ pub fn run_scout(
     // at a time).
     rt.unload_secondary(&model);
 
-    log::info!(
+    tracing::info!(
         "scout: job {job_id} model {model}: {embedded} embedded, {graded} graded \
          ({} questions), {failed} failed",
         scoreable

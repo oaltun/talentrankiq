@@ -12,7 +12,7 @@
 //! runs at ~100 texts/s against 5.46 texts/s for our ONNX CPU path.
 
 use mlxcel_core::layers::{
-    FusedQKVLinear, GemmaRMSNorm, UnifiedEmbedding, UnifiedLinear, attention,
+    attention, FusedQKVLinear, GemmaRMSNorm, UnifiedEmbedding, UnifiedLinear,
 };
 use mlxcel_core::utils::{create_bidirectional_padding_mask, create_bidirectional_window_mask};
 use mlxcel_core::weights::WeightMap;
@@ -118,12 +118,7 @@ impl Mlp {
                 c.group_size,
                 c.bits,
             )?,
-            up: UnifiedLinear::from_weights(
-                w,
-                &format!("{prefix}.up_proj"),
-                c.group_size,
-                c.bits,
-            )?,
+            up: UnifiedLinear::from_weights(w, &format!("{prefix}.up_proj"), c.group_size, c.bits)?,
             down: UnifiedLinear::from_weights(
                 w,
                 &format!("{prefix}.down_proj"),
@@ -201,7 +196,8 @@ impl Gemma3Encoder {
             None
         };
         let sliding = if c.sliding_window >= 1
-            && (0..self.layers.len()).any(|i| !checkpoint::is_full_attention(c.sliding_window_pattern, i))
+            && (0..self.layers.len())
+                .any(|i| !checkpoint::is_full_attention(c.sliding_window_pattern, i))
         {
             Some(create_bidirectional_window_mask(pad_mask, c.sliding_window))
         } else {

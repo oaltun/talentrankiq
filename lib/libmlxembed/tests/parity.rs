@@ -38,8 +38,7 @@ fn texts() -> Vec<String> {
         "Deneyimli makine öğrenmesi mühendislik rolü için beş yıllık deneyim".to_string(),
         "Senior backend developer with five years of distributed systems".to_string(),
         "İstanbul ofisinde satış temsilcisi olarak görev yaptım".to_string(),
-        "Certified Kubernetes administrator operating production clusters"
-            .to_string(),
+        "Certified Kubernetes administrator operating production clusters".to_string(),
     ]
 }
 
@@ -52,7 +51,12 @@ fn tokenize(model_dir: &std::path::Path, texts: &[String]) -> Vec<Vec<u32>> {
     let _ = tk.with_truncation(None);
     texts
         .iter()
-        .map(|t| tk.encode(t.as_str(), true).expect("encode").get_ids().to_vec())
+        .map(|t| {
+            tk.encode(t.as_str(), true)
+                .expect("encode")
+                .get_ids()
+                .to_vec()
+        })
         .collect()
 }
 
@@ -108,8 +112,7 @@ fn mlx_vectors_are_unit_norm_and_match_the_reference() {
     }
 
     if let Some(dump) = env_path("IK_MLX_PARITY_DUMP") {
-        std::fs::write(&dump, serde_json::to_string(&vectors).unwrap())
-            .expect("dump vectors");
+        std::fs::write(&dump, serde_json::to_string(&vectors).unwrap()).expect("dump vectors");
         eprintln!("dumped {} vectors to {}", vectors.len(), dump.display());
     }
 

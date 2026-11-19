@@ -7,7 +7,8 @@ fn monitor_spawns_and_shuts_down() {
     let dir = tempdir().unwrap();
     let dbpath = dir.path().join("t.db");
     let db = libprocess_in_waves::DbHandle::open_at(&dbpath).unwrap();
-    db.update_waves_rank_state("job1", 0, 0, 0, 0, 0, 0, None, true).unwrap();
+    db.update_waves_rank_state("job1", 0, 0, 0, 0, 0, 0, None, true)
+        .unwrap();
     let (tx, _rx) = mpsc::channel();
     let events = libprocess_in_waves_db_monitor::EventSink::new(tx);
     let cfg = libprocess_in_waves_db_monitor::MonitorConfig {

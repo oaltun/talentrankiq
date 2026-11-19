@@ -19,9 +19,15 @@ fn rt() -> Runtime {
 
 fn convert_status(s: LicenseLibStatus) -> LicenseStatus {
     match s {
-        LicenseLibStatus::Licensed { customer, expires_at, artifacts } => {
-            LicenseStatus::Licensed { customer, expires_at, artifacts }
-        }
+        LicenseLibStatus::Licensed {
+            customer,
+            expires_at,
+            artifacts,
+        } => LicenseStatus::Licensed {
+            customer,
+            expires_at,
+            artifacts,
+        },
         LicenseLibStatus::Invalid { reason } => LicenseStatus::Invalid { reason },
         LicenseLibStatus::NotFound => LicenseStatus::NotFound,
         LicenseLibStatus::Revoked { reason } => LicenseStatus::Revoked { reason },
@@ -30,7 +36,10 @@ fn convert_status(s: LicenseLibStatus) -> LicenseStatus {
 
 /// Activate a judge license with a license key.
 /// Downloads the license from the server, verifies it, and saves it locally.
-pub fn license_activate(state: &ServeState, params: LicenseActivateParams) -> Result<Value, String> {
+pub fn license_activate(
+    state: &ServeState,
+    params: LicenseActivateParams,
+) -> Result<Value, String> {
     set_license_api_url("https://talentrankiq.com/api/license".to_string());
 
     match rt().block_on(activate_license(&params.license_key)) {
@@ -39,7 +48,9 @@ pub fn license_activate(state: &ServeState, params: LicenseActivateParams) -> Re
             ok_json(status).map_err(|e| e.to_string())
         }
         Err(e) => {
-            let status = LicenseStatus::Invalid { reason: e.to_string() };
+            let status = LicenseStatus::Invalid {
+                reason: e.to_string(),
+            };
             ok_json(status).map_err(|e| e.to_string())
         }
     }

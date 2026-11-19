@@ -223,7 +223,10 @@ mod tests {
             .map(|s| s.to_string())
             .collect();
         let plan = plan_mlx_downloads(&tree);
-        assert!(plan.iter().all(|f| !f.ends_with(".safetensors")), "{plan:?}");
+        assert!(
+            plan.iter().all(|f| !f.ends_with(".safetensors")),
+            "{plan:?}"
+        );
     }
 
     #[test]

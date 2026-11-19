@@ -82,7 +82,10 @@ fn num(v: &Value, key: &str) -> Option<usize> {
 }
 
 fn f32_of(v: &Value, key: &str, default: f32) -> f32 {
-    v.get(key).and_then(|x| x.as_f64()).map(|x| x as f32).unwrap_or(default)
+    v.get(key)
+        .and_then(|x| x.as_f64())
+        .map(|x| x as f32)
+        .unwrap_or(default)
 }
 
 /// Resolve everything a forward pass needs from the checkpoint directory.
@@ -133,10 +136,13 @@ pub fn load(dir: &Path) -> Result<Checkpoint, String> {
     Ok(Checkpoint {
         family,
         hidden_size: num(&raw, "hidden_size").ok_or("config.json: hidden_size")?,
-        num_hidden_layers: num(&raw, "num_hidden_layers").ok_or("config.json: num_hidden_layers")?,
+        num_hidden_layers: num(&raw, "num_hidden_layers")
+            .ok_or("config.json: num_hidden_layers")?,
         num_attention_heads: num(&raw, "num_attention_heads").ok_or("num_attention_heads")?,
         num_key_value_heads: num(&raw, "num_key_value_heads").unwrap_or_else(|| {
-            num(&raw, "num_attention_heads").ok_or("num_attention_heads").unwrap_or(1)
+            num(&raw, "num_attention_heads")
+                .ok_or("num_attention_heads")
+                .unwrap_or(1)
         }),
         head_dim: num(&raw, "head_dim").unwrap_or_else(|| {
             let h = num(&raw, "hidden_size").unwrap_or(1);
@@ -160,10 +166,12 @@ pub fn load(dir: &Path) -> Result<Checkpoint, String> {
         // A causal mask is what both harrier exports implement; a checkpoint
         // must opt *in* to bidirectional, exactly as mlxcel's own detection
         // does. Never the other way round.
-        mask: if bidirectional { Mask::Bidirectional } else { Mask::Causal },
-        max_position_embeddings: raw
-            .get("max_position_embeddings")
-            .and_then(|v| v.as_i64()),
+        mask: if bidirectional {
+            Mask::Bidirectional
+        } else {
+            Mask::Causal
+        },
+        max_position_embeddings: raw.get("max_position_embeddings").and_then(|v| v.as_i64()),
     })
 }
 
@@ -257,7 +265,10 @@ mod tests {
         );
         let c = load(&d).expect("loads");
         assert_eq!(c.family, Family::Qwen3);
-        assert_eq!((c.hidden_size, c.num_hidden_layers, c.head_dim), (1024, 28, 128));
+        assert_eq!(
+            (c.hidden_size, c.num_hidden_layers, c.head_dim),
+            (1024, 28, 128)
+        );
         assert_eq!((c.num_attention_heads, c.num_key_value_heads), (16, 8));
         assert_eq!((c.group_size, c.bits), (64, 4));
         assert_eq!(c.rope_theta, 1_000_000.0);
@@ -283,7 +294,10 @@ mod tests {
         );
         let c = load(&d).expect("loads");
         assert_eq!(c.family, Family::Gemma3);
-        assert_eq!(c.rope_theta, 1_000_000.0, "global base, not the sliding one");
+        assert_eq!(
+            c.rope_theta, 1_000_000.0,
+            "global base, not the sliding one"
+        );
         assert_eq!(c.mask, Mask::Causal, "declared false -> causal");
         assert_eq!(c.sliding_window, 512);
         // pattern 1 means every layer is full attention.
@@ -329,9 +343,17 @@ mod tests {
         assert_eq!(load(&d).expect("loads").pooling, Pooling::Default);
         write(&d, "1_Pooling/config.json", r#"{"pooling_mode":"mean"}"#);
         assert_eq!(load(&d).expect("loads").pooling, Pooling::Mean);
-        write(&d, "1_Pooling/config.json", r#"{"pooling_mode_cls_token":true}"#);
+        write(
+            &d,
+            "1_Pooling/config.json",
+            r#"{"pooling_mode_cls_token":true}"#,
+        );
         assert_eq!(load(&d).expect("loads").pooling, Pooling::Cls);
-        write(&d, "1_Pooling/config.json", r#"{"pooling_mode_lasttoken":true}"#);
+        write(
+            &d,
+            "1_Pooling/config.json",
+            r#"{"pooling_mode_lasttoken":true}"#,
+        );
         assert_eq!(load(&d).expect("loads").pooling, Pooling::LastToken);
     }
 

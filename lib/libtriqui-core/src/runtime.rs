@@ -305,7 +305,7 @@ impl EngineRuntime {
             return;
         }
         if recorded.is_some() {
-            log::info!(
+            tracing::info!(
                 "backend switch for '{model}': {} -> {backend} — clearing its cached vectors",
                 recorded.as_deref().unwrap_or("?")
             );
@@ -318,13 +318,13 @@ impl EngineRuntime {
                 "UPDATE criteria SET vector = NULL, vector_model = NULL WHERE vector_model = ?1",
             ] {
                 if let Err(e) = conn.execute(sql, rusqlite::params![model]) {
-                    log::warn!("backend-switch clear failed ({sql}): {e}");
+                    tracing::warn!("backend-switch clear failed ({sql}): {e}");
                 }
             }
             // The space's grades and rubric vectors are cosines of those vectors,
             // so they go with them.
             if let Err(e) = db::delete_space(conn, model) {
-                log::warn!("backend-switch clear failed (delete_space): {e}");
+                tracing::warn!("backend-switch clear failed (delete_space): {e}");
             }
         }
         let _ = conn.execute(
@@ -384,15 +384,22 @@ impl EngineRuntime {
         if self.judge_license.is_none() {
             return None;
         }
-        let artifact_path = self.cfg
+        let artifact_path = self
+            .cfg
             .judge_artifacts
             .for_embedder(model)
             .map(|p| p.to_path_buf())?;
         // Check if this specific artifact is authorized by the license
-        let artifact_id = artifact_path.file_stem()
+        let artifact_id = artifact_path
+            .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("");
-        if !self.judge_license.as_ref().unwrap().authorizes_artifact(artifact_id) {
+        if !self
+            .judge_license
+            .as_ref()
+            .unwrap()
+            .authorizes_artifact(artifact_id)
+        {
             return None;
         }
         Some(artifact_path)
@@ -456,9 +463,7 @@ impl EngineRuntime {
 
         let cfg = app_config::load_triq();
 
-        log::info!(
-            "engine runtime: starting in-process modelcaller (ORT wrapper in-process)"
-        );
+        tracing::info!("engine runtime: starting in-process modelcaller (ORT wrapper in-process)");
 
         let registry = libmodelcaller::Registry::from_config(&cfg);
         // Process-wide override (gui `--cpu-only`) wins field-by-field over
@@ -466,7 +471,7 @@ impl EngineRuntime {
         // engine section modelcaller resolves session knobs from.
         let engine = match app_config::engine_override() {
             Some(o) => {
-                log::info!("engine runtime: applying engine override (cpu-only mode)");
+                tracing::info!("engine runtime: applying engine override (cpu-only mode)");
                 libconfigreader::EngineSection {
                     backend: o.backend,
                     exec_provider: o.exec_provider.or(cfg.engine.exec_provider),
@@ -510,7 +515,7 @@ impl EngineRuntime {
                 if let Err(e) = libmodelcaller::run_stdio_over(
                     registry, args, engine, syscap_cfg, verbose, None, b_read, b_write,
                 ) {
-                    log::error!("in-process modelcaller exited: {e}");
+                    tracing::error!("in-process modelcaller exited: {e}");
                 }
             });
         if let Err(e) = server {
@@ -522,7 +527,7 @@ impl EngineRuntime {
         // 1. Readiness: a `ping` confirms modelcaller is up (the wrapper is spawned
         //    lazily on first load/embed, so ping alone doesn't touch the model).
         match client.ping() {
-            Ok(true) => log::info!("engine runtime: modelcaller responded to ping"),
+            Ok(true) => tracing::info!("engine runtime: modelcaller responded to ping"),
             Ok(false) => {
                 self.set_status_if_current(
                     Status::Error("modelcaller responded but reported not-ok".to_string()),
@@ -543,7 +548,7 @@ impl EngineRuntime {
         //    failure here is non-fatal — embedding will surface the real error.
         let model = self.model();
         if let Err(e) = client.load(&model) {
-            log::warn!(
+            tracing::warn!(
                 "engine runtime: model '{model}' preload failed (will retry on first embed): {e}"
             );
         }
@@ -554,7 +559,7 @@ impl EngineRuntime {
         // Push Working/Ready edges to the host for as long as this runtime lives.
         let weak = Arc::downgrade(self);
         embedder.busy_flag().set_hook(Arc::new(move |busy| {
-            log::info!("engine runtime: {}", if busy { "working" } else { "idle" });
+            tracing::info!("engine runtime: {}", if busy { "working" } else { "idle" });
             if let Some(rt) = weak.upgrade() {
                 rt.push_status();
             }
@@ -567,14 +572,14 @@ impl EngineRuntime {
                 // idle unload, embedder switch). Do not re-arm: the shutdown
                 // already tore the modelcaller loop down — publishing Running
                 // here would strand a live client nobody will ever shut down.
-                log::info!("engine runtime: start aborted — shutdown landed mid-load");
+                tracing::info!("engine runtime: start aborted — shutdown landed mid-load");
                 return;
             }
             g.client = Some((*client).clone());
             g.embedder = Some(embedder.clone());
         }
         self.finish_running(embedder, my_epoch);
-        log::info!("engine runtime: modelcaller ready");
+        tracing::info!("engine runtime: modelcaller ready");
     }
 
     /// Start the runtime if it hasn't already been started. Safe to call repeatedly;
@@ -715,8 +720,8 @@ impl EngineRuntime {
         };
         if let Some(client) = client {
             match client.unload(model) {
-                Ok(()) => log::info!("engine runtime: unloaded '{model}'"),
-                Err(e) => log::warn!(
+                Ok(()) => tracing::info!("engine runtime: unloaded '{model}'"),
+                Err(e) => tracing::warn!(
                     "engine runtime: unloading '{model}' failed (harmless; it reloads on demand): {e}"
                 ),
             }
@@ -730,7 +735,7 @@ impl EngineRuntime {
         self.wait_until_ready(Duration::from_secs(60))?;
         let client = self.client()?;
         if let Err(e) = client.load(model) {
-            log::warn!(
+            tracing::warn!(
                 "engine runtime: preload of '{model}' failed (will retry on first embed): {e}"
             );
         }
@@ -793,11 +798,11 @@ impl EngineRuntime {
     pub fn spawn_idle_monitor(self: &Arc<Self>) {
         let secs = app_config::gui_idle_unload_secs();
         if secs == 0 {
-            log::info!("engine runtime: idle unload disabled (gui_idle_unload_secs: 0)");
+            tracing::info!("engine runtime: idle unload disabled (gui_idle_unload_secs: 0)");
             return;
         }
         let threshold = Duration::from_secs(secs);
-        log::info!("engine runtime: unloading model after {secs}s of inactivity");
+        tracing::info!("engine runtime: unloading model after {secs}s of inactivity");
         let rt = self.clone();
         std::thread::spawn(move || loop {
             std::thread::sleep(Duration::from_secs(15));
@@ -811,7 +816,7 @@ impl EngineRuntime {
             let Some(client) = client else { continue };
             if let Some(idle) = client.idle_for() {
                 if idle >= threshold {
-                    log::info!(
+                    tracing::info!(
                         "engine runtime: engine idle for {}s, unloading model",
                         idle.as_secs()
                     );
@@ -851,7 +856,7 @@ impl EngineRuntime {
         {
             let mut g = self.inner.lock().expect("runtime lock poisoned");
             if g.epoch != my_epoch {
-                log::info!("engine runtime: start aborted — shutdown landed mid-load");
+                tracing::info!("engine runtime: start aborted — shutdown landed mid-load");
                 return;
             }
             g.status = Status::Running { model };

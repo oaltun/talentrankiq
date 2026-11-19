@@ -651,12 +651,12 @@ mod tests {
             0x3e39bd03, 0x3e75f9a3,
         ];
         assert_centroids_exact(&c, &bits, "b=4,d=128");
-}
- 
+    }
+
     // -----------------------------------------------------------------------
     // nearest_centroid_indices
     // -----------------------------------------------------------------------
- 
+
     #[test]
     fn nearest_centroid_indices_basic() {
         let centroids = compute_centroids(2, 64);

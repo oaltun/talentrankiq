@@ -1,5 +1,5 @@
-use std::sync::{Arc, Mutex};
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 use rusqlite::Connection;
 
@@ -119,13 +119,17 @@ impl DbHandle {
 
     // ---- writer helpers ----
     pub fn with_writer<F, R>(&self, f: F) -> Result<R, rusqlite::Error>
-    where F: FnOnce(&mut Connection) -> Result<R, rusqlite::Error> {
+    where
+        F: FnOnce(&mut Connection) -> Result<R, rusqlite::Error>,
+    {
         let mut g = self.writer.lock().unwrap();
         f(&mut g)
     }
 
     pub fn with_reader<F, R>(&self, f: F) -> Result<R, rusqlite::Error>
-    where F: FnOnce(&mut Connection) -> Result<R, rusqlite::Error> {
+    where
+        F: FnOnce(&mut Connection) -> Result<R, rusqlite::Error>,
+    {
         let mut pool = self.read_pool.lock().unwrap();
         if pool.is_empty() {
             let mut c = Connection::open(&self.path)?;
@@ -143,10 +147,13 @@ impl DbHandle {
     /// All CV hashes belonging to one job (via the job-scoped membership table).
     pub fn get_all_cv_hashes_for_job(&self, job_id: &str) -> Result<Vec<String>, rusqlite::Error> {
         self.with_reader(|c| {
-            let mut stmt = c.prepare("SELECT cv_hash FROM job_cv WHERE job_id = ?1 ORDER BY cv_hash")?;
+            let mut stmt =
+                c.prepare("SELECT cv_hash FROM job_cv WHERE job_id = ?1 ORDER BY cv_hash")?;
             let rows = stmt.query_map(rusqlite::params![job_id], |r| r.get::<_, String>(0))?;
             let mut out = Vec::new();
-            for r in rows { out.push(r?); }
+            for r in rows {
+                out.push(r?);
+            }
             Ok(out)
         })
     }
@@ -154,12 +161,20 @@ impl DbHandle {
     /// How many CVs the job currently has on disk (membership rows).
     pub fn get_job_cv_count(&self, job_id: &str) -> Result<i64, rusqlite::Error> {
         self.with_reader(|c| {
-            c.query_row("SELECT COUNT(*) FROM job_cv WHERE job_id = ?1", [job_id], |r| r.get::<_, i64>(0))
+            c.query_row(
+                "SELECT COUNT(*) FROM job_cv WHERE job_id = ?1",
+                [job_id],
+                |r| r.get::<_, i64>(0),
+            )
         })
     }
 
     /// How many of the job's CVs hold an embedding for `model_id`.
-    pub fn get_job_cv_embedded_count(&self, job_id: &str, model_id: &str) -> Result<i64, rusqlite::Error> {
+    pub fn get_job_cv_embedded_count(
+        &self,
+        job_id: &str,
+        model_id: &str,
+    ) -> Result<i64, rusqlite::Error> {
         self.with_reader(|c| {
             c.query_row(
                 "SELECT COUNT(*) FROM job_cv j
@@ -173,21 +188,32 @@ impl DbHandle {
 
     pub fn get_cv_score(&self, cv_hash: &str) -> Result<f64, rusqlite::Error> {
         self.with_reader(|c| {
-            let s: f64 = c.query_row("SELECT score FROM cv WHERE hash = ?1", [cv_hash], |r| r.get(0)).unwrap_or(0.0);
+            let s: f64 = c
+                .query_row("SELECT score FROM cv WHERE hash = ?1", [cv_hash], |r| {
+                    r.get(0)
+                })
+                .unwrap_or(0.0);
             Ok(s)
         })
     }
 
     pub fn upsert_file_state(&self, path: &str, hash: &str) -> Result<(), rusqlite::Error> {
         self.with_writer(|c| {
-            c.execute("INSERT OR REPLACE INTO file_state (path, hash) VALUES (?1, ?2)", rusqlite::params![path, hash])?;
+            c.execute(
+                "INSERT OR REPLACE INTO file_state (path, hash) VALUES (?1, ?2)",
+                rusqlite::params![path, hash],
+            )?;
             Ok(())
         })
     }
 
     pub fn file_state_has(&self, path: &str) -> Result<bool, rusqlite::Error> {
         self.with_reader(|c| {
-            let n: i64 = c.query_row("SELECT COUNT(*) FROM file_state WHERE path = ?1", [path], |r| r.get(0))?;
+            let n: i64 = c.query_row(
+                "SELECT COUNT(*) FROM file_state WHERE path = ?1",
+                [path],
+                |r| r.get(0),
+            )?;
             Ok(n > 0)
         })
     }
@@ -213,19 +239,30 @@ impl DbHandle {
 
     pub fn cv_has(&self, hash: &str) -> Result<bool, rusqlite::Error> {
         self.with_reader(|c| {
-            let n: i64 = c.query_row("SELECT COUNT(*) FROM cv WHERE hash = ?1", [hash], |r| r.get(0))?;
+            let n: i64 = c.query_row("SELECT COUNT(*) FROM cv WHERE hash = ?1", [hash], |r| {
+                r.get(0)
+            })?;
             Ok(n > 0)
         })
     }
 
     pub fn insert_cv(&self, hash: &str, text: &str) -> Result<(), rusqlite::Error> {
         self.with_writer(|c| {
-            c.execute("INSERT OR IGNORE INTO cv (hash, text, score) VALUES (?1, ?2, 0.0)", rusqlite::params![hash, text])?;
+            c.execute(
+                "INSERT OR IGNORE INTO cv (hash, text, score) VALUES (?1, ?2, 0.0)",
+                rusqlite::params![hash, text],
+            )?;
             Ok(())
         })
     }
 
-    pub fn get_deep_queue_for_job(&self, job_id: &str, quick_model_id: &str, deep_model_id: &str, limit: usize) -> Result<Vec<String>, rusqlite::Error> {
+    pub fn get_deep_queue_for_job(
+        &self,
+        job_id: &str,
+        quick_model_id: &str,
+        deep_model_id: &str,
+        limit: usize,
+    ) -> Result<Vec<String>, rusqlite::Error> {
         // The job's CVs missing a deep embedding, ordered by quick similarity to the job ad desc.
         self.with_reader(|c| {
             let sql = r#"
@@ -245,7 +282,12 @@ impl DbHandle {
         })
     }
 
-    pub fn get_cvs_for_comparison_for_job(&self, job_id: &str, deep_model_id: &str, jobad_hash: &str) -> Result<Vec<String>, rusqlite::Error> {
+    pub fn get_cvs_for_comparison_for_job(
+        &self,
+        job_id: &str,
+        deep_model_id: &str,
+        jobad_hash: &str,
+    ) -> Result<Vec<String>, rusqlite::Error> {
         self.with_reader(|c| {
             let sql = r#"
                 SELECT c.hash FROM cv c
@@ -262,7 +304,13 @@ impl DbHandle {
         })
     }
 
-    pub fn insert_comparison(&self, job_id: &str, a_hash: &str, b_hash: &str, prob: f64) -> Result<(), rusqlite::Error> {
+    pub fn insert_comparison(
+        &self,
+        job_id: &str,
+        a_hash: &str,
+        b_hash: &str,
+        prob: f64,
+    ) -> Result<(), rusqlite::Error> {
         self.with_writer(|c| {
             c.execute(
                 "INSERT OR REPLACE INTO cv_comparison (job_id, a_hash, b_hash, prob) VALUES (?1, ?2, ?3, ?4)",
@@ -274,11 +322,21 @@ impl DbHandle {
 
     pub fn get_comparison_count(&self, job_id: &str) -> Result<i64, rusqlite::Error> {
         self.with_reader(|c| {
-            c.query_row("SELECT COUNT(*) FROM cv_comparison WHERE job_id = ?1", [job_id], |r| r.get::<_, i64>(0))
+            c.query_row(
+                "SELECT COUNT(*) FROM cv_comparison WHERE job_id = ?1",
+                [job_id],
+                |r| r.get::<_, i64>(0),
+            )
         })
     }
 
-    pub fn upsert_embedding(&self, cv_hash: &str, model_id: &str, vector: &[u8], chunk_vectors: Option<&[u8]>) -> Result<(), rusqlite::Error> {
+    pub fn upsert_embedding(
+        &self,
+        cv_hash: &str,
+        model_id: &str,
+        vector: &[u8],
+        chunk_vectors: Option<&[u8]>,
+    ) -> Result<(), rusqlite::Error> {
         self.with_writer(|c| {
             c.execute(
                 "INSERT OR REPLACE INTO cv_embedding (cv_hash, model_id, vector, chunk_vectors) VALUES (?1, ?2, ?3, ?4)",
@@ -288,9 +346,14 @@ impl DbHandle {
         })
     }
 
-    pub fn get_embedding(&self, cv_hash: &str, model_id: &str) -> Result<Option<Vec<u8>>, rusqlite::Error> {
+    pub fn get_embedding(
+        &self,
+        cv_hash: &str,
+        model_id: &str,
+    ) -> Result<Option<Vec<u8>>, rusqlite::Error> {
         self.with_reader(|c| {
-            let mut stmt = c.prepare("SELECT vector FROM cv_embedding WHERE cv_hash=?1 AND model_id=?2")?;
+            let mut stmt =
+                c.prepare("SELECT vector FROM cv_embedding WHERE cv_hash=?1 AND model_id=?2")?;
             let mut rows = stmt.query(rusqlite::params![cv_hash, model_id])?;
             if let Some(row) = rows.next()? {
                 let v: Vec<u8> = row.get(0)?;
@@ -303,12 +366,22 @@ impl DbHandle {
 
     pub fn has_embedding(&self, cv_hash: &str, model_id: &str) -> Result<bool, rusqlite::Error> {
         self.with_reader(|c| {
-            let n: i64 = c.query_row("SELECT COUNT(*) FROM cv_embedding WHERE cv_hash=?1 AND model_id=?2", rusqlite::params![cv_hash, model_id], |r| r.get(0))?;
+            let n: i64 = c.query_row(
+                "SELECT COUNT(*) FROM cv_embedding WHERE cv_hash=?1 AND model_id=?2",
+                rusqlite::params![cv_hash, model_id],
+                |r| r.get(0),
+            )?;
             Ok(n > 0)
         })
     }
 
-    pub fn upsert_similarity(&self, cv_hash: &str, model_id: &str, target_hash: &str, sim: f64) -> Result<(), rusqlite::Error> {
+    pub fn upsert_similarity(
+        &self,
+        cv_hash: &str,
+        model_id: &str,
+        target_hash: &str,
+        sim: f64,
+    ) -> Result<(), rusqlite::Error> {
         self.with_writer(|c| {
             c.execute(
                 "INSERT OR REPLACE INTO cv_similarity (cv_hash, model_id, target_hash, similarity) VALUES (?1, ?2, ?3, ?4)",
@@ -321,17 +394,33 @@ impl DbHandle {
     pub fn rescore_cv(&self, cv_hash: &str) -> Result<(), rusqlite::Error> {
         // recompute cv.score = max similarity to jobad across models? Use deep model similarity if present else quick.
         self.with_writer(|c| {
-            let score: f64 = c.query_row(
-                "SELECT COALESCE(MAX(similarity), 0.0) FROM cv_similarity WHERE cv_hash = ?1",
-                [cv_hash],
-                |r| r.get(0),
-            ).unwrap_or(0.0);
-            c.execute("UPDATE cv SET score = ?1 WHERE hash = ?2", rusqlite::params![score, cv_hash])?;
+            let score: f64 = c
+                .query_row(
+                    "SELECT COALESCE(MAX(similarity), 0.0) FROM cv_similarity WHERE cv_hash = ?1",
+                    [cv_hash],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0.0);
+            c.execute(
+                "UPDATE cv SET score = ?1 WHERE hash = ?2",
+                rusqlite::params![score, cv_hash],
+            )?;
             Ok(())
         })
     }
 
-    pub fn update_waves_rank_state(&self, job_id: &str, wave: i64, embedded_total: i64, embedded_done: i64, compared: i64, candidates: i64, converged: i64, reason: Option<&str>, running: bool) -> Result<(), rusqlite::Error> {
+    pub fn update_waves_rank_state(
+        &self,
+        job_id: &str,
+        wave: i64,
+        embedded_total: i64,
+        embedded_done: i64,
+        compared: i64,
+        candidates: i64,
+        converged: i64,
+        reason: Option<&str>,
+        running: bool,
+    ) -> Result<(), rusqlite::Error> {
         self.with_writer(|c| {
             c.execute(
                 "INSERT OR REPLACE INTO waves_rank_state (job_id, running, wave, embedded_total, embedded_done, compared, candidates, converged, reason)
@@ -342,7 +431,6 @@ impl DbHandle {
         })
     }
 }
-
 
 pub fn open_connection_at(path: &std::path::Path) -> Result<DbHandle, rusqlite::Error> {
     DbHandle::open_at(path)
