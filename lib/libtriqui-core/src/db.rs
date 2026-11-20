@@ -326,6 +326,28 @@ pub fn open_connection_at(path: &Path) -> Result<Connection, String> {
     Ok(conn)
 }
 
+/// Open a connection for the read pool. The database must already exist
+/// (the writer connection opened and migrated it).
+///
+/// The connection is opened read/write but immediately restricted with
+/// `PRAGMA query_only`, which is what actually keeps it read-only. That is
+/// deliberate: a `SQLITE_OPEN_READ_ONLY` handle on a WAL database cannot
+/// create or recover the `-shm` index, so it fails outright whenever the
+/// write-ahead log needs recovering. `query_only` gives the same guarantee
+/// (every INSERT/UPDATE/DELETE is rejected) while still allowing the WAL
+/// bookkeeping SQLite needs, so pooled readers work in every WAL state.
+pub fn open_readonly_connection_at(path: &Path) -> Result<Connection, String> {
+    use rusqlite::OpenFlags;
+    let conn = Connection::open_with_flags(
+        path,
+        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(|e| format!("Failed to open read-pool database: {e}"))?;
+    conn.execute_batch("PRAGMA query_only = ON;")
+        .map_err(|e| format!("Failed to set query_only: {e}"))?;
+    Ok(conn)
+}
+
 /// Add a column only if it is not already present.
 /// `CREATE TABLE IF NOT EXISTS` (in `SCHEMA`) handles new tables; columns added to
 /// existing tables need this guard because rusqlite errors on a duplicate column.

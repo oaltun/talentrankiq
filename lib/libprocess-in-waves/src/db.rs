@@ -268,8 +268,7 @@ impl DbHandle {
             let sql = r#"
                 SELECT c.hash FROM cv c
                 JOIN job_cv j ON j.cv_hash = c.hash AND j.job_id = ?1
-                WHERE EXISTS (SELECT 1 FROM cv_similarity s WHERE s.cv_hash=c.hash AND s.model_id=?2)
-                  AND NOT EXISTS (SELECT 1 FROM cv_embedding e WHERE e.cv_hash=c.hash AND e.model_id=?3)
+                WHERE NOT EXISTS (SELECT 1 FROM cv_embedding e WHERE e.cv_hash=c.hash AND e.model_id=?3)
                 ORDER BY (SELECT COALESCE(MAX(s.similarity),0) FROM cv_similarity s WHERE s.cv_hash=c.hash AND s.model_id=?2) DESC,
                          c.hash
                 LIMIT ?4

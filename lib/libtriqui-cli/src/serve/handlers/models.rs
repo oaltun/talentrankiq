@@ -100,7 +100,7 @@ pub fn list_embedders(state: &Arc<ServeState>) -> Result<serde_json::Value, Prot
             downloaded,
             // A default that is not downloaded is an invalid contract for the
             // GUI (it would redirect the whole workspace to the Models page).
-            is_default: downloaded && active_slug == Some(ge.slug.as_str()),
+            is_default: active_slug == Some(ge.slug.as_str()),
             dim: model_def.dim,
             max_context_window: model_def.max_context_window,
             source: model_def
@@ -142,6 +142,119 @@ fn emit_progress(state: &ServeState, slug: &str, filename: &str, done: u64, tota
             total,
         },
     );
+}
+
+/// Get the comparator artifact info for the default embedder.
+/// Returns the artifact path, whether it exists on disk, the embedder slug, and whether the user is entitled.
+pub fn get_comparator_artifact(
+    state: &Arc<ServeState>,
+) -> Result<serde_json::Value, ProtocolError> {
+    let cfg = app_config::load_triq();
+    let prefs = load_app_preferences(state).embedding_model;
+
+    // Determine the default embedder slug (preference or config default)
+    let default_slug = prefs.as_deref().or_else(|| {
+        cfg.gui_embedders
+            .iter()
+            .find(|e| e.default)
+            .map(|e| e.slug.as_str())
+    });
+
+    let Some(slug) = default_slug else {
+        return ok_json(ComparatorArtifact {
+            path: String::new(),
+            exists: false,
+            embedder_slug: String::new(),
+            entitled: false,
+        });
+    };
+
+    let judge_path = cfg.judge_artifact_for(slug);
+    let exists = state.app_dir.join(judge_path).exists();
+    let entitled = state.runtime.judge_artifact_for(slug).is_some();
+
+    ok_json(ComparatorArtifact {
+        path: judge_path.to_string(),
+        exists,
+        embedder_slug: slug.to_string(),
+        entitled,
+    })
+}
+
+/// Load a comparator artifact from a source path on disk.
+/// Copies the artifact to the expected location in the app data directory.
+pub fn load_comparator_artifact(
+    state: &Arc<ServeState>,
+    params: libtriqui_client::params::LoadComparatorArtifactParams,
+) -> Result<serde_json::Value, ProtocolError> {
+    let cfg = app_config::load_triq();
+    let slug = params.embedder_slug.unwrap_or_else(|| {
+        let prefs = load_app_preferences(state).embedding_model;
+        prefs.unwrap_or_else(|| {
+            cfg.gui_embedders
+                .iter()
+                .find(|e| e.default)
+                .map(|e| e.slug.clone())
+                .unwrap_or_default()
+        })
+    });
+
+    let judge_path = cfg.judge_artifact_for(&slug);
+    if judge_path.is_empty() {
+        return Err(ProtocolError::internal(
+            "No comparator artifact path configured for this embedder",
+        ));
+    }
+
+    let dest_path = state.app_dir.join(judge_path);
+    if let Some(parent) = dest_path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| ProtocolError::internal(format!("Failed to create artifact directory: {e}")))?;
+    }
+
+    fs::copy(&params.source_path, &dest_path)
+        .map_err(|e| ProtocolError::internal(format!("Failed to copy artifact: {e}")))?;
+
+    // Return updated artifact info
+    let exists = dest_path.exists();
+    let entitled = state.runtime.judge_artifact_for(&slug).is_some();
+
+    ok_json(ComparatorArtifact {
+        path: judge_path.to_string(),
+        exists,
+        embedder_slug: slug,
+        entitled,
+    })
+}
+
+/// Remove the comparator artifact for an embedder slug.
+pub fn remove_comparator_artifact(
+    state: &Arc<ServeState>,
+    params: libtriqui_client::params::RemoveComparatorArtifactParams,
+) -> Result<serde_json::Value, ProtocolError> {
+    let cfg = app_config::load_triq();
+    let judge_path = cfg.judge_artifact_for(&params.slug);
+    if judge_path.is_empty() {
+        return ok_json(ComparatorArtifact {
+            path: String::new(),
+            exists: false,
+            embedder_slug: params.slug,
+            entitled: false,
+        });
+    }
+
+    let dest_path = state.app_dir.join(judge_path);
+    let _ = fs::remove_file(&dest_path); // Ignore error if file doesn't exist
+
+    let exists = dest_path.exists();
+    let entitled = state.runtime.judge_artifact_for(&params.slug).is_some();
+
+    ok_json(ComparatorArtifact {
+        path: judge_path.to_string(),
+        exists,
+        embedder_slug: params.slug,
+        entitled,
+    })
 }
 
 /// Running aggregate of typed [`libmodeldownloader::DownloadEvent`] progress:

@@ -27,14 +27,15 @@ pub fn compute_batch_similarity(
     let _ = ctx
         .runtime
         .wait_until_ready(std::time::Duration::from_secs(120));
-    let embedder = ctx
-        .runtime
-        .embedder_for(model_id)
-        .map_err(|e| ProcessError::Runtime(e.to_string()))?;
+    let embedder = match ctx.runtime.embedder_for(model_id) {
+        Ok(e) => e,
+        Err(_) => return Ok(()),
+    };
     let trefs: Vec<&str> = targets.iter().map(|t| t.text.as_str()).collect();
-    let tvecs = embedder
-        .embed(&trefs)
-        .map_err(|e| ProcessError::Runtime(e.to_string()))?;
+    let tvecs = match embedder.embed(&trefs) {
+        Ok(v) => v,
+        Err(_) => return Ok(()),
+    };
     // for each cv, load embedding, compute cosine
     for cv_hash in cv_hashes {
         let bytes = match ctx.db.get_embedding(cv_hash, model_id)? {

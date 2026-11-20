@@ -841,17 +841,13 @@ fn sample_budget_for_state() -> (libsyscap::Budget, libsyscap::LoadSnapshot) {
 /// ad-less embed-prefill run); `ranking` = in flight **and** the job has an
 /// ad — the flag the gui's rank buttons spin on.
 pub fn get_rank_state(state: &Arc<ServeState>, job_id: &str) -> Result<Value, ProtocolError> {
-    let conn = state
-        .db
-        .0
-        .lock()
-        .map_err(|e| string_err(format!("db lock: {}", e)))?;
+    let conn = state.read_conn();
     // A job the cascade has not touched yet has no `rank_state` row. That is a
     // normal state a poll lands in routinely — between an import-done event
     // and the auto-started run's first write, or on an ad-less job whose
     // embed-only run has not been spawned — so report a coherent not-started
     // snapshot instead of erroring.
-    let rs = match rank_state_for_job(&conn, job_id) {
+    let rs = match libtriqui_core::db::rank_state_for_job(&conn, job_id) {
         Ok(rs) => Some(rs),
         Err(_) => None,
     };

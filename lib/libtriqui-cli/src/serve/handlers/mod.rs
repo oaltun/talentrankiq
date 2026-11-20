@@ -271,6 +271,17 @@ fn dispatch(state: &Arc<ServeState>, cmd: &str, params: &Value) -> Result<Value,
             models::try_model(state, &p.slug)
         }
 
+        // Comparator artifact commands
+        "get_comparator_artifact" => models::get_comparator_artifact(state),
+        "load_comparator_artifact" => {
+            let p: LoadComparatorArtifactParams = from_params(params)?;
+            models::load_comparator_artifact(state, p)
+        }
+        "remove_comparator_artifact" => {
+            let p: RemoveComparatorArtifactParams = from_params(params)?;
+            models::remove_comparator_artifact(state, p)
+        }
+
         // Vetted embedders (bench-leaderboard enriched cards)
         "list_vetted_embedders" => vetted_embedders::list_vetted_embedders(state),
 

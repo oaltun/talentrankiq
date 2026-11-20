@@ -241,7 +241,7 @@ pub fn create_job(state: &Arc<ServeState>) -> Result<Value, ProtocolError> {
 }
 
 pub fn list_job_summaries(state: &Arc<ServeState>) -> Result<Value, ProtocolError> {
-    let conn = state.db.0.lock().map_err(lock_err)?;
+    let conn = state.read_conn();
     let active = state.import_state.0.lock().map_err(lock_err)?;
     let mut stmt = conn
         .prepare(
@@ -284,7 +284,7 @@ pub fn list_job_summaries(state: &Arc<ServeState>) -> Result<Value, ProtocolErro
 }
 
 pub fn get_job_detail(state: &Arc<ServeState>, job_id: &str) -> Result<Value, ProtocolError> {
-    let conn = state.db.0.lock().map_err(lock_err)?;
+    let conn = state.read_conn();
     let job = match conn.query_row(
         &format!("SELECT {JOB_COLS} FROM jobs WHERE id = ?1"),
         rusqlite::params![job_id],
@@ -633,7 +633,7 @@ pub fn watch_job(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Protoco
 /// `inputs_version != ranked_version` — so an edit landing in the same second
 /// as a rank still reads as dirty.
 pub fn job_ui_state(state: &Arc<ServeState>, job_id: &str) -> Result<Value, ProtocolError> {
-    let conn = state.db.0.lock().map_err(lock_err)?;
+    let conn = state.read_conn();
     let (cv_imported, ad_set, inputs_version, ranked_version): (i64, bool, i64, Option<i64>) = conn
         .query_row(
             "SELECT (SELECT COUNT(*) FROM candidates
@@ -669,7 +669,6 @@ pub fn job_ui_state(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Prot
     } else {
         None
     };
-    drop(conn);
     let engine_ready = state.runtime.status_info().status == "Running";
     // Both blockers are backend-owned: no CVs is meaningless, and no job ad
     // has nothing to score against (the old behaviour ranked anyway and
@@ -710,7 +709,7 @@ pub fn job_ui_state(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Prot
 
 /// The report of the job's last rank (what ran, what was memoized).
 pub fn get_sort_report(state: &Arc<ServeState>, job_id: &str) -> Result<Value, ProtocolError> {
-    let conn = state.db.0.lock().map_err(lock_err)?;
+    let conn = state.read_conn();
     let report = conn
         .query_row(
             "SELECT job_id, judge_mode, judge_pairs_fresh, judge_pairs_cached, mode, waves, complete, cancelled, created_at

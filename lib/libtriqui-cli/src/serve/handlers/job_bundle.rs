@@ -45,7 +45,7 @@ pub fn export_job_bundle(
     options: &BundleExportOptions,
     out_path: &str,
 ) -> Result<Value, ProtocolError> {
-    let conn = state.db.0.lock().map_err(lock_err)?;
+    let conn = state.read_conn();
     let summary = export_job(
         &conn,
         job_id,

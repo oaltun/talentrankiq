@@ -168,4 +168,16 @@ params! {
 
     /// Check whether a license authorizes a given artifact id.
     struct LicenseCheckArtifactParams { artifact_id: String }
+
+    /// No parameters for get_comparator_artifact.
+    struct GetComparatorArtifactParams {}
+
+    /// Parameters for load_comparator_artifact command.
+    struct LoadComparatorArtifactParams {
+        source_path: String,
+        embedder_slug: Option<String>,
+    }
+
+    /// Parameters for remove_comparator_artifact command.
+    struct RemoveComparatorArtifactParams { slug: String }
 }

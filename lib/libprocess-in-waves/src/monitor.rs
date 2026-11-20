@@ -187,13 +187,15 @@ pub mod queries {
         model_id: &str,
     ) -> Result<EmbeddingProgress, rusqlite::Error> {
         let total: i64 = conn
-            .query_row("SELECT COUNT(*) FROM cv WHERE job_id = ?1", [job_id], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT COUNT(*) FROM job_cv WHERE job_id = ?1",
+                [job_id],
+                |r| r.get(0),
+            )
             .unwrap_or(0);
         let done: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM cv_embedding WHERE job_id = ?1 AND model_id = ?2",
+                "SELECT COUNT(*) FROM cv_embedding e JOIN job_cv j ON j.cv_hash = e.cv_hash WHERE j.job_id = ?1 AND e.model_id = ?2",
                 [job_id, model_id],
                 |r| r.get(0),
             )

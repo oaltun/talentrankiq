@@ -44,10 +44,10 @@ fn ensure_embeddings(
     let _ = ctx
         .runtime
         .wait_until_ready(std::time::Duration::from_secs(120));
-    let embedder = ctx
-        .runtime
-        .embedder_for(model_id)
-        .map_err(|e| ProcessError::Runtime(e.to_string()))?;
+    let embedder = match ctx.runtime.embedder_for(model_id) {
+        Ok(e) => e,
+        Err(_) => return Ok(0),
+    };
     let mut done = 0usize;
     for chunk in missing.chunks(EMBED_CHUNK) {
         // load texts for this chunk
@@ -67,9 +67,10 @@ fn ensure_embeddings(
         for t in &owned {
             texts.push(t.as_str());
         }
-        let vecs = embedder
-            .embed(&texts)
-            .map_err(|e| ProcessError::Runtime(e.to_string()))?;
+        let vecs = match embedder.embed(&texts) {
+            Ok(v) => v,
+            Err(_) => return Ok(done),
+        };
         for (i, h) in chunk.iter().enumerate() {
             let v = &vecs[i];
             let bytes = libtriqui_core::embed::vector_to_bytes(v);

@@ -37,6 +37,7 @@ use libtriqui_client::protocol::{Request, MAX_LINE_BYTES};
 use libtriqui_client::types::RuntimeStatusInfo;
 use libtriqui_core::db::{self, DbConnection, ImportState};
 use libtriqui_core::runtime::{EngineRuntime, RuntimeConfig};
+use rusqlite::Connection;
 use serde::Serialize;
 
 use crate::serve::watch::WatchHandle;
@@ -89,7 +90,11 @@ pub struct ServeState {
     pub app_dir: PathBuf,
     /// Host app version (the gui's), reported in exported job bundles.
     pub app_version: String,
+    /// Writer connection (for INSERT/UPDATE/DELETE). Single connection protected by mutex.
     pub db: DbConnection,
+    /// Read pool: multiple read-only connections for concurrent SELECT queries.
+    /// Uses round-robin to distribute load across connections.
+    pub read_pool: Arc<ReadPool>,
     pub db_path: PathBuf,
     pub import_state: ImportState,
     pub runtime: Arc<EngineRuntime>,
@@ -99,6 +104,50 @@ pub struct ServeState {
     pub config: libtriqui_core::config::CascadeConfig,
     /// Live cascade runners per job (see [`handlers::rank::CascadeGens`]).
     pub cascade_gens: Arc<crate::serve::handlers::rank::CascadeGens>,
+}
+
+/// Pool of read-only SQLite connections for concurrent SELECT queries.
+/// Distributes connections round-robin to avoid contention on a single mutex.
+pub struct ReadPool {
+    connections: Vec<Mutex<Connection>>,
+    next: Mutex<usize>,
+}
+
+impl ReadPool {
+    /// Create a new read pool with `size` connections.
+    pub fn new(db_path: &PathBuf, size: usize) -> Result<Self, String> {
+        let mut connections = Vec::with_capacity(size);
+        for _ in 0..size {
+            let conn = db::open_readonly_connection_at(db_path)?;
+            connections.push(Mutex::new(conn));
+        }
+        Ok(Self {
+            connections,
+            next: Mutex::new(0),
+        })
+    }
+
+    /// Get the next connection in round-robin fashion.
+    pub fn get(&self) -> std::sync::MutexGuard<'_, Connection> {
+        let mut next = self.next.lock().expect("read pool next lock poisoned");
+        let idx = *next;
+        *next = (idx + 1) % self.connections.len();
+        drop(next);
+        self.connections[idx].lock().expect("read pool connection lock poisoned")
+    }
+}
+
+impl ServeState {
+    /// Get a read-only connection from the pool for SELECT queries.
+    /// Uses round-robin to distribute load across connections.
+    pub fn read_conn(&self) -> std::sync::MutexGuard<'_, Connection> {
+        self.read_pool.get()
+    }
+
+    /// Get the writer connection for INSERT/UPDATE/DELETE queries.
+    pub fn write_conn(&self) -> std::sync::MutexGuard<'_, rusqlite::Connection> {
+        self.db.0.lock().expect("db lock poisoned")
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -143,6 +192,9 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
     std::fs::create_dir_all(&app_dir).map_err(|e| format!("cannot create app dir: {e}"))?;
     let db_path = app_dir.join("triqui.db");
     let conn = db::open_connection_at(&db_path)?;
+
+    // Create read pool for concurrent SELECT queries (4 connections by default).
+    let read_pool = Arc::new(ReadPool::new(&db_path, 4)?);
 
     crate::serve::logging::init();
     let resolved_log_dir =
@@ -214,6 +266,7 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
         app_dir,
         app_version,
         db: DbConnection(Mutex::new(conn)),
+        read_pool,
         db_path,
         import_state: ImportState::new(),
         runtime,
