@@ -18,7 +18,7 @@ use libmodeldownloader::cli::Artifact;
 use libmodeldownloader::modelcache::verify_safetensors_present;
 use libtriqui_client::protocol::ProtocolError;
 use libtriqui_client::types::{
-    CosinePair, GuiEmbedder, ModelDownloadProgress, ModelKind, ScoutModel, TryModelProgress, TryModelResult,
+    ComparatorArtifact, CosinePair, GuiEmbedder, ModelDownloadProgress, ModelKind, ScoutModel, TryModelProgress, TryModelResult,
 };
 use libtriqui_core::app_config;
 use libtriqui_core::embed::Embedder;
@@ -77,12 +77,30 @@ pub fn list_embedders(state: &Arc<ServeState>) -> Result<serde_json::Value, Prot
         } else {
             0
         };
+        // Comparator (judge) artifact wired to this embedder. The path comes
+        // from `gui_judge_artifact` (per-embedder override, else default); it is
+        // reported even when the file is absent so the GUI can show the
+        // "missing artifact" call-to-action. `entitled` reflects whether the
+        // runtime may actually use the judge (license + artifact authorization).
+        let judge_path = cfg.judge_artifact_for(&ge.slug);
+        let comparator = if judge_path.is_empty() {
+            None
+        } else {
+            Some(ComparatorArtifact {
+                path: judge_path.to_string(),
+                exists: state.app_dir.join(judge_path).exists(),
+                embedder_slug: ge.slug.clone(),
+                entitled: state.runtime.judge_artifact_for(&ge.slug).is_some(),
+            })
+        };
         out.push(GuiEmbedder {
             slug: ge.slug.clone(),
             name: ge.name.clone(),
             memory_mb: ge.memory_mb,
             downloaded,
-            is_default: active_slug == Some(ge.slug.as_str()),
+            // A default that is not downloaded is an invalid contract for the
+            // GUI (it would redirect the whole workspace to the Models page).
+            is_default: downloaded && active_slug == Some(ge.slug.as_str()),
             dim: model_def.dim,
             max_context_window: model_def.max_context_window,
             source: model_def
@@ -91,6 +109,7 @@ pub fn list_embedders(state: &Arc<ServeState>) -> Result<serde_json::Value, Prot
                 .map(|a| a.source.clone())
                 .unwrap_or_default(),
             size_bytes: size,
+            comparator,
         });
     }
     ok_json(out)
@@ -405,13 +424,20 @@ fn run_embedder_download(
     Ok(())
 }
 
-/// Remove a downloaded ONNX embedder from the model cache.
-pub fn remove_embedder(slug: &str) -> Result<(), ProtocolError> {
+/// Remove a downloaded ONNX embedder from the model cache and clear the saved
+/// default when it pointed at the removed model, so the GUI never sees a
+/// default that is not downloaded.
+pub fn remove_embedder(state: &Arc<ServeState>, slug: &str) -> Result<(), ProtocolError> {
     let model_dir = app_config::model_dir();
     let dir = libmodelstorage::slug_dir(&model_dir, slug);
     if dir.exists() {
         fs::remove_dir_all(&dir)
             .map_err(|e| string_err(format!("failed to remove {slug}: {e}")))?;
+    }
+    let mut prefs = load_app_preferences(state);
+    if prefs.embedding_model.as_deref() == Some(slug) {
+        prefs.embedding_model = None;
+        save_app_preferences(state, prefs).map_err(string_err)?;
     }
     Ok(())
 }

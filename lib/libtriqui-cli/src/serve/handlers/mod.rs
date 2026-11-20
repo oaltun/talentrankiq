@@ -252,7 +252,7 @@ fn dispatch(state: &Arc<ServeState>, cmd: &str, params: &Value) -> Result<Value,
         }
         "remove_embedder" => {
             let p: RemoveEmbedderParams = from_params(params)?;
-            models::remove_embedder(&p.slug).map(|_| Value::Null)
+            models::remove_embedder(state, &p.slug).map(|_| Value::Null)
         }
         "set_default_model" => {
             let p: SetDefaultModelParams = from_params(params)?;

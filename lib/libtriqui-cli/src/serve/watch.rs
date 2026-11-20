@@ -204,25 +204,27 @@ fn scan_and_import(state: &Arc<ServeState>, job_id: &str) {
         return;
     }
 
-    // Cheap pre-check: drop files already successfully imported (failed ones are
-    // left through so they retry) so unrelated filesystem noise (touch, editor
-    // temp files, attribute changes) never starts the embedding engine.
-    let new_files: Vec<PathBuf> = {
+    // Single pre-check: fetch all already-imported file paths for this job in
+    // one query, then filter in memory. This avoids holding the DB lock while
+    // iterating files one-by-one (which blocks get_job_detail and other readers
+    // for the entire scan).
+    let imported_paths: std::collections::HashSet<String> = {
         let conn = state.db.0.lock().expect("db lock poisoned");
-        files
-            .into_iter()
-            .filter(|p| {
-                let path_str = p.to_string_lossy().to_string();
-                !conn
-                    .query_row(
-                        "SELECT 1 FROM candidates WHERE job_id = ?1 AND source_file_path = ?2 AND extraction_status = 'Extracted'",
-                        rusqlite::params![job_id, &path_str],
-                        |_| Ok(true),
-                    )
-                    .unwrap_or(false)
-            })
-            .collect()
+        let mut stmt = conn
+            .prepare(
+                "SELECT source_file_path FROM candidates WHERE job_id = ?1 AND extraction_status = 'Extracted'",
+            )
+            .expect("prepare failed");
+        let rows = stmt
+            .query_map(rusqlite::params![job_id], |r| r.get(0))
+            .expect("query failed");
+        rows.flatten().collect()
     };
+
+    let new_files: Vec<PathBuf> = files
+        .into_iter()
+        .filter(|p| !imported_paths.contains(&p.to_string_lossy().to_string()))
+        .collect();
     if new_files.is_empty() {
         return;
     }

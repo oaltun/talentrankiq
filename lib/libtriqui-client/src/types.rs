@@ -1017,6 +1017,19 @@ pub struct ModelDownloadComplete {
     pub path: String,
 }
 
+/// Comparator artifact mapped to a gui embedder (`None` when unconfigured).
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct ComparatorArtifact {
+    /// Path to the artifact, relative to the app data dir.
+    pub path: String,
+    /// True when the artifact file exists on disk.
+    pub exists: bool,
+    /// Active embedder slug this artifact applies to.
+    pub embedder_slug: String,
+    /// Whether the user is entitled to use the comparator.
+    pub entitled: bool,
+}
+
 /// One ONNX embedder from `triq.yaml` `gui_embedders`, enriched with on-disk state.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct GuiEmbedder {
@@ -1038,6 +1051,8 @@ pub struct GuiEmbedder {
     pub source: String,
     /// On-disk size of the cached model, in bytes (0 when not downloaded).
     pub size_bytes: u64,
+    /// Comparator artifact mapped to this embedder (`None` when unconfigured).
+    pub comparator: Option<ComparatorArtifact>,
 }
 
 /// Scout (quick) model info exposed to the GUI.
