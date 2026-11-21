@@ -34,3 +34,6 @@ pub mod sort;
 /// (libsyscap design §7.3).
 pub mod syscap;
 pub mod types;
+
+// Re-export the unified Db handle from libdb-manager.
+pub use libdb_manager::Db;

@@ -114,7 +114,10 @@ impl CascadeGens {
 struct CascadeRunner {
     job_id: String,
     runtime: Arc<EngineRuntime>,
-    db_path: std::path::PathBuf,
+    /// Shared unified DB handle (single writer + read pool), cloned from
+    /// `ServeState`. Background workers use short closures against it rather
+    /// than holding a connection for the whole run.
+    db: Arc<libdb_manager::Db>,
     events: crate::serve::EventSink,
     cascade: CascadeConfig,
     /// `syscap:` + `engine:` sections, resolved on the spawning (serve
@@ -155,14 +158,6 @@ impl CascadeRunner {
     }
 
     fn run_loop(self) {
-        let conn = match libtriqui_core::db::open_connection_at(&self.db_path) {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::error!("cascade: failed to open db for {}: {}", self.job_id, e);
-                return;
-            }
-        };
-
         // A runner that was already superseded while waiting to start must not
         // even do the free stages — its writes would land on the newer run.
         if self.superseded() {
@@ -318,7 +313,7 @@ impl CascadeRunner {
             // Cheap when it fires: the scout chunks are on disk, so the pass
             // costs one ad embed plus maxsim, and the wave's sort picks the
             // grades and the refreshed best-current-order up.
-            if scout_deferred && self.job_has_ad(&conn) {
+            if scout_deferred && self.job_has_ad() {
                 let job_id_clone = self.job_id.clone();
                 let events_clone = self.events.clone();
                 match run_scout_stage(
@@ -485,15 +480,12 @@ impl CascadeRunner {
     /// Checked between waves, so a cancel lands at a wave boundary rather than
     /// interrupting an embed mid-batch.
     fn cancelled(&self) -> bool {
-        match libtriqui_core::db::open_connection_at(&self.db_path) {
-            Ok(conn) => libtriqui_core::db::rank_state_for_job(&conn, &self.job_id)
-                .map(|rs| rs.cancelled)
-                .unwrap_or(false),
-            Err(e) => {
-                tracing::warn!("cascade: cannot read rank state for {}: {}", self.job_id, e);
-                false
-            }
-        }
+        self.db
+            .read(|conn| {
+                libtriqui_core::db::rank_state_for_job(conn, &self.job_id)
+                    .map(|rs| rs.cancelled)
+                    .unwrap_or(false)
+            })
     }
 
     fn emit_progress(&self, p: RankProgress) {
@@ -511,40 +503,35 @@ impl CascadeRunner {
             );
             return;
         }
-        let conn = match libtriqui_core::db::open_connection_at(&self.db_path) {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::warn!("cascade: cannot read back for {}: {}", self.job_id, e);
-                return;
-            }
-        };
         // Read the report the last wave persisted rather than re-running the
         // pipeline: a second pass would find every judge pair memoized and
         // report `fresh = 0`, which is a lie about what happened.
-        let reports_json = libtriqui_core::rescore::read_triqui(&conn, &self.job_id)
-            .map(|(_, report)| serde_json::to_string(&vec![report]).unwrap_or_default())
-            .unwrap_or_else(|e| {
-                tracing::warn!(
-                    "cascade: convergence read failed for {}: {}",
-                    self.job_id,
-                    e
-                );
-                "[]".to_string()
-            });
-        // A run that stops short of convergence is *cancelled*, not still
-        // running: `get_rank_state` derives `running` from
-        // `!complete && !cancelled`, so writing `complete=false,
-        // cancelled=false` here would leave the job reporting a run in flight
-        // forever — and `spawn_cascade` refuses to start a new one while that
-        // holds, wedging the job until the app restarts.
-        let _ = libtriqui_core::db::set_rank_state(
-            &conn,
-            &self.job_id,
-            "sort",
-            &reports_json,
-            converged,
-            !converged,
-        );
+        self.db.write(|conn| {
+            let reports_json = libtriqui_core::rescore::read_triqui(conn, &self.job_id)
+                .map(|(_, report)| serde_json::to_string(&vec![report]).unwrap_or_default())
+                .unwrap_or_else(|e| {
+                    tracing::warn!(
+                        "cascade: convergence read failed for {}: {}",
+                        self.job_id,
+                        e
+                    );
+                    "[]".to_string()
+                });
+            // A run that stops short of convergence is *cancelled*, not still
+            // running: `get_rank_state` derives `running` from
+            // `!complete && !cancelled`, so writing `complete=false,
+            // cancelled=false` here would leave the job reporting a run in flight
+            // forever — and `spawn_cascade` refuses to start a new one while that
+            // holds, wedging the job until the app restarts.
+            let _ = libtriqui_core::db::set_rank_state(
+                conn,
+                &self.job_id,
+                "sort",
+                &reports_json,
+                converged,
+                !converged,
+            );
+        });
         self.events.emit(
             "rank-progress",
             &RankProgress {
@@ -589,11 +576,10 @@ impl CascadeRunner {
             );
             return;
         }
-        let conn = match libtriqui_core::db::open_connection_at(&self.db_path) {
-            Ok(c) => c,
-            Err(_) => return,
-        };
-        let _ = libtriqui_core::db::set_rank_state(&conn, &self.job_id, "error", "[]", true, true);
+        self.db.write(|conn| {
+            let _ =
+                libtriqui_core::db::set_rank_state(conn, &self.job_id, "error", "[]", true, true);
+        });
         self.events.emit(
             "rank-progress",
             &RankProgress {
@@ -613,15 +599,17 @@ impl CascadeRunner {
 
     /// Whether the job has job-ad text to score against (a blank or NULL ad is
     /// no ad — the same rule `job_ui_state`'s `no-jobad` code applies).
-    fn job_has_ad(&self, conn: &rusqlite::Connection) -> bool {
-        conn.query_row(
-            "SELECT COALESCE(job_ad_text <> '' AND job_ad_text IS NOT NULL, 0)
-             FROM jobs WHERE id = ?1",
-            rusqlite::params![self.job_id],
-            |r| r.get::<_, i64>(0),
-        )
-        .map(|v| v != 0)
-        .unwrap_or(false)
+    fn job_has_ad(&self) -> bool {
+        self.db.read(|conn| {
+            conn.query_row(
+                "SELECT COALESCE(job_ad_text <> '' AND job_ad_text IS NOT NULL, 0)
+                 FROM jobs WHERE id = ?1",
+                rusqlite::params![self.job_id],
+                |r| r.get::<_, i64>(0),
+            )
+            .map(|v| v != 0)
+            .unwrap_or(false)
+        })
     }
 }
 
@@ -646,7 +634,7 @@ pub fn spawn_cascade(state: &Arc<ServeState>, job_id: &str) -> Result<bool, Stri
     // land when the ad does: the same run catches the scout up and re-sorts
     // from the stored chunks at the next wave boundary, or `update_job`
     // spawns a scoring-only run once this one converged.
-    let conn = state.db.0.lock().map_err(|e| format!("db lock: {e}"))?;
+    let conn = state.write_conn();
     let cvs: i64 = conn
         .query_row(
             "SELECT (SELECT COUNT(*) FROM candidates
@@ -670,7 +658,7 @@ pub fn spawn_cascade(state: &Arc<ServeState>, job_id: &str) -> Result<bool, Stri
     // waiting for it.
     if state.cascade_gens.has(job_id) {
         let cancelled = {
-            let conn = state.db.0.lock().map_err(|e| format!("db lock: {e}"))?;
+            let conn = state.write_conn();
             rank_state_for_job(&conn, job_id)
                 .map(|rs| rs.cancelled)
                 .unwrap_or(false)
@@ -683,7 +671,7 @@ pub fn spawn_cascade(state: &Arc<ServeState>, job_id: &str) -> Result<bool, Stri
     // A running rank_state row with no live runner is a leftover this process
     // did not recover (kept as belt-and-braces behind the startup recovery).
     {
-        let conn = state.db.0.lock().map_err(|e| format!("db lock: {e}"))?;
+        let conn = state.write_conn();
         if let Ok(rs) = rank_state_for_job(&conn, job_id) {
             if !rs.complete && !rs.cancelled {
                 return Ok(false);
@@ -698,7 +686,7 @@ pub fn spawn_cascade(state: &Arc<ServeState>, job_id: &str) -> Result<bool, Stri
 
     // Initialize rank_state as running
     {
-        let mut conn = state.db.0.lock().map_err(|e| format!("db lock: {e}"))?;
+        let mut conn = state.write_conn();
         let _ = set_rank_state(&mut conn, job_id, "lex", "[]", false, false);
     }
 
@@ -715,7 +703,7 @@ pub fn spawn_cascade(state: &Arc<ServeState>, job_id: &str) -> Result<bool, Stri
     let runner = CascadeRunner {
         job_id: job_id.to_string(),
         runtime: Arc::clone(&state.runtime),
-        db_path: state.db_path.clone(),
+        db: state.db.clone(),
         events: state.events.clone(),
         cascade: state.config.clone(),
         syscap,
@@ -744,13 +732,8 @@ pub fn spawn_cascade(state: &Arc<ServeState>, job_id: &str) -> Result<bool, Stri
 /// scoring defers to when the ad lands), which is the import auto-start's
 /// contract (design §9).
 pub fn start_rank(state: &Arc<ServeState>, job_id: &str) -> Result<Value, ProtocolError> {
-    {
-        let conn = state
-            .db
-            .0
-            .lock()
-            .map_err(|e| string_err(format!("db lock: {e}")))?;
-        let (cvs, ad_set): (i64, bool) = conn
+    let conn = state.write_conn();
+    let (cvs, ad_set): (i64, bool) = conn
             .query_row(
                 "SELECT (SELECT COUNT(*) FROM candidates
                           WHERE job_id = ?1 AND extraction_status = 'Extracted'),
@@ -771,7 +754,6 @@ pub fn start_rank(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Protoc
         if !ad_set {
             return Err(string_err("cannot rank: job has no job ad text"));
         }
-    }
     match spawn_cascade(state, job_id) {
         Ok(true) => {}
         Ok(false) => return Err(string_err("cascade already running for this job")),
@@ -797,11 +779,7 @@ pub fn start_rank(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Protoc
 
 /// Request cancellation of the job's running cascade.
 pub fn cancel_rank(state: &Arc<ServeState>, job_id: &str) -> Result<Value, ProtocolError> {
-    let mut conn = state
-        .db
-        .0
-        .lock()
-        .map_err(|e| string_err(format!("db lock: {}", e)))?;
+    let mut conn = state.write_conn();
     let _ = set_rank_state(&mut conn, job_id, "sort", "[]", true, true);
     ok_json(Value::Null)
 }
@@ -993,11 +971,7 @@ pub fn mark_candidate_viewed(
     state: &Arc<ServeState>,
     candidate_id: &str,
 ) -> Result<Value, ProtocolError> {
-    let conn = state
-        .db
-        .0
-        .lock()
-        .map_err(|e| string_err(format!("db lock: {}", e)))?;
+    let conn = state.write_conn();
     conn.execute(
         "UPDATE candidates SET viewed_at = datetime('now') WHERE id = ?1",
         rusqlite::params![candidate_id],
@@ -1102,7 +1076,7 @@ use libprocess_in_waves::{run_process_in_waves, ProcessConfig};
 pub fn process_in_waves(state: &Arc<ServeState>, job_id: &str) -> Result<Value, ProtocolError> {
     let request_log_file = crate::serve::logging::current_request_log();
     let rank_state = run_process_in_waves(
-        state.db_path.clone(),
+        Arc::clone(&state.db),
         state.app_dir.clone(),
         Arc::clone(&state.runtime),
         state.events.inner(),

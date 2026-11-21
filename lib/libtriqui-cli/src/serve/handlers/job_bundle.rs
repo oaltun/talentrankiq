@@ -73,7 +73,7 @@ pub fn import_job_bundle(state: &Arc<ServeState>, path: &str) -> Result<Value, P
 
     // Create the job + criteria rows (new ids, weights defaulted where absent).
     let created = {
-        let conn = state.db.0.lock().map_err(lock_err)?;
+        let conn = state.write_conn();
         create_job_from_bundle(&conn, &meta, &stage_str).map_err(string_err)?
     };
     let job_id = created.job_id.clone();
@@ -114,22 +114,18 @@ pub fn import_job_bundle(state: &Arc<ServeState>, path: &str) -> Result<Value, P
 
         // The pipeline's auto-rank ran on the receiving machine; overlay the
         // sender's snapshot so the imported triqui matches what was sent.
-        match libtriqui_core::db::open_connection_at(&st.db_path) {
-            Ok(conn) => {
-                if let Some(results) = &results {
-                    match apply_bundle_results(&conn, &jid, results, &criterion_map, include_likes)
-                    {
-                        Ok(stats) => tracing::info!(
-                            "bundle import {jid}: snapshot applied ({} matched, {} unmatched, {} liked)",
-                            stats.rows_matched,
-                            stats.rows_unmatched,
-                            stats.liked_applied
-                        ),
-                        Err(e) => tracing::warn!("bundle import {jid}: snapshot apply failed: {e}"),
-                    }
+        if let Some(results) = &results {
+            st.write(|conn| {
+                match apply_bundle_results(conn, &jid, results, &criterion_map, include_likes) {
+                    Ok(stats) => tracing::info!(
+                        "bundle import {jid}: snapshot applied ({} matched, {} unmatched, {} liked)",
+                        stats.rows_matched,
+                        stats.rows_unmatched,
+                        stats.liked_applied
+                    ),
+                    Err(e) => tracing::warn!("bundle import {jid}: snapshot apply failed: {e}"),
                 }
-            }
-            Err(e) => tracing::warn!("bundle import {jid}: no db for snapshot: {e}"),
+            });
         }
 
         // The staged dir is the job's CV directory. Under the single-watcher
@@ -140,7 +136,7 @@ pub fn import_job_bundle(state: &Arc<ServeState>, path: &str) -> Result<Value, P
     });
 
     // Read the fresh job back for the frontend to navigate to.
-    let conn = state.db.0.lock().map_err(lock_err)?;
+    let conn = state.write_conn();
     let job = conn
         .query_row(
             &format!(

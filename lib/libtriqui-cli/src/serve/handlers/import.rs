@@ -145,13 +145,7 @@ pub fn spawn_dir_import(
 /// scoring-only cascade (`jobs::update_job`).
 fn auto_start_cascade(state: &Arc<ServeState>, job_id: &str) {
     let extracted: i64 = {
-        let conn = match state.db.0.lock() {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::error!("import: db lock failed, cascade not started: {e}");
-                return;
-            }
-        };
+        let conn = state.read_conn();
         conn.query_row(
             "SELECT COUNT(*) FROM candidates WHERE job_id = ?1 AND extraction_status = 'Extracted'",
             rusqlite::params![job_id],

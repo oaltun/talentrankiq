@@ -1,3 +1,4 @@
+use libprocess_in_waves::WavesDb;
 use libprocess_in_waves::league::MaxPriorityQueueByScore;
 
 #[test]

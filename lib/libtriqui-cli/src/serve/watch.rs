@@ -169,7 +169,7 @@ pub fn coordinate(state: Arc<ServeState>, rx: mpsc::Receiver<String>) {
 /// the job is already importing, or nothing new is on disk.
 fn scan_and_import(state: &Arc<ServeState>, job_id: &str) {
     let dir: Option<String> = {
-        let conn = state.db.0.lock().expect("db lock poisoned");
+        let conn = state.write_conn();
         conn.query_row(
             "SELECT import_directory_path FROM jobs WHERE id = ?1",
             rusqlite::params![job_id],
@@ -209,7 +209,7 @@ fn scan_and_import(state: &Arc<ServeState>, job_id: &str) {
     // iterating files one-by-one (which blocks get_job_detail and other readers
     // for the entire scan).
     let imported_paths: std::collections::HashSet<String> = {
-        let conn = state.db.0.lock().expect("db lock poisoned");
+        let conn = state.write_conn();
         let mut stmt = conn
             .prepare(
                 "SELECT source_file_path FROM candidates WHERE job_id = ?1 AND extraction_status = 'Extracted'",
@@ -320,7 +320,7 @@ pub fn watch_job(state: &Arc<ServeState>, job_id: &str) {
         .expect("ad watch lock poisoned")
         .clear();
     let dir: Option<String> = {
-        let conn = state.db.0.lock().expect("db lock poisoned");
+        let conn = state.write_conn();
         conn.query_row(
             "SELECT import_directory_path FROM jobs WHERE id = ?1",
             rusqlite::params![job_id],
@@ -329,7 +329,7 @@ pub fn watch_job(state: &Arc<ServeState>, job_id: &str) {
         .ok()
     };
     let ad_path: Option<String> = {
-        let conn = state.db.0.lock().expect("db lock poisoned");
+        let conn = state.write_conn();
         conn.query_row(
             "SELECT job_ad_path FROM jobs WHERE id = ?1",
             rusqlite::params![job_id],

@@ -1,3 +1,4 @@
+use libprocess_in_waves::WavesDb;
 use std::sync::mpsc;
 use std::time::Duration;
 use tempfile::tempdir;

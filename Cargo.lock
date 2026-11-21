@@ -1975,6 +1975,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "libdb-manager"
+version = "0.1.0"
+dependencies = [
+ "rusqlite",
+ "tempfile",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "libembedrank"
 version = "0.1.0"
 dependencies = [
@@ -2099,6 +2108,7 @@ dependencies = [
  "libcomparator",
  "libconfigreader",
  "libcvparser",
+ "libdb-manager",
  "libembedrank",
  "libmodelcaller",
  "libsyscap",
@@ -2180,6 +2190,7 @@ dependencies = [
  "chrono",
  "dirs 6.0.0",
  "libconfigreader",
+ "libdb-manager",
  "libembedrank",
  "libmodelcallerclient",
  "libmodeldownloader",
@@ -2220,6 +2231,7 @@ dependencies = [
  "dirs 6.0.0",
  "libconfigreader",
  "libcvparser",
+ "libdb-manager",
  "libembedrank",
  "libjudge",
  "libmodelcaller",

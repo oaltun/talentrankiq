@@ -4,7 +4,7 @@ use std::sync::Arc;
 use libembedrank::RetrievalStrategy;
 use libtriqui_core::runtime::EngineRuntime;
 
-use crate::db::DbHandle;
+use libdb_manager::Db;
 
 #[derive(Clone, Debug)]
 pub struct JobConfig {
@@ -40,7 +40,7 @@ impl Default for ProcessConfig {
 }
 
 pub struct ProcessContext {
-    pub db: DbHandle,
+    pub db: std::sync::Arc<Db>,
     pub watch_dir: PathBuf,
     pub job: JobConfig,
     pub runtime: Arc<EngineRuntime>,

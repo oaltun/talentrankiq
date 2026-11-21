@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-
+use libdb_manager::Db;
 use rusqlite::Connection;
 
 use libmodelcallerclient::ModelCallerClient;
@@ -113,6 +113,9 @@ pub struct EngineRuntime {
     arms: Mutex<HashMap<String, String>>,
     /// Judge license (loaded once at startup). `None` = judge disabled.
     judge_license: Option<License>,
+    /// Shared unified database handle. Set via [`EngineRuntime::set_db`] at serve
+/// startup. `None` in tests that construct the runtime without a database.
+    db: Mutex<Option<Arc<Db>>>,
 }
 
 struct ActTrack {
@@ -200,7 +203,38 @@ impl EngineRuntime {
             gate: Gate::new(),
             arms: Mutex::new(HashMap::new()),
             judge_license,
+            db: Mutex::new(None),
         })
+    }
+
+    /// Attach the shared database handle. Called once at serve startup after
+    /// opening the pool via `Db::open_at()`.
+    pub fn set_db(&self, db: Arc<Db>) {
+        *self.db.lock().expect("db lock poisoned") = Some(db);
+    }
+
+    /// Run a read closure on the shared pool.
+    pub fn read<F, R>(&self, f: F) -> Result<R, String>
+    where
+        F: FnOnce(&rusqlite::Connection) -> R,
+    {
+        let guard = self.db.lock().expect("db lock poisoned");
+        match guard.as_ref() {
+            Some(db) => Ok(db.read(f)),
+            None => Err("Database not initialized".to_string()),
+        }
+    }
+
+    /// Run a write closure on the shared writer.
+    pub fn write<F, R>(&self, f: F) -> Result<R, String>
+    where
+        F: FnOnce(&mut rusqlite::Connection) -> R,
+    {
+        let guard = self.db.lock().expect("db lock poisoned");
+        match guard.as_ref() {
+            Some(db) => Ok(db.write(f)),
+            None => Err("Database not initialized".to_string()),
+        }
     }
 
     /// Report what the engine is working on — one status-line update. Pushes

@@ -1,3 +1,4 @@
+use crate::db::WavesDb;
 use crate::context::ProcessContext;
 use crate::error::ProcessError;
 use crate::league::MaxPriorityQueueByScore;

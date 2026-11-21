@@ -9,9 +9,11 @@ pub mod monitor;
 pub mod scan;
 pub mod similarity;
 
+
 pub use context::{JobConfig, ProcessConfig, ProcessContext};
-pub use db::open_connection_at;
 pub use db::DbHandle;
+pub use db::WavesDb;
+pub use db::init_schema;
 pub use error::ProcessError;
 pub use handler::run_process_in_waves;
 pub use league::MaxPriorityQueueByScore;
@@ -25,12 +27,12 @@ pub fn process_in_waves(
     ctx: &mut context::ProcessContext,
     config: context::ProcessConfig,
 ) -> Result<(), error::ProcessError> {
-    let _ = ctx.db.with_writer(|c| {
+    let _ = ctx.db.write(|c| {
         c.execute(
             "INSERT OR IGNORE INTO jobs (id, title, job_ad_text, import_directory_path) VALUES (?1, ?2, ?3, ?4)",
             rusqlite::params![ctx.job.id, ctx.job.title, ctx.job.job_ad_text, ctx.job.import_directory_path.as_ref().map(|p| p.to_string_lossy().to_string())],
         )?;
-        Ok(())
+        Ok::<(), rusqlite::Error>(())
     });
 
     let job_id = ctx.job.id.clone();
@@ -73,8 +75,8 @@ pub fn process_in_waves(
         }
         let running: i64 = ctx
             .db
-            .with_reader(|c| {
-                Ok(c.query_row(
+            .read(|c| {
+                Ok::<i64, rusqlite::Error>(c.query_row(
                     "SELECT running FROM waves_rank_state WHERE job_id = ?1",
                     [ctx.job.id.as_str()],
                     |r| r.get::<_, i64>(0),

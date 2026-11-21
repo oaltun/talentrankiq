@@ -23,6 +23,7 @@ members = [
     "lib/libonnxwrapperrs",
     "lib/libbenchresults",
     "lib/libcvevidence",
+    "lib/libdb-manager",
 ]
 
 [profile.dev]

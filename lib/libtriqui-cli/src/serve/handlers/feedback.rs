@@ -46,7 +46,8 @@ pub fn list_liked_candidate_ids(
     state: &Arc<ServeState>,
     job_id: &str,
 ) -> Result<Value, ProtocolError> {
-    let conn = state.read_conn();
-    let ids = feedback::list_liked_candidate_ids(&conn, job_id).map_err(|e| domain(&e))?;
-    ok_json(ids)
+    state.read(|conn| {
+        let ids = feedback::list_liked_candidate_ids(conn, job_id).map_err(|e| domain(&e))?;
+        ok_json(ids)
+    })
 }

@@ -16,10 +16,11 @@ fn as_domain(e: DomainError) -> ProtocolError {
 }
 
 pub fn get_candidate(state: &Arc<ServeState>, candidate_id: &str) -> Result<Value, ProtocolError> {
-    let conn = state.read_conn();
-    candidates::get_candidate(&conn, candidate_id)
-        .map_err(as_domain)
-        .and_then(ok_json)
+    state.read(|conn| {
+        candidates::get_candidate(conn, candidate_id)
+            .map_err(as_domain)
+            .and_then(ok_json)
+    })
 }
 
 /// List all of a job's candidates as a page, sorted by total rubric points (default)
@@ -37,10 +38,11 @@ pub fn list_candidates(
     sort_by: Option<String>,
     sort_dir: Option<bool>,
 ) -> Result<Value, ProtocolError> {
-    let conn = state.read_conn();
-    candidates::list_candidates(&conn, job_id, offset, limit, query, sort_by, sort_dir)
-        .map_err(as_domain)
-        .and_then(ok_json)
+    state.read(|conn| {
+        candidates::list_candidates(conn, job_id, offset, limit, query, sort_by, sort_dir)
+            .map_err(as_domain)
+            .and_then(ok_json)
+    })
 }
 
 /// Prev/next candidate ids in the job's browser ordering (same sort as `list_candidates`,
@@ -55,8 +57,9 @@ pub fn candidate_neighbors(
     sort_by: Option<String>,
     sort_dir: Option<bool>,
 ) -> Result<Value, ProtocolError> {
-    let conn = state.read_conn();
-    candidates::candidate_neighbors(&conn, job_id, candidate_id, query, sort_by, sort_dir)
-        .map_err(as_domain)
-        .and_then(ok_json)
+    state.read(|conn| {
+        candidates::candidate_neighbors(conn, job_id, candidate_id, query, sort_by, sort_dir)
+            .map_err(as_domain)
+            .and_then(ok_json)
+    })
 }

@@ -53,7 +53,7 @@ pub fn job_slug(title: &str) -> String {
 /// first time. Returns `(path, created_the_file_now)`.
 fn resolve_path(state: &Arc<ServeState>, job_id: &str) -> Result<(PathBuf, bool), DomainError> {
     let existing: Option<String> = {
-        let conn = state.db.0.lock().map_err(lock_err)?;
+        let conn = state.write_conn();
         conn.query_row(
             "SELECT job_ad_path FROM jobs WHERE id = ?1",
             rusqlite::params![job_id],
@@ -71,7 +71,7 @@ fn resolve_path(state: &Arc<ServeState>, job_id: &str) -> Result<(PathBuf, bool)
     }
 
     let title: String = {
-        let conn = state.db.0.lock().map_err(lock_err)?;
+        let conn = state.write_conn();
         conn.query_row(
             "SELECT title FROM jobs WHERE id = ?1",
             rusqlite::params![job_id],
@@ -93,7 +93,7 @@ fn resolve_path(state: &Arc<ServeState>, job_id: &str) -> Result<(PathBuf, bool)
     job_ad::ensure_file(&path).map_err(|e| DomainError::ValidationError { message: e })?;
     let path_str = path.to_string_lossy().to_string();
     {
-        let conn = state.db.0.lock().map_err(lock_err)?;
+        let conn = state.write_conn();
         conn.execute(
             "UPDATE jobs SET job_ad_path = ?1 WHERE id = ?2",
             rusqlite::params![&path_str, job_id],
@@ -136,7 +136,7 @@ pub fn set_job_ad_path(
         }));
     }
     {
-        let conn = state.db.0.lock().map_err(lock_err)?;
+        let conn = state.write_conn();
         conn.execute(
             "UPDATE jobs SET job_ad_path = ?1 WHERE id = ?2",
             rusqlite::params![trimmed, job_id],
@@ -157,7 +157,7 @@ pub fn set_job_ad_path(
 fn adopt_text(state: &Arc<ServeState>, job_id: &str, path: &Path) -> Result<bool, String> {
     let text = job_ad::read_text(path)?;
     let stored: Option<String> = {
-        let conn = state.db.0.lock().map_err(|e| e.to_string())?;
+        let conn = state.write_conn();
         conn.query_row(
             "SELECT job_ad_text FROM jobs WHERE id = ?1",
             rusqlite::params![job_id],
@@ -168,7 +168,7 @@ fn adopt_text(state: &Arc<ServeState>, job_id: &str, path: &Path) -> Result<bool
     if stored == job_ad::text_to_db(&text) {
         return Ok(false);
     }
-    let conn = state.db.0.lock().map_err(|e| e.to_string())?;
+    let conn = state.write_conn();
     conn.execute(
         "UPDATE jobs SET job_ad_text = ?1, inputs_version = inputs_version + 1, \
          inputs_updated_at = datetime('now'), updated_at = datetime('now') WHERE id = ?2",
@@ -183,13 +183,7 @@ fn adopt_text(state: &Arc<ServeState>, job_id: &str, path: &Path) -> Result<bool
 /// would leave the results stale. Called from the watcher thread.
 pub fn reload_and_rerank(state: &Arc<ServeState>, job_id: &str) {
     let path: Option<String> = {
-        let conn = match state.db.0.lock() {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::warn!("ad-watch {job_id}: db lock failed: {e}");
-                return;
-            }
-        };
+        let conn = state.read_conn();
         conn.query_row(
             "SELECT job_ad_path FROM jobs WHERE id = ?1",
             rusqlite::params![job_id],
@@ -227,13 +221,7 @@ pub fn reload_and_rerank(state: &Arc<ServeState>, job_id: &str) {
         .emit("job-ad-reloaded", &serde_json::json!({ "job_id": job_id }));
 
     let extracted: i64 = {
-        let conn = match state.db.0.lock() {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::warn!("ad-watch {job_id}: db lock failed: {e}");
-                return;
-            }
-        };
+        let conn = state.read_conn();
         conn.query_row(
             "SELECT COUNT(*) FROM candidates WHERE job_id = ?1 AND extraction_status = 'Extracted'",
             rusqlite::params![job_id],
@@ -257,7 +245,7 @@ pub fn reload_and_rerank(state: &Arc<ServeState>, job_id: &str) {
 pub fn reload_job_ad(state: &Arc<ServeState>, job_id: &str) -> Result<Value, ProtocolError> {
     let (path, _) = resolve_path(state, job_id).map_err(|e| domain(&e))?;
     adopt_text(state, job_id, &path).map_err(string_err)?;
-    let conn = state.db.0.lock().map_err(lock_err)?;
+    let conn = state.write_conn();
     let job = conn
         .query_row(
             &format!("SELECT {JOB_COLS} FROM jobs WHERE id = ?1"),

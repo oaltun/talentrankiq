@@ -8,6 +8,7 @@ name = "libprocess_in_waves"
 
 [dependencies]
 libtriqui-core = { path = "../libtriqui-core" }
+libdb-manager = { path = "../libdb-manager" }
 libembedrank = { path = "../libembedrank" }
 libcomparator = { path = "../libcomparator" }
 libcvparser = { path = "../libcvparser" }

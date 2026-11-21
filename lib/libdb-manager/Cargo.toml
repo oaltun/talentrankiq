@@ -1,0 +1,17 @@
+[package]
+name = "libdb-manager"
+version = "0.1.0"
+description = "Unified SQLite connection pool: single writer guard + round-robin read pool shared across all TalentRankIQ crates."
+authors = ["oaltun"]
+edition = "2021"
+rust-version = "1.82"
+
+[lib]
+name = "libdb_manager"
+
+[dependencies]
+rusqlite = { version = "0.32", features = ["bundled"] }
+thiserror = "2"
+
+[dev-dependencies]
+tempfile = "3.8"

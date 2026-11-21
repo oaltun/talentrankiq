@@ -51,6 +51,7 @@ libjudge = { path = "../libjudge" }
 # children.
 libmodelcaller = { path = "../libmodelcaller", features = ["mlx"] }
 libtriqui-license = { path = "../libtriqui-license" }
+libdb-manager = { path = "../libdb-manager" }
 
 [dev-dependencies]
 # RUST_LOG visibility for the in-process engine probe tests

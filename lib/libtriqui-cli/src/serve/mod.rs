@@ -35,8 +35,9 @@ use std::time::Duration;
 
 use libtriqui_client::protocol::{Request, MAX_LINE_BYTES};
 use libtriqui_client::types::RuntimeStatusInfo;
-use libtriqui_core::db::{self, DbConnection, ImportState};
+use libtriqui_core::db::{self, ImportState};
 use libtriqui_core::runtime::{EngineRuntime, RuntimeConfig};
+use libdb_manager::Db;
 use rusqlite::Connection;
 use serde::Serialize;
 
@@ -90,11 +91,8 @@ pub struct ServeState {
     pub app_dir: PathBuf,
     /// Host app version (the gui's), reported in exported job bundles.
     pub app_version: String,
-    /// Writer connection (for INSERT/UPDATE/DELETE). Single connection protected by mutex.
-    pub db: DbConnection,
-    /// Read pool: multiple read-only connections for concurrent SELECT queries.
-    /// Uses round-robin to distribute load across connections.
-    pub read_pool: Arc<ReadPool>,
+    /// Unified database handle: single writer + round-robin read pool.
+    pub db: Arc<Db>,
     pub db_path: PathBuf,
     pub import_state: ImportState,
     pub runtime: Arc<EngineRuntime>,
@@ -106,47 +104,31 @@ pub struct ServeState {
     pub cascade_gens: Arc<crate::serve::handlers::rank::CascadeGens>,
 }
 
-/// Pool of read-only SQLite connections for concurrent SELECT queries.
-/// Distributes connections round-robin to avoid contention on a single mutex.
-pub struct ReadPool {
-    connections: Vec<Mutex<Connection>>,
-    next: Mutex<usize>,
-}
-
-impl ReadPool {
-    /// Create a new read pool with `size` connections.
-    pub fn new(db_path: &PathBuf, size: usize) -> Result<Self, String> {
-        let mut connections = Vec::with_capacity(size);
-        for _ in 0..size {
-            let conn = db::open_readonly_connection_at(db_path)?;
-            connections.push(Mutex::new(conn));
-        }
-        Ok(Self {
-            connections,
-            next: Mutex::new(0),
-        })
-    }
-
-    /// Get the next connection in round-robin fashion.
-    pub fn get(&self) -> std::sync::MutexGuard<'_, Connection> {
-        let mut next = self.next.lock().expect("read pool next lock poisoned");
-        let idx = *next;
-        *next = (idx + 1) % self.connections.len();
-        drop(next);
-        self.connections[idx].lock().expect("read pool connection lock poisoned")
-    }
-}
-
 impl ServeState {
-    /// Get a read-only connection from the pool for SELECT queries.
-    /// Uses round-robin to distribute load across connections.
-    pub fn read_conn(&self) -> std::sync::MutexGuard<'_, Connection> {
-        self.read_pool.get()
+    /// Run a read closure on a pooled read-only connection.
+    pub fn read<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&Connection) -> R,
+    {
+        self.db.read(f)
     }
 
-    /// Get the writer connection for INSERT/UPDATE/DELETE queries.
-    pub fn write_conn(&self) -> std::sync::MutexGuard<'_, rusqlite::Connection> {
-        self.db.0.lock().expect("db lock poisoned")
+    /// Run a write closure on the single writer connection.
+    pub fn write<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut Connection) -> R,
+    {
+        self.db.write(f)
+    }
+
+    /// Acquire a guard on a pooled read-only connection for SELECT queries.
+    pub fn read_conn(&self) -> std::sync::MutexGuard<'_, Connection> {
+        self.db.read_guard()
+    }
+
+    /// Acquire the single writer guard for INSERT/UPDATE/DELETE queries.
+    pub fn write_conn(&self) -> std::sync::MutexGuard<'_, Connection> {
+        self.db.write_guard()
     }
 }
 
@@ -191,10 +173,9 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
     };
     std::fs::create_dir_all(&app_dir).map_err(|e| format!("cannot create app dir: {e}"))?;
     let db_path = app_dir.join("triqui.db");
-    let conn = db::open_connection_at(&db_path)?;
-
-    // Create read pool for concurrent SELECT queries (4 connections by default).
-    let read_pool = Arc::new(ReadPool::new(&db_path, 4)?);
+    // Single unified handle: one writer + round-robin read pool. The schema and
+    // migrations run once on the writer here.
+    let db = db::open_db_at(&db_path)?;
 
     crate::serve::logging::init();
     let resolved_log_dir =
@@ -204,7 +185,7 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
     // flight is a leftover from a previous process (quit/crash mid-cascade).
     // Recover it before anything reads the state, or the job reports running
     // forever and refuses every new cascade (the wedged-job bug).
-    match db::recover_stale_running_cascades(&conn) {
+    match db.write(|conn| db::recover_stale_running_cascades(conn)) {
         Ok(0) => {}
         Ok(n) => {
             tracing::info!("serve: recovered {n} stale running cascade(s) from a previous run")
@@ -227,6 +208,8 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
         .ok()
         .or_else(|| prefs_default_model(&app_dir));
     let runtime = EngineRuntime::new(RuntimeConfig::discover(model), db_path.clone());
+    // Share the same unified pool with the engine runtime.
+    runtime.set_db(Arc::clone(&db));
 
     // Outbound queue + dedicated writer thread (invariant: only it touches
     // the output stream, so lines never interleave and a blocked write never
@@ -265,8 +248,7 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
     let state = Arc::new(ServeState {
         app_dir,
         app_version,
-        db: DbConnection(Mutex::new(conn)),
-        read_pool,
+        db,
         db_path,
         import_state: ImportState::new(),
         runtime,

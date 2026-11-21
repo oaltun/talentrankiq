@@ -1,23 +1,25 @@
 use std::path::PathBuf;
 use std::sync::{mpsc, Arc};
 
+use libdb_manager::Db;
 use libtriqui_client::protocol::ProtocolError;
 use libtriqui_client::types::RankState;
 use libtriqui_core::runtime::EngineRuntime;
 use libtriqui_core::scout::scout_model_for;
 
+use crate::db::WavesDb;
 use crate::{
     hash_text,
     monitor::{spawn_monitor, EventSink, MonitorConfig},
-    DbHandle as WavesDbHandle, JobConfig, ProcessConfig, ProcessContext,
+    JobConfig, ProcessConfig, ProcessContext,
 };
 
 #[tracing::instrument(
     name = "run_process_in_waves",
-    skip(db_path, app_dir, runtime, events, job_id, config, request_log_file)
+    skip(db, app_dir, runtime, events, job_id, config, request_log_file)
 )]
 pub fn run_process_in_waves(
-    db_path: PathBuf,
+    db: Arc<Db>,
     app_dir: PathBuf,
     runtime: Arc<EngineRuntime>,
     events: mpsc::Sender<String>,
@@ -25,10 +27,10 @@ pub fn run_process_in_waves(
     config: ProcessConfig,
     request_log_file: Option<Arc<std::sync::Mutex<std::fs::File>>>,
 ) -> Result<RankState, ProtocolError> {
+    let waves_db: Arc<Db> = Arc::clone(&db);
+    let _ = waves_db.write(|c| crate::db::init_schema(c));
     let (title, job_ad_text, import_dir): (String, Option<String>, Option<String>) = {
-        let conn = WavesDbHandle::open_at(&db_path)
-            .map_err(|e| ProtocolError::internal(format!("waves db open: {e}")))?;
-        conn.with_reader(|c| {
+        waves_db.read(|c| {
             c.query_row(
                 "SELECT title, job_ad_text, import_directory_path FROM jobs WHERE id = ?1",
                 rusqlite::params![job_id],
@@ -52,21 +54,16 @@ pub fn run_process_in_waves(
     let quick_model = scout_model_for(&full_model).unwrap_or_else(|| full_model.clone());
     let deep_model = full_model;
 
-    let waves_db = WavesDbHandle::open_at(&db_path)
-        .map_err(|e| ProtocolError::internal(format!("waves db open: {e}")))?;
     let already_running: bool = {
-        let conn = WavesDbHandle::open_at(&db_path)
-            .map_err(|e| ProtocolError::internal(format!("waves db open: {e}")))?;
-        conn.with_reader(|c| {
-            Ok(c.query_row(
+        waves_db.read(|c| {
+            c.query_row(
                 "SELECT running FROM waves_rank_state WHERE job_id = ?1",
                 rusqlite::params![job_id],
                 |r| r.get::<_, i64>(0),
             )
             .map(|v| v != 0)
-            .unwrap_or(false))
+            .unwrap_or(false)
         })
-        .unwrap_or(false)
     };
     if already_running {
         return Ok(RankState {
@@ -85,25 +82,22 @@ pub fn run_process_in_waves(
 
     let jobad_hash = hash_text(&job_ad_text);
     let criteria: Vec<String> = {
-        let conn = WavesDbHandle::open_at(&db_path)
-            .map_err(|e| ProtocolError::internal(format!("waves db open: {e}")))?;
-        conn.with_reader(|c| {
+        waves_db.read(|c| {
             let mut stmt = c
                 .prepare("SELECT text FROM criteria WHERE job_id = ?1")
-                .map_err(|e| rusqlite::Error::ExecuteReturnedResults)?; // placeholder, we'll handle differently
-            let rows = stmt.query_map(rusqlite::params![job_id], |r| r.get::<_, String>(0))?;
+                .unwrap();
+            let rows = stmt.query_map(rusqlite::params![job_id], |r| r.get::<_, String>(0)).unwrap();
             let mut out = Vec::new();
             for r in rows {
-                out.push(r?);
+                out.push(r.unwrap());
             }
-            Ok(out)
+            out
         })
-        .map_err(|e| ProtocolError::internal(e.to_string()))?
     };
     let _ = waves_db.update_waves_rank_state(job_id, 0, 0, 0, 0, 0, 0, None, true);
 
     let ctx = ProcessContext {
-        db: waves_db.clone(),
+        db: Arc::clone(&waves_db),
         watch_dir: watch_dir.clone(),
         job: JobConfig {
             id: job_id.to_string(),
@@ -134,7 +128,7 @@ pub fn run_process_in_waves(
     // channel, and `monitor_loop` treats a disconnected channel as a shutdown
     // signal — so a dropped handle kills the monitor after its very first poll
     // (before any embeddings exist), leaving the gui's progress stuck at 0.
-    let monitor = spawn_monitor(db_path.clone(), monitor_cfg, monitor_events)
+    let monitor = spawn_monitor(app_dir.join("triqui.db"), monitor_cfg, monitor_events)
         .map_err(|e| ProtocolError::internal(format!("spawn monitor: {e}")))?;
 
     let job_id_owned = job_id.to_string();

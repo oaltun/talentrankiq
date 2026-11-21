@@ -16,8 +16,9 @@ pub fn export_results_csv(
     job_id: &str,
     out_path: &str,
 ) -> Result<Value, ProtocolError> {
-    let conn = state.read_conn();
-    let summary =
-        results_csv::export_results_csv(&conn, job_id, Path::new(out_path)).map_err(string_err)?;
-    ok_json(summary)
+    state.read(|conn| {
+        let summary =
+            results_csv::export_results_csv(conn, job_id, Path::new(out_path)).map_err(string_err)?;
+        ok_json(summary)
+    })
 }

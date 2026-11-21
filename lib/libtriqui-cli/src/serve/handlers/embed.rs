@@ -37,42 +37,36 @@ pub fn embed_job(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Protoco
     let jid = job_id.to_string();
     std::thread::spawn(move || {
         let emit = embedding_progress_emitter(&st, &jid);
-        match db::open_connection_at(&st.db_path) {
-            Ok(conn) => {
-                if let Err(e) =
-                    embeddings::embed_missing_candidates(&st.runtime, &conn, &jid, &emit)
-                {
-                    tracing::warn!("embed_job {jid}: {e}");
-                    return;
-                }
-                // New vectors mean new grades, so grade and re-project: a backfill
-                // that left the sheet unranked would make the button look broken
-                // (scoring v3 — the projection reads `stage_scores`, which a
-                // backfill alone does not touch).
-                let heavy = st.runtime.model();
-                match libtriqui_core::rubric::Rubric::with_vectors(&conn, &jid, &heavy).and_then(
-                    |rubric| {
-                        libtriqui_core::rubric::score_candidates_in_space(
-                            &conn, &jid, &heavy, &rubric, None,
-                        )
-                    },
-                ) {
-                    Ok(scored) => {
-                        tracing::info!("embed_job {jid}: {scored} candidates graded under {heavy}");
-                    }
-                    Err(e) => tracing::warn!("embed_job {jid}: grading failed: {e}"),
-                }
-                drop(conn);
-                match libtriqui_core::rescore::rescore(&st.runtime, &jid) {
-                    Ok(r) => tracing::info!(
-                        "embed_job {jid}: re-projected ({} scored, {} ungraded)",
-                        r.scored,
-                        r.ungraded
-                    ),
-                    Err(e) => tracing::warn!("embed_job {jid}: re-projection failed: {e}"),
-                }
+        let conn = st.write_conn();
+        if let Err(e) = embeddings::embed_missing_candidates(&st.runtime, &conn, &jid, &emit) {
+            tracing::warn!("embed_job {jid}: {e}");
+            return;
+        }
+        // New vectors mean new grades, so grade and re-project: a backfill
+        // that left the sheet unranked would make the button look broken
+        // (scoring v3 — the projection reads `stage_scores`, which a
+        // backfill alone does not touch).
+        let heavy = st.runtime.model();
+        match libtriqui_core::rubric::Rubric::with_vectors(&conn, &jid, &heavy).and_then(
+            |rubric| {
+                libtriqui_core::rubric::score_candidates_in_space(
+                    &conn, &jid, &heavy, &rubric, None,
+                )
+            },
+        ) {
+            Ok(scored) => {
+                tracing::info!("embed_job {jid}: {scored} candidates graded under {heavy}");
             }
-            Err(e) => tracing::error!("embed_job {jid}: failed to open db: {e}"),
+            Err(e) => tracing::warn!("embed_job {jid}: grading failed: {e}"),
+        }
+        drop(conn);
+        match libtriqui_core::rescore::rescore(&st.runtime, &jid) {
+            Ok(r) => tracing::info!(
+                "embed_job {jid}: re-projected ({} scored, {} ungraded)",
+                r.scored,
+                r.ungraded
+            ),
+            Err(e) => tracing::warn!("embed_job {jid}: re-projection failed: {e}"),
         }
     });
     ok_json(serde_json::Value::Null)
@@ -84,11 +78,7 @@ pub fn embed_job(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Protoco
 /// connection (not the shared DB lock) — the dispatcher already put this
 /// request on a dedicated thread, so other rpcs stay responsive while it runs.
 pub fn chunk_match(state: &Arc<ServeState>, p: &ChunkMatchParams) -> Result<Value, ProtocolError> {
-    let conn = db::open_connection_at(&state.db_path).map_err(|e| {
-        domain(&DomainError::DbError {
-            message: format!("failed to open db: {e}"),
-        })
-    })?;
+    let conn = state.read_conn();
     chunk_match::chunk_match(
         &state.runtime,
         &conn,

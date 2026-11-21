@@ -313,9 +313,24 @@ pub fn default_db_path() -> PathBuf {
         .join("triqui.db")
 }
 
+/// Open (creating if needed) the unified database at `path`, apply the schema
+/// and migrations once on the writer connection, and return the shared handle.
+///
+/// This is the single entry point that replaces `open_connection_at` for
+/// production code: one writer + round-robin read pool, schema applied before
+/// any reader or handler runs.
+pub fn open_db_at(path: &Path) -> Result<Arc<libdb_manager::Db>, String> {
+    let db = libdb_manager::Db::open_at(path).map_err(|e| e.to_string())?;
+    db.write(|conn| -> Result<(), String> {
+        conn.execute_batch(SCHEMA)
+            .map_err(|e| format!("Failed to migrate database: {e}"))?;
+        migrate(conn)
+    })?;
+    Ok(db)
+}
+
 /// Open a connection at `path` (creating parent dirs) and ensure the schema exists.
-pub fn open_connection_at(path: &Path) -> Result<Connection, String> {
-    if let Some(parent) = path.parent() {
+pub fn open_connection_at(path: &Path) -> Result<Connection, String> {    if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("Failed to create database directory: {e}"))?;
     }

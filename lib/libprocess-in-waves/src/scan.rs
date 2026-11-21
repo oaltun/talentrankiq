@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use crate::db::WavesDb;
 use crate::context::ProcessContext;
 use crate::error::ProcessError;
 

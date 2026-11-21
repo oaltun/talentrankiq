@@ -1,3 +1,4 @@
+use crate::db::WavesDb;
 use crate::context::ProcessContext;
 use crate::error::ProcessError;
 
@@ -56,7 +57,7 @@ fn ensure_embeddings(
         for h in chunk {
             let t = ctx
                 .db
-                .with_reader(|c| {
+                .read(|c| {
                     c.query_row("SELECT text FROM cv WHERE hash = ?1", [h.as_str()], |r| {
                         r.get::<_, String>(0)
                     })
