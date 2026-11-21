@@ -341,6 +341,46 @@ pub fn get_job_detail(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Pr
 
     let rubric = build_rubric(&job, &criteria);
     let capacity = rubric_capacity(&rubric);
+
+    // Quick/deep similarity counts against the job ad (only when a job ad exists).
+    let deep_model = state.runtime.model();
+    let quick_slug = state
+        .config
+        .scout()
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && *s != deep_model.as_str())
+        .map(|s| s.to_string());
+    let has_jobad = job
+        .job_ad_text
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .is_some();
+    let (cv_quick_similarity_count, cv_deep_similarity_count) = if has_jobad {
+        let jobad_text = job.job_ad_text.as_deref().unwrap();
+        let jobad_hash = libprocess_in_waves::hash_text(jobad_text);
+        let quick_count = if let Some(qs) = &quick_slug {
+            conn.query_row(
+                "SELECT COUNT(DISTINCT cv_hash) FROM cv_similarity WHERE model_id = ?1 AND target_hash = ?2 AND cv_hash IN (SELECT cv_hash FROM job_cv WHERE job_id = ?3)",
+                rusqlite::params![qs, jobad_hash, job_id],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap_or(0) as i32
+        } else {
+            0
+        };
+        let deep_count = conn
+            .query_row(
+                "SELECT COUNT(DISTINCT cv_hash) FROM cv_similarity WHERE model_id = ?1 AND target_hash = ?2 AND cv_hash IN (SELECT cv_hash FROM job_cv WHERE job_id = ?3)",
+                rusqlite::params![deep_model, jobad_hash, job_id],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap_or(0) as i32;
+        (quick_count, deep_count)
+    } else {
+        (0, 0)
+    };
+
     ok_json(JobDetail {
         job,
         criteria,
@@ -350,6 +390,8 @@ pub fn get_job_detail(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Pr
         cv_imported: cv_imported as i32,
         cv_failed: cv_failed as i32,
         importing,
+        cv_quick_similarity_count,
+        cv_deep_similarity_count,
     })
 }
 

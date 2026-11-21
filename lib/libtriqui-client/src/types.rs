@@ -641,6 +641,8 @@ pub struct JobDetail {
     pub cv_imported: i32,
     pub cv_failed: i32,
     pub importing: bool,
+    pub cv_quick_similarity_count: i32,
+    pub cv_deep_similarity_count: i32,
 }
 
 /// Candidate overlay payload.

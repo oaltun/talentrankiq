@@ -446,25 +446,80 @@ impl DbHandle {
             return Ok(0);
         }
 
-        // Read job rubric weights (with defaults if columns don't exist)
-        let (ad_weight, fb_job_weight, fb_profile_weight): (f64, f64, f64) = self.with_reader(|c| {
-            let mut stmt = c.prepare(
-                "SELECT COALESCE(ad_weight, 50.0), COALESCE(fb_job_weight, 0.0), COALESCE(fb_profile_weight, 0.0)
-                   FROM jobs WHERE id = ?1",
-            )?;
-            let row = stmt.query_row([job_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
-            Ok(row)
+        // Read job rubric weights (with defaults if columns don't exist). Legacy
+        // waves-only databases (no migration) lack the columns entirely; treat
+        // that as the old 0..100 scale (ad_weight = 100).
+        let has_ad_weight: bool = self.with_reader(|c| {
+            let mut stmt = c.prepare("PRAGMA table_info(jobs)")?;
+            let mut rows = stmt.query([])?;
+            let mut found = false;
+            while let Some(row) = rows.next()? {
+                let name: String = row.get(1)?;
+                if name == "ad_weight" { found = true; break; }
+            }
+            Ok(found)
         })?;
+        let (ad_weight, fb_job_weight, fb_profile_weight): (f64, f64, f64) = if has_ad_weight {
+            self.with_reader(|c| {
+                let mut stmt = c.prepare(
+                    "SELECT COALESCE(ad_weight, 1.0), COALESCE(fb_job_weight, 0.0), COALESCE(fb_profile_weight, 0.0)
+                       FROM jobs WHERE id = ?1",
+                )?;
+                let row = stmt.query_row([job_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+                Ok(row)
+            })?
+        } else {
+            (100.0, 0.0, 0.0)
+        };
 
-        // Read criteria for this job (id, text, weight, sign)
-        let criteria: Vec<(String, String, f64, String)> = self.with_reader(|c| {
-            let mut stmt = c.prepare(
-                "SELECT id, text, weight, COALESCE(sign, 'Positive') FROM criteria WHERE job_id = ?1",
+        // Read criteria for this job (id, text, weight, sign), if the table exists.
+        // The waves schema's `criteria` table lacks the `sign` column; fall back
+        // to 'Positive' when it is absent.
+        let has_criteria: bool = self.with_reader(|c| {
+            let n: i64 = c.query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'criteria'",
+                [],
+                |r| r.get(0),
             )?;
-            let rows = stmt.query_map([job_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(rows)
+            Ok(n > 0)
         })?;
+        let has_sign: bool = if has_criteria {
+            self.with_reader(|c| {
+                let mut stmt = c.prepare("PRAGMA table_info(criteria)")?;
+                let mut rows = stmt.query([])?;
+                let mut found = false;
+                while let Some(row) = rows.next()? {
+                    let name: String = row.get(1)?;
+                    if name == "sign" { found = true; break; }
+                }
+                Ok(found)
+            })?
+        } else {
+            false
+        };
+        let criteria: Vec<(String, String, f64, String)> = if has_criteria {
+            if has_sign {
+                self.with_reader(|c| {
+                    let mut stmt = c.prepare(
+                        "SELECT id, text, weight, COALESCE(sign, 'Positive') FROM criteria WHERE job_id = ?1",
+                    )?;
+                    let rows = stmt.query_map([job_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Ok(rows)
+                })?
+            } else {
+                self.with_reader(|c| {
+                    let mut stmt = c.prepare(
+                        "SELECT id, text, weight FROM criteria WHERE job_id = ?1",
+                    )?;
+                    let rows = stmt.query_map([job_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, "Positive".to_string())))?
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Ok(rows)
+                })?
+            }
+        } else {
+            Vec::new()
+        };
 
         // Compute criterion target hashes (hash of criterion text)
         let criterion_hashes: Vec<(String, String, f64, String)> = criteria
@@ -475,55 +530,30 @@ impl DbHandle {
             })
             .collect();
 
-        // One indexed pass: the job's candidates, their file_state hash, and
-        // the deep/quick similarity to the job ad AND all criteria, pivoted.
-        let rows: Vec<(String, String, Option<f64>, Option<f64>, Vec<Option<f64>>)> = self.with_reader(|c| {
-            // Build dynamic query with placeholders for all targets (ad + criteria)
-            let num_targets = 1 + criterion_hashes.len();
-            let target_placeholders = (0..num_targets).map(|_| "?").collect::<Vec<_>>().join(",");
-            let model_placeholders = format!("?,?");
-            let target_hashes: Vec<String> = std::iter::once(jobad_hash.to_string())
-                .chain(criterion_hashes.iter().map(|(_, h, _, _)| h.clone()))
-                .collect();
-
-            let sql = format!(
-                "SELECT c.id, c.file_name,
+        // Query candidates with their job-ad similarity (deep/quick).
+        let rows: Vec<(String, String, Option<f64>, Option<f64>)> = self.with_reader(|c| {
+            let sql = "SELECT c.id, c.file_name,
                         MAX(CASE WHEN s.model_id = ?2 THEN s.similarity END) AS deep_ad_sim,
                         MAX(CASE WHEN s.model_id = ?3 THEN s.similarity END) AS quick_ad_sim
                    FROM candidates c
                    JOIN file_state fs ON fs.path = c.source_file_path
                    JOIN cv_similarity s ON s.cv_hash = fs.hash
-                                   AND s.target_hash IN ({})
+                                   AND s.target_hash = ?4
                                    AND s.model_id IN (?2, ?3)
                   WHERE c.job_id = ?1 AND c.extraction_status = 'Extracted'
-                  GROUP BY c.id, c.file_name",
-                target_placeholders
-            );
-
-            let mut stmt = c.prepare(&sql)?;
-            let mut params: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(job_id), Box::new(deep_model), Box::new(quick_model)];
-            for h in &target_hashes {
-                params.push(Box::new(h.clone()));
-            }
-            let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-
+                  GROUP BY c.id, c.file_name";
+            let mut stmt = c.prepare(sql)?;
             let rows = stmt
-                .query_map(param_refs.as_slice(), |r| {
-                    let mut criterion_sims = Vec::with_capacity(criterion_hashes.len());
-                    for i in 0..criterion_hashes.len() {
-                        // We need to query criterion similarities separately since we can't pivot them all in one query easily
-                        // For now, read them in a separate query per candidate
-                        criterion_sims.push(None::<f64>);
-                    }
-                    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, criterion_sims))
+                .query_map(rusqlite::params![job_id, deep_model, quick_model, jobad_hash], |r| {
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(rows)
         })?;
 
-        // For each candidate, query criterion similarities
+        // For each candidate, query criterion similarities.
         let mut candidate_data = Vec::new();
-        for (id, file_name, deep_ad, quick_ad, _) in rows {
+        for (id, file_name, deep_ad, quick_ad) in rows {
             let mut criterion_sims = Vec::with_capacity(criterion_hashes.len());
             for (_, crit_hash, _, _) in &criterion_hashes {
                 let sim: Option<f64> = self.with_reader(|c| {
@@ -569,11 +599,12 @@ impl DbHandle {
             }
 
             // Criterion scores
-            for ((_, _, crit_weight, sign), crit_sim) in criterion_hashes.iter().zip(criterion_sims.iter()) {
+            for (crit, crit_sim) in criterion_hashes.iter().zip(criterion_sims.iter()) {
+                let (crit_id, _crit_hash, crit_weight, sign) = crit;
                 if let Some(sim) = crit_sim {
                     let points = crit_weight * sim.clamp(0.0, 1.0);
                     candidate_points += points;
-                    score_rows.push((format!("criterion_{}", crit_weight), "Criterion".to_string(), points, *crit_weight, sign.clone()));
+                    score_rows.push((crit_id.clone(), "Criterion".to_string(), points, *crit_weight, sign.clone()));
                 }
             }
 
@@ -612,11 +643,11 @@ impl DbHandle {
                             qid,
                             kind,
                             (points * 100.0).round() / 100.0,
-                            max_points,
+                            (max_pts * 100.0).round() / 100.0,
                             sign
                         ])?;
                     }
-                    upd.execute(rusqlite::params![(total_points * 100.0).round() / 100.0, max_points, id])?;
+                    upd.execute(rusqlite::params![(total_points * 100.0).round() / 100.0, (max_points * 100.0).round() / 100.0, id])?;
                 }
             }
             // NULL first so candidates that lost their similarity cannot keep a stale rank.

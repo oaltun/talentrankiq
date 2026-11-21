@@ -12,7 +12,7 @@ use std::sync::Arc;
 use rusqlite::Connection;
 
 use crate::db::db_err;
-use crate::embed::{add_weighted, bytes_to_vector, normalize, vector_to_bytes};
+use crate::embed::{add_weighted, bytes_to_vector, centroid, normalize, vector_to_bytes};
 use crate::embeddings::EmbedProgress;
 use crate::ranker;
 use crate::runtime::EngineRuntime;
@@ -167,11 +167,32 @@ pub fn apply_feedback_blocking(
             .iter()
             .filter_map(|id| vectors.get(id).map(|v| (id.as_str(), v.as_slice())))
             .collect();
-        let added_vecs: Vec<&[f32]> = liked_candidate_ids
+        // A like should pull the ranking *toward* the liked CV and *away* from
+        // the ones it beat. A plain "add the liked vector" barely separates
+        // candidates that are near-duplicates (the common case in one job), so
+        // each newly liked vector is made contrastive: liked minus the centroid
+        // of the current non-liked candidates. With no negative set (a single
+        // candidate, or every candidate liked) it falls back to the raw vector.
+        let negatives: Vec<&[f32]> = vectors
+            .iter()
+            .filter(|(id, _)| !liked_set.contains(*id))
+            .map(|(_, v)| v.as_slice())
+            .collect();
+        let negative_centroid = centroid(&negatives);
+        let added_owned: Vec<Vec<f32>> = liked_candidate_ids
             .iter()
             .filter(|id| !stored_liked.contains(*id))
-            .filter_map(|id| vectors.get(id).map(|v| v.as_slice()))
+            .filter_map(|id| vectors.get(id))
+            .map(|v| match &negative_centroid {
+                Some(nc) => {
+                    let mut contrastive = v.clone();
+                    add_weighted(&mut contrastive, nc, -1.0);
+                    contrastive
+                }
+                None => v.clone(),
+            })
             .collect();
+        let added_vecs: Vec<&[f32]> = added_owned.iter().map(|v| v.as_slice()).collect();
         let removed_vecs: Vec<&[f32]> = stored_liked
             .iter()
             .filter(|id| !liked_set.contains(id))

@@ -453,16 +453,27 @@ pub fn score_candidates_in_space(
     let mut rows: Vec<(String, (String, String), f64)> = Vec::new();
     let mut scored = 0usize;
     for cid in &candidates {
-        let Some((chunked, _texts)) =
-            embeddings::load_candidate_chunks(conn, cid, space).map_err(dberr)?
-        else {
+        // Prefer the chunked embedding when a stage has produced one (max-sim
+        // over chunks). Otherwise fall back to the waves pipeline's per-CV
+        // embedding stored in `cv_embedding`, scoring by a plain cosine.
+        let chunked = embeddings::load_candidate_chunks(conn, cid, space).map_err(dberr)?;
+        if let Some((chunked, _texts)) = chunked {
+            for (qid, vector) in &queries {
+                let (sim, _idx) = chunked.max_sim_top_k(vector, 1);
+                rows.push((cid.clone(), (space.to_string(), (*qid).to_string()), sim));
+            }
+            scored += 1;
             continue;
-        };
-        for (qid, vector) in &queries {
-            let (sim, _idx) = chunked.max_sim_top_k(vector, 1);
-            rows.push((cid.clone(), (space.to_string(), (*qid).to_string()), sim));
         }
-        scored += 1;
+        // Waves fallback.
+        if let Some(cv) = centroid_in_space(conn, cid, space)? {
+            for (qid, vector) in &queries {
+                let sim = libembedrank::cosine_similarity(&cv, vector);
+                rows.push((cid.clone(), (space.to_string(), (*qid).to_string()), sim));
+            }
+            scored += 1;
+            continue;
+        }
     }
     crate::db::put_stage_scores(conn, &rows).map_err(dberr)?;
     Ok(scored)
@@ -508,6 +519,32 @@ pub fn centroid_in_space(
         embeddings::load_candidate_chunks(conn, candidate_id, space).map_err(dberr)?
     {
         return Ok(chunked.centroid());
+    }
+    // Waves-pipeline fallback: the process_in_waves pipeline stores one
+    // embedding per CV in `cv_embedding` (keyed by cv hash), not in
+    // `candidate_chunks`. Map the candidate back to its CV hash through
+    // `source_file_path` -> `file_state` and read that vector so feedback
+    // learning and rescore can work on waves-only jobs.
+    let waves_blob: Option<Vec<u8>> = conn
+        .query_row(
+            "SELECT e.vector FROM cv_embedding e
+             JOIN file_state fs ON fs.hash = e.cv_hash
+             JOIN candidates c ON c.source_file_path = fs.path
+             WHERE c.id = ?1 AND e.model_id = ?2",
+            rusqlite::params![candidate_id, space],
+            |r| r.get(0),
+        )
+        .ok();
+    if let Some(bytes) = waves_blob {
+        let v = bytes_to_vector(&bytes, None).map_err(dberr)?;
+        let mut f: Vec<f64> = v.into_iter().map(|x| x as f64).collect();
+        let norm = (f.iter().map(|x| x * x).sum::<f64>()).sqrt();
+        if norm > 0.0 {
+            for x in &mut f {
+                *x /= norm;
+            }
+        }
+        return Ok(Some(f));
     }
     let blob: Option<Vec<u8>> = conn
         .query_row(

@@ -915,9 +915,14 @@ pub fn score_live_spaces(
     for space in &spaces {
         let reached: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM candidate_chunks cc
-                 JOIN candidates c ON c.id = cc.candidate_id
-                 WHERE c.job_id = ?1 AND cc.vector_model = ?2 LIMIT 1",
+                "SELECT COUNT(*) FROM candidates c
+                 WHERE c.job_id = ?1 AND (
+                    EXISTS (SELECT 1 FROM candidate_chunks cc
+                            WHERE cc.candidate_id = c.id AND cc.vector_model = ?2)
+                    OR EXISTS (SELECT 1 FROM file_state fs
+                               JOIN cv_embedding e ON e.cv_hash = fs.hash
+                               WHERE fs.path = c.source_file_path AND e.model_id = ?2)
+                 )",
                 rusqlite::params![job_id, space],
                 |r| r.get(0),
             )
