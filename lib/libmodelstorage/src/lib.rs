@@ -107,7 +107,66 @@ pub fn resolve_onnx(
     Err(ResolveError::NotFound)
 }
 
+/// Check if a model directory has leftover `.tmp` files indicating an
+/// incomplete/interrupted download.
+///
+/// The downloader stages each file as `.<label>.<pid>.<seq>.tmp` and renames
+/// it into place on success. A process killed mid-download (e.g. the e2e
+/// harness `pkill`s the app) leaves the staging file behind even though a
+/// later attempt may have completed the same artifact. A `.tmp` whose final
+/// file already exists and is at least as new is stale — the download
+/// completed and only the staging copy survived — so it must not block the
+/// model from loading.
+fn has_incomplete_download(model_dir: &Path, slug: &str) -> bool {
+    let slug_path = slug_dir(model_dir, slug);
+    if !slug_path.is_dir() {
+        return false;
+    }
+    let mut stack = vec![slug_path];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if let Some(label) = name.strip_prefix('.').and_then(|n| n.strip_suffix(".tmp")) {
+                    // `label` is `<final>.<pid>.<seq>`; recover the final file
+                    // name by dropping the last two dot-separated segments.
+                    let final_name = label
+                        .rsplit_once('.')
+                        .and_then(|(_, rest)| rest.rsplit_once('.'))
+                        .map(|(_, name)| name)
+                        .unwrap_or("");
+                    if !final_name.is_empty() {
+                        let final_path = path.with_file_name(final_name);
+                        let tmp_meta = path.metadata().ok();
+                        let final_meta = final_path.metadata().ok();
+                        // Stale when the final file exists and is not older than
+                        // the staging file.
+                        if let (Some(tm), Some(fm)) = (tmp_meta, final_meta) {
+                            if fm.len() > 0 && fm.modified().ok() >= tm.modified().ok() {
+                                continue;
+                            }
+                        }
+                    }
+                }
+                if name.ends_with(".tmp") {
+                    return true;
+                }
+            }
+            if path.is_dir() {
+                stack.push(path);
+            }
+        }
+    }
+    false
+}
+
 pub fn onnx_exists(model_dir: &Path, slug: &str, revision: &str) -> bool {
+    if has_incomplete_download(model_dir, slug) {
+        return false;
+    }
     resolve_onnx(model_dir, slug, revision).is_ok()
 }
 
@@ -260,5 +319,36 @@ mod tests {
     #[test]
     fn local_size_missing() {
         assert_eq!(local_size(Path::new("/no/such/file_xyz_123")), None);
+    }
+
+    #[test]
+    fn incomplete_download_detected() {
+        let tmp = std::env::temp_dir().join("ms_test_incomplete_");
+        let _ = std::fs::remove_dir_all(&tmp);
+        let base = &tmp;
+        // Create complete 270M-like structure
+        std::fs::create_dir_all(repo_dir(base, "m1")).unwrap();
+        std::fs::write(repo_dir(base, "m1").join("model.onnx"), b"x").unwrap();
+        std::fs::write(repo_dir(base, "m1").join("model.onnx_data"), b"y").unwrap();
+        assert!(onnx_exists(base, "m1", "main"), "complete download should exist");
+        
+        // Add .tmp file to simulate interrupted 600M download
+        std::fs::write(slug_dir(base, "m1").join(".interrupted.tmp"), b"z").unwrap();
+        assert!(!onnx_exists(base, "m1", "main"), "incomplete download (.tmp present) should NOT exist");
+        
+        // Remove .tmp, should exist again
+        std::fs::remove_file(slug_dir(base, "m1").join(".interrupted.tmp")).unwrap();
+        assert!(onnx_exists(base, "m1", "main"), "after removing .tmp, should exist again");
+        
+        // Test recursive: .tmp in subdirectory (repo/onnx/)
+        std::fs::create_dir_all(repo_dir(base, "m1")).unwrap();
+        std::fs::write(repo_dir(base, "m1").join("model.onnx"), b"x").unwrap();
+        std::fs::write(repo_dir(base, "m1").join("model.onnx_data"), b"y").unwrap();
+        std::fs::write(repo_dir(base, "m1").join(".deep.tmp"), b"z").unwrap();
+        assert!(!onnx_exists(base, "m1", "main"), "recursive .tmp should NOT exist");
+        std::fs::remove_file(repo_dir(base, "m1").join(".deep.tmp")).unwrap();
+        assert!(onnx_exists(base, "m1", "main"), "after removing deep .tmp, should exist");
+        
+        std::fs::remove_dir_all(&tmp).ok();
     }
 }

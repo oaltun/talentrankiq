@@ -55,6 +55,25 @@ pub fn verify_onnx_present(target: &Path) -> bool {
 /// Sharded repos (`model-00001-of-00003.safetensors`) are why this is a
 /// predicate over the tree rather than a fixed-name check.
 pub fn verify_safetensors_present(target: &Path) -> bool {
+    // If there are any leftover .tmp files, the download was interrupted.
+    let mut stack = vec![target.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name.ends_with(".tmp") {
+                    return false;
+                }
+            }
+            if path.is_dir() {
+                stack.push(path);
+            }
+        }
+    }
+    // Now check for safetensors
     let mut stack = vec![target.to_path_buf()];
     while let Some(dir) = stack.pop() {
         let Ok(entries) = fs::read_dir(&dir) else {

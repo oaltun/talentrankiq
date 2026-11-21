@@ -58,7 +58,7 @@ impl Config {
     /// in a `OnceLock<Config>` if you want a true singleton.
     pub fn load() -> Self {
         Self {
-            model_dir: PathBuf::from("~/.cache/ik/models"),
+            model_dir: PathBuf::from("~/.cache/talentrankiq/models"),
             verbose: false,
             revision: "main".to_string(),
             gui_idle_unload_secs: 300,

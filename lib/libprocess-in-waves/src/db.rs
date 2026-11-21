@@ -408,6 +408,136 @@ impl DbHandle {
         })
     }
 
+    /// Persist the waves pipeline's job-ad similarities back onto the
+    /// `candidates` / `candidate_scores` rows the GUI renders.
+    ///
+    /// The waves pipeline scores CVs in its own `cv` / `cv_similarity` tables,
+    /// while `list_candidates` (the Job Details table) reads
+    /// `candidates.rank` / `candidates.points` plus `candidate_scores`. Without
+    /// this write-back every row stays rank = NULL / points = NULL and the GUI
+    /// shows "—" forever, even after embeddings and similarities exist.
+    ///
+    /// Points basis: the deep model's similarity to the job ad when the CV has
+    /// a deep embedding, else the quick model's, scaled to a 0..100 points
+    /// scale (`points_max = 100`). One `candidate_scores` row per scored
+    /// candidate mirrors the old cascade's ad slot: kind 'Ad' (heavy space)
+    /// when deep-embedded, 'Scout' otherwise. Candidates without any similarity
+    /// keep points/rank NULL. Idempotent: re-running replaces the same rows.
+    ///
+    /// Returns the number of candidates that received a score.
+    pub fn write_back_candidate_scores(
+        &self,
+        job_id: &str,
+        quick_model: &str,
+        deep_model: &str,
+        jobad_hash: &str,
+    ) -> Result<usize, rusqlite::Error> {
+        // The waves schema alone does not create `candidates` (the serve
+        // process runs the libtriqui-core migrations, which do). A waves-only
+        // database has no GUI to feed, so treat the missing table as a no-op
+        // instead of failing the whole wave.
+        let has_candidates: bool = self.with_reader(|c| {
+            let n: i64 = c.query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'candidates'",
+                [],
+                |r| r.get(0),
+            )?;
+            Ok(n > 0)
+        })?;
+        if !has_candidates {
+            return Ok(0);
+        }
+
+        // One indexed pass: the job's candidates, their file_state hash, and
+        // the deep/quick similarity to the job ad (if any), pivoted into two
+        // columns. Candidates without any similarity row drop out of the join
+        // and keep points/rank NULL.
+        let rows: Vec<(String, String, Option<f64>, Option<f64>)> = self.with_reader(|c| {
+            let mut stmt = c.prepare(
+                "SELECT c.id, c.file_name,
+                        MAX(CASE WHEN s.model_id = ?2 THEN s.similarity END) AS deep_sim,
+                        MAX(CASE WHEN s.model_id = ?3 THEN s.similarity END) AS quick_sim
+                   FROM candidates c
+                   JOIN file_state fs ON fs.path = c.source_file_path
+                   JOIN cv_similarity s ON s.cv_hash = fs.hash
+                                   AND s.target_hash = ?4
+                                   AND s.model_id IN (?2, ?3)
+                  WHERE c.job_id = ?1 AND c.extraction_status = 'Extracted'
+                  GROUP BY c.id, c.file_name",
+            )?;
+            let rows = stmt
+                .query_map(
+                    rusqlite::params![job_id, deep_model, quick_model, jobad_hash],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                )?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(rows)
+        })?;
+
+        // (candidate_id, file_name, points, score kind) for every candidate
+        // with any similarity, ranked by points desc then file name (the old
+        // cascade's re_rank tie-break, so the sheet order is stable across
+        // passes). The kind mirrors the old cascade's ad slot: 'Ad' when the
+        // deep embedder scored the CV, 'Scout' when only the quick one did.
+        let mut scored: Vec<(String, String, f64, &'static str)> = rows
+            .iter()
+            .filter_map(|(id, file_name, deep, quick)| {
+                let sim = deep.or(*quick)?;
+                let points = (sim.clamp(0.0, 1.0) * 10000.0).round() / 100.0;
+                let kind = if deep.is_some() { "Ad" } else { "Scout" };
+                Some((id.clone(), file_name.clone(), points, kind))
+            })
+            .collect();
+        scored.sort_by(|a, b| {
+            b.2.partial_cmp(&a.2)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.1.cmp(&b.1))
+        });
+
+        self.with_writer(|c| {
+            let tx = c.transaction()?;
+            {
+                let mut del = tx.prepare(
+                    "DELETE FROM candidate_scores WHERE candidate_id = ?1 AND question_id = 'ad'",
+                )?;
+                let mut ins = tx.prepare(
+                    "INSERT INTO candidate_scores
+                       (id, candidate_id, question_id, kind, label, points, max_points, sign)
+                     VALUES (?1, ?2, 'ad', ?3, 'Job fit', ?4, ?5, 'Positive')",
+                )?;
+                let mut upd =
+                    tx.prepare("UPDATE candidates SET points = ?1, points_max = ?2 WHERE id = ?3")?;
+                for (id, _, points, kind) in &scored {
+                    del.execute([id])?;
+                    ins.execute(rusqlite::params![
+                        format!("cs_{}", uuid::Uuid::new_v4()),
+                        id,
+                        kind,
+                        points,
+                        100.0
+                    ])?;
+                    upd.execute(rusqlite::params![points, 100.0, id])?;
+                }
+            }
+            // NULL first so candidates that lost their similarity (re-import,
+            // changed file) cannot keep a stale rank.
+            tx.execute(
+                "UPDATE candidates SET rank = NULL WHERE job_id = ?1",
+                [job_id],
+            )?;
+            {
+                let mut rank_upd = tx.prepare("UPDATE candidates SET rank = ?1 WHERE id = ?2")?;
+                for (i, (id, _, _, _)) in scored.iter().enumerate() {
+                    rank_upd.execute(rusqlite::params![i as i64 + 1, id])?;
+                }
+            }
+            tx.commit()?;
+            Ok(())
+        })?;
+
+        Ok(scored.len())
+    }
+
     pub fn update_waves_rank_state(
         &self,
         job_id: &str,

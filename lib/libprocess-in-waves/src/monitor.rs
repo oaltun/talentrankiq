@@ -26,6 +26,9 @@ pub fn monitor_loop(
             Err(mpsc::RecvTimeoutError::Timeout) => continue,
         }
     }
+    // One last snapshot so the gui reflects the terminal counts even when the
+    // run finished between two polls.
+    let _ = poll_once(&conn, &config, &events);
     let _ = (db_path, thread::current().id());
 }
 

@@ -177,6 +177,17 @@ pub fn process_in_waves(
         )?;
         tracing::info!(compared = compared, "comparisons done");
 
+        // Mirror the wave's scores onto the candidates/candidate_scores rows
+        // the GUI table reads (bug.md: without this, rank/points stay NULL and
+        // the Job Details page shows "—" forever).
+        let written = ctx.db.write_back_candidate_scores(
+            &job_id,
+            &quick_model,
+            &deep_model,
+            &jobad_hash,
+        )?;
+        tracing::info!(written, "candidate score write-back done");
+
         if candidates == last_candidates
             && embedded_done == last_embedded
             && compared == last_compared

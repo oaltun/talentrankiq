@@ -99,8 +99,9 @@ pub fn list_embedders(state: &Arc<ServeState>) -> Result<serde_json::Value, Prot
             memory_mb: ge.memory_mb,
             downloaded,
             // A default that is not downloaded is an invalid contract for the
-            // GUI (it would redirect the whole workspace to the Models page).
-            is_default: active_slug == Some(ge.slug.as_str()),
+            // GUI (it would redirect the whole workspace to the Models page):
+            // never report a stale default.
+            is_default: active_slug == Some(ge.slug.as_str()) && downloaded,
             dim: model_def.dim,
             max_context_window: model_def.max_context_window,
             source: model_def

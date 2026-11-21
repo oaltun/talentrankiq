@@ -227,3 +227,61 @@ fn remove_embedder_clears_stale_default_preference() {
     client.shutdown();
     process.shutdown().expect("process shutdown");
 }
+
+/// Test for scenario 2 from the bug report:
+/// Fresh install with no saved preference, where the config's default model
+/// is not downloaded. The CLI should never report a default that is not downloaded.
+#[test]
+fn fresh_install_config_default_not_downloaded() {
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let app_dir = temp_dir.path().join("app");
+    let model_dir = temp_dir.path().join("models");
+    std::fs::create_dir_all(&app_dir).expect("create app dir");
+    std::fs::create_dir_all(&model_dir).expect("create model dir");
+
+    let mut process =
+        TestProcess::spawn(&app_dir, &model_dir).expect("spawn triq serve");
+    process
+        .wait_for_ready(Duration::from_secs(30))
+        .expect("wait for ready");
+
+    let (read, write) = process.take_stdio();
+    let client = TriqiClient::over(read, write);
+
+    // Fresh install: no saved preference, config default is NOT downloaded
+    // (we do NOT call fake_downloaded for the default model)
+    let embedders = list_embedders(&client).expect("list_embedders on fresh install");
+
+    // Find the config default embedder (harrier-oss-v1-270m-ONNX-q4f16)
+    let default_embedder = embedders
+        .iter()
+        .find(|e| e.slug == TARGET_SLUG)
+        .expect("config default embedder present");
+
+    // The default embedder should NOT be reported as downloaded
+    assert!(
+        !default_embedder.downloaded,
+        "config default should not be downloaded on fresh install"
+    );
+
+    // The default embedder should NOT be reported as is_default
+    // because it's not downloaded. This is the fix for the bug.
+    assert!(
+        !default_embedder.is_default,
+        "config default must not be reported as default when not downloaded (stale default)"
+    );
+
+    // No embedder should ever be simultaneously default and not downloaded.
+    for e in &embedders {
+        assert!(
+            !(e.is_default && !e.downloaded),
+            "embedder '{}' reported is_default=true, downloaded=false",
+            e.slug
+        );
+    }
+
+    client.shutdown();
+    process.shutdown().expect("process shutdown");
+}

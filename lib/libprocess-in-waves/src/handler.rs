@@ -130,7 +130,12 @@ pub fn run_process_in_waves(
         quick_model: quick_model.clone(),
         deep_model: deep_model.clone(),
     };
-    let _ = spawn_monitor(db_path.clone(), monitor_cfg, monitor_events);
+    // Keep the handle alive for the whole run: dropping it closes the shutdown
+    // channel, and `monitor_loop` treats a disconnected channel as a shutdown
+    // signal — so a dropped handle kills the monitor after its very first poll
+    // (before any embeddings exist), leaving the gui's progress stuck at 0.
+    let monitor = spawn_monitor(db_path.clone(), monitor_cfg, monitor_events)
+        .map_err(|e| ProtocolError::internal(format!("spawn monitor: {e}")))?;
 
     let job_id_owned = job_id.to_string();
     let had_request_log = request_log_file.is_some();
@@ -147,6 +152,9 @@ pub fn run_process_in_waves(
         if had_request_log {
             libtriqui_core::logging::clear_current_request_log();
         }
+        // Emit one final progress snapshot so the gui reflects the terminal
+        // counts even if the monitor's poll interval outlived the last wave.
+        monitor.shutdown();
     });
 
     Ok(RankState {

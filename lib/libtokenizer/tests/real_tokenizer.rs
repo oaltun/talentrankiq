@@ -8,7 +8,7 @@ fn find_real_tokenizer() -> Option<PathBuf> {
         "nomic-embed-text-v1.5/repo/onnx/tokenizer.json",
         "harrier-oss-v1-270m-ONNX_model_q4f16/repo/onnx/tokenizer.json",
     ];
-    let base = dirs_home().join(".cache/ik/models");
+    let base = dirs_home().join(".cache/talentrankiq/models");
     for rel in &candidates {
         let p = base.join(rel);
         if p.is_file() {
@@ -29,7 +29,7 @@ fn real_tokenizer_load_and_count() {
     let path = match find_real_tokenizer() {
         Some(p) => p,
         None => {
-            eprintln!("skipping: no cached tokenizer found under ~/.cache/ik/models/");
+            eprintln!("skipping: no cached tokenizer found under ~/.cache/talentrankiq/models/");
             return;
         }
     };

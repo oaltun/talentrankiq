@@ -37,7 +37,7 @@ pub fn expand_home(path: &str) -> PathBuf {
 /// Embedded default configuration constants (kept for reference).
 /// The actual defaults are now in `Config::load()`.
 pub const DEFAULT_CONFIG_YAML: &str = r#"
-model_dir: "~/.cache/ik/models"
+model_dir: "~/.cache/talentrankiq/models"
 verbose: false
 revision: main
 gui_idle_unload_secs: 300

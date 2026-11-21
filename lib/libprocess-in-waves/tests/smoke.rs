@@ -26,3 +26,129 @@ fn db_roundtrip() {
     assert_eq!(db.get_job_cv_count("job1").unwrap(), 1);
     assert_eq!(db.get_job_cv_embedded_count("job1", "m").unwrap(), 0);
 }
+
+/// The GUI table reads candidates/candidate_scores; the waves pipeline scores
+/// cv/cv_similarity. `write_back_candidate_scores` bridges the two (bug.md):
+/// deep-embedded candidates get an 'Ad' score row, quick-only ones a 'Scout'
+/// row, points are the job-ad similarity on a 0..100 scale, and rank orders
+/// by points desc with the file-name tie-break.
+#[test]
+fn write_back_populates_points_and_rank_from_waves_similarity() {
+    let dir = tempfile::tempdir().unwrap();
+    let dbpath = dir.path().join("triqui.db");
+    // Waves schema first (file_state / cv / cv_similarity / ...).
+    let db = libprocess_in_waves::DbHandle::open_at(&dbpath).unwrap();
+    // The serve process additionally runs the libtriqui-core schema+migrations;
+    // replicate the parts the write-back touches.
+    let conn = rusqlite::Connection::open(&dbpath).unwrap();
+    conn.execute_batch(libtriqui_core::db::SCHEMA).unwrap();
+    conn.execute_batch(
+        "ALTER TABLE candidates ADD COLUMN points REAL;
+         ALTER TABLE candidates ADD COLUMN points_max REAL;",
+    )
+    .unwrap();
+
+    conn.execute("INSERT INTO jobs (id, title) VALUES ('j1', 'job')", [])
+        .unwrap();
+    let cands = [
+        ("cand_a", "/cv/a.txt", "a.txt", "ha"),
+        ("cand_b", "/cv/b.txt", "b.txt", "hb"),
+        ("cand_c", "/cv/c.txt", "c.txt", "hc"),
+        ("cand_d", "/cv/d.txt", "d.txt", "hd"),
+    ];
+    for (id, path, name, hash) in cands {
+        conn.execute(
+            "INSERT INTO candidates (id, job_id, source_file_path, file_name, file_type, extraction_status)
+             VALUES (?1, 'j1', ?2, ?3, 'Txt', 'Extracted')",
+            rusqlite::params![id, path, name],
+        )
+        .unwrap();
+        db.upsert_file_state(path, hash).unwrap();
+        db.insert_cv(hash, &format!("text {hash}")).unwrap();
+    }
+
+    // Deep + quick similarity to the job ad for a; deep-only for b;
+    // quick-only for c; d has none.
+    db.upsert_similarity("ha", "deep", "ad1", 0.9).unwrap();
+    db.upsert_similarity("ha", "quick", "ad1", 0.5).unwrap();
+    db.upsert_similarity("hb", "deep", "ad1", 0.7).unwrap();
+    db.upsert_similarity("hc", "quick", "ad1", 0.4).unwrap();
+
+    let written = db
+        .write_back_candidate_scores("j1", "quick", "deep", "ad1")
+        .unwrap();
+    assert_eq!(written, 3);
+
+    let points = |id: &str| -> Option<f64> {
+        conn.query_row("SELECT points FROM candidates WHERE id = ?1", [id], |r| {
+            r.get(0)
+        })
+        .unwrap()
+    };
+    let rank = |id: &str| -> Option<i64> {
+        conn.query_row("SELECT rank FROM candidates WHERE id = ?1", [id], |r| {
+            r.get(0)
+        })
+        .unwrap()
+    };
+    let score_rows = |id: &str| -> Vec<(String, f64, f64)> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT kind, points, max_points FROM candidate_scores
+                  WHERE candidate_id = ?1 AND question_id = 'ad'",
+            )
+            .unwrap();
+        stmt.query_map([id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap()
+    };
+
+    assert_eq!(points("cand_a"), Some(90.0));
+    assert_eq!(points("cand_b"), Some(70.0));
+    assert_eq!(points("cand_c"), Some(40.0));
+    assert_eq!(points("cand_d"), None, "no similarity means no points");
+    assert_eq!(rank("cand_a"), Some(1));
+    assert_eq!(rank("cand_b"), Some(2));
+    assert_eq!(rank("cand_c"), Some(3));
+    assert_eq!(rank("cand_d"), None);
+    assert_eq!(
+        score_rows("cand_a"),
+        vec![("Ad".to_string(), 90.0, 100.0)],
+        "deep-embedded candidate gets an Ad row"
+    );
+    assert_eq!(
+        score_rows("cand_c"),
+        vec![("Scout".to_string(), 40.0, 100.0)],
+        "quick-only candidate gets a Scout row"
+    );
+    assert!(score_rows("cand_d").is_empty());
+
+    // Idempotent: a second pass replaces the same rows instead of duplicating.
+    let written = db
+        .write_back_candidate_scores("j1", "quick", "deep", "ad1")
+        .unwrap();
+    assert_eq!(written, 3);
+    let n: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM candidate_scores cs
+              JOIN candidates c ON c.id = cs.candidate_id
+             WHERE c.job_id = 'j1'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(n, 3);
+    assert_eq!(rank("cand_a"), Some(1));
+}
+
+#[test]
+fn write_back_is_noop_without_candidates_table() {
+    // A waves-only database (no libtriqui-core schema) must not fail the wave.
+    let dir = tempfile::tempdir().unwrap();
+    let db = libprocess_in_waves::DbHandle::open_at(&dir.path().join("triqui.db")).unwrap();
+    let written = db
+        .write_back_candidate_scores("j1", "quick", "deep", "ad1")
+        .unwrap();
+    assert_eq!(written, 0);
+}
