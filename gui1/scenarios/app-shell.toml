@@ -1,0 +1,78 @@
+[scenario]
+name = "app-shell"
+fail_fast = true
+global_timeout_ms = 300000
+
+[[step]]
+name = "Wait for app sidebar"
+action = "wait"
+target = '[data-testid="app-sidebar-icon-and-appname"]'
+timeout_ms = 15000
+
+[[step]]
+name = "Sidebar has Jobs and Models navigation items"
+action = "assert-count"
+selector = '[data-sidebar="menu"] [data-testid^="activity-"]'
+expected = 2
+
+[[step]]
+name = "Jobs navigation item present"
+action = "assert-count"
+selector = '[data-testid="activity-home"]'
+expected = 1
+
+[[step]]
+name = "Models navigation item present"
+action = "assert-count"
+selector = '[data-testid="activity-models"]'
+expected = 1
+
+[[step]]
+name = "Old status bar removed"
+action = "assert-count"
+selector = '.status-bar'
+expected = 0
+
+[[step]]
+name = "Click Jobs navigation item"
+action = "click"
+target = '[data-testid="activity-home"]'
+
+[[step]]
+name = "Wait for Jobs heading"
+action = "wait"
+target = "h1"
+
+[[step]]
+name = "Jobs heading visible"
+action = "assert-text"
+target = "h1"
+expected = "Jobs"
+
+[[step]]
+name = "Click Models navigation item"
+action = "click"
+target = '[data-testid="activity-models"]'
+
+[[step]]
+name = "Wait for Models heading"
+action = "wait"
+target = "h1"
+
+[[step]]
+name = "Models heading visible"
+action = "assert-text"
+target = "h1"
+expected = "Models"
+
+[[step]]
+name = "Wait for ModelsView embedders (CLI integration)"
+action = "wait"
+target = ".bg-card"
+timeout_ms = 15000
+
+[[step]]
+name = "Four embedder cards loaded from triq"
+action = "assert-count"
+selector = ".bg-card"
+expected = 4

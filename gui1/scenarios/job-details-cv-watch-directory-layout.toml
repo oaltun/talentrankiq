@@ -1,0 +1,68 @@
+[scenario]
+name = "job-details-cv-watch-directory-layout"
+fail_fast = true
+global_timeout_ms = 180000
+
+[[step]]
+name = "Wait for app sidebar"
+action = "wait"
+target = '[data-testid="app-sidebar-icon-and-appname"]'
+timeout_ms = 15000
+
+[[step]]
+name = "Click Jobs navigation item"
+action = "click"
+target = '[data-testid="activity-home"]'
+
+[[step]]
+name = "Wait for Jobs page"
+action = "wait"
+target = '[data-testid="job-list"], [data-testid="add-job-button-empty"]'
+timeout_ms = 15000
+
+[[step]]
+name = "Ensure at least one job exists"
+action = "eval"
+script = """
+(() => {
+  if (document.querySelector('[data-testid^="job-item-"]')) return 'exists';
+  const add = document.querySelector('[data-testid="add-job-button"], [data-testid="add-job-button-empty"]');
+  if (add) { add.click(); return 'created'; }
+  return false;
+})()
+"""
+
+[[step]]
+name = "Wait for a job item"
+action = "wait"
+target = '[data-testid^="job-item-"]'
+timeout_ms = 15000
+
+[[step]]
+name = "Open the first job"
+action = "click"
+target = '[data-testid^="job-item-"]'
+
+[[step]]
+name = "Wait for workspace page"
+action = "wait"
+target = '[data-testid="workspace-page"]'
+timeout_ms = 30000
+
+[[step]]
+name = "CV watch directory header exists"
+action = "assert-count"
+selector = '[data-testid="cv-directory-header"]'
+expected = 1
+
+[[step]]
+name = "CV watch directory header holds the title"
+action = "assert-count"
+selector = '[data-testid="cv-directory-header"] [data-testid="cv-directory-label"]'
+expected = 1
+
+[[step]]
+name = "CV watch directory header holds the change button"
+action = "assert-count"
+selector = '[data-testid="cv-directory-header"] [data-testid="change-cv-dir-btn"]'
+expected = 1

@@ -1,0 +1,4 @@
+*.log
+prompt.md
+*.jar
+.DS_Store

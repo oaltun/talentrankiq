@@ -1,4 +1,9 @@
 prompt.md
+loop/
+improvement.md
+openspec/
+tauri-pilot-failures/
+features/
 
 # Rust
 **/target

@@ -1,0 +1,80 @@
+[scenario]
+name = "job-details-ad-card-path-input"
+fail_fast = true
+global_timeout_ms = 180000
+
+[[step]]
+name = "Wait for app sidebar"
+action = "wait"
+target = '[data-testid="app-sidebar-icon-and-appname"]'
+timeout_ms = 15000
+
+[[step]]
+name = "Click Jobs navigation item"
+action = "click"
+target = '[data-testid="activity-home"]'
+
+[[step]]
+name = "Wait for Jobs page"
+action = "wait"
+target = '[data-testid="job-list"], [data-testid="add-job-button-empty"]'
+timeout_ms = 15000
+
+[[step]]
+name = "Ensure at least one job exists"
+action = "eval"
+script = """
+(() => {
+  if (document.querySelector('[data-testid^="job-item-"]')) return 'exists';
+  const add = document.querySelector('[data-testid="add-job-button"], [data-testid="add-job-button-empty"]');
+  if (add) { add.click(); return 'created'; }
+  return false;
+})()
+"""
+
+[[step]]
+name = "Wait for a job item"
+action = "wait"
+target = '[data-testid^="job-item-"]'
+timeout_ms = 15000
+
+[[step]]
+name = "Open the first job"
+action = "click"
+target = '[data-testid^="job-item-"]'
+
+[[step]]
+name = "Wait for workspace page"
+action = "wait"
+target = '[data-testid="workspace-page"]'
+timeout_ms = 30000
+
+[[step]]
+name = "Wait for the job ad path input"
+action = "wait"
+target = '[data-testid="ad-path-input"]'
+timeout_ms = 15000
+
+[[step]]
+name = "Job Ad card renders a path input"
+action = "assert-count"
+selector = '[data-testid="ad-path-input"]'
+expected = 1
+
+[[step]]
+name = "Job Ad reload button is gone"
+action = "assert-count"
+selector = '[data-testid="reload-ad-btn"]'
+expected = 0
+
+[[step]]
+name = "Job Ad content text block is not rendered"
+action = "assert-count"
+selector = '[data-testid="ad-file-text"]'
+expected = 0
+
+[[step]]
+name = "Change job ad button lives in the card header"
+action = "assert-count"
+selector = '[data-testid="ad-card-header"] [data-testid="change-ad-btn"]'
+expected = 1

@@ -1,0 +1,151 @@
+[scenario]
+name = "language-settings"
+fail_fast = true
+global_timeout_ms = 180000
+
+[[step]]
+name = "Wait for app sidebar"
+action = "wait"
+target = '[data-testid="app-sidebar-icon-and-appname"]'
+timeout_ms = 15000
+
+[[step]]
+name = "Show the Jobs page"
+action = "click"
+target = '[data-testid="activity-home"]'
+
+[[step]]
+name = "Jobs page heading is visible"
+action = "wait"
+target = "h1"
+timeout_ms = 10000
+
+[[step]]
+name = "Open settings from the sidebar"
+action = "click"
+target = '[data-testid="sidebar-secondary-settings-btn"]'
+
+[[step]]
+name = "Settings dialog is visible"
+action = "wait"
+target = '[data-testid="settings-dialog"]'
+timeout_ms = 10000
+
+[[step]]
+name = "Normalize the language to English"
+action = "eval"
+script = """
+(() => {
+  const sel = document.querySelector('[data-testid="language-select-trigger"]');
+  if (!sel) throw new Error('language select not found');
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set;
+  setter.call(sel, 'en');
+  sel.dispatchEvent(new Event('change', { bubbles: true }));
+  return sel.value;
+})()
+"""
+
+[[step]]
+name = "Settings dialog title is English"
+action = "assert-text"
+target = '[data-testid="settings-dialog-title"]'
+expected = "Settings"
+
+[[step]]
+name = "Close settings"
+action = "eval"
+script = """
+(() => {
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
+  return 'esc';
+})()
+"""
+
+[[step]]
+name = "Settings dialog is closed"
+action = "assert-count"
+selector = '[data-testid="settings-dialog"]'
+expected = 0
+
+[[step]]
+name = "English navigation shows Jobs"
+action = "assert-text"
+target = '[data-testid="activity-home"]'
+expected = "Jobs"
+
+[[step]]
+name = "English navigation shows Models"
+action = "assert-text"
+target = '[data-testid="activity-models"]'
+expected = "Models"
+
+[[step]]
+name = "English Jobs heading"
+action = "assert-text"
+target = "h1"
+expected = "Jobs"
+
+[[step]]
+name = "Reopen settings"
+action = "click"
+target = '[data-testid="sidebar-secondary-settings-btn"]'
+
+[[step]]
+name = "Settings dialog visible again"
+action = "wait"
+target = '[data-testid="settings-dialog"]'
+timeout_ms = 10000
+
+[[step]]
+name = "Choose Turkish"
+action = "eval"
+script = """
+(() => {
+  const sel = document.querySelector('[data-testid="language-select-trigger"]');
+  if (!sel) throw new Error('language select not found');
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set;
+  setter.call(sel, 'tr');
+  sel.dispatchEvent(new Event('change', { bubbles: true }));
+  return sel.value;
+})()
+"""
+
+[[step]]
+name = "Close settings after choosing Turkish"
+action = "eval"
+script = """
+(() => {
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
+  return 'esc';
+})()
+"""
+
+[[step]]
+name = "Settings dialog is closed after Turkish"
+action = "assert-count"
+selector = '[data-testid="settings-dialog"]'
+expected = 0
+
+[[step]]
+name = "Turkish navigation shows Jobs"
+action = "assert-text"
+target = '[data-testid="activity-home"]'
+expected = "İşler"
+
+[[step]]
+name = "Turkish navigation shows Models"
+action = "assert-text"
+target = '[data-testid="activity-models"]'
+expected = "Modeller"
+
+[[step]]
+name = "Turkish Jobs heading"
+action = "assert-text"
+target = "h1"
+expected = "İşler"
+
+[[step]]
+name = "Turkish language is persisted"
+action = "storage-get"
+key = "language"
+expected = "tr"

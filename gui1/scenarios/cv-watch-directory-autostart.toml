@@ -1,0 +1,133 @@
+[scenario]
+name = "cv-watch-directory-autostart"
+fail_fast = true
+global_timeout_ms = 180000
+
+[[step]]
+name = "Wait for app sidebar"
+action = "wait"
+target = '[data-testid="app-sidebar-icon-and-appname"]'
+timeout_ms = 15000
+
+[[step]]
+name = "Click Jobs navigation item"
+action = "click"
+target = '[data-testid="activity-home"]'
+
+[[step]]
+name = "Wait for Jobs page"
+action = "wait"
+target = '[data-testid="job-list"], [data-testid="add-job-button-empty"]'
+timeout_ms = 15000
+
+[[step]]
+name = "Ensure at least one job exists"
+action = "eval"
+script = """
+(() => {
+  if (document.querySelector('[data-testid^="job-item-"]')) return 'exists';
+  const add = document.querySelector('[data-testid="add-job-button"], [data-testid="add-job-button-empty"]');
+  if (add) { add.click(); return 'created'; }
+  return false;
+})()
+"""
+
+[[step]]
+name = "Wait for a job item"
+action = "wait"
+target = '[data-testid^="job-item-"]'
+timeout_ms = 15000
+
+[[step]]
+name = "Open the first job"
+action = "click"
+target = '[data-testid^="job-item-"]'
+
+[[step]]
+name = "Wait for workspace page"
+action = "wait"
+target = '[data-testid="workspace-page"]'
+timeout_ms = 20000
+
+[[step]]
+name = "CV directory input is present"
+action = "assert-count"
+selector = '[data-testid="cv-dir-input"]'
+expected = 1
+
+[[step]]
+name = "Watch switch was removed"
+action = "assert-count"
+selector = '[data-testid="watch-cv-dir-switch"]'
+expected = 0
+
+[[step]]
+name = "Run ranking button was removed"
+action = "assert-count"
+selector = '[data-testid="run-ranking-btn"]'
+expected = 0
+
+[[step]]
+name = "Change directory button remains"
+action = "assert-count"
+selector = '[data-testid="change-cv-dir-btn"]'
+expected = 1
+
+[[step]]
+name = "Open in file manager button remains"
+action = "assert-count"
+selector = '[data-testid="open-cv-dir-btn"]'
+expected = 1
+
+[[step]]
+name = "Type a new CV directory path"
+action = "fill"
+target = '[data-testid="cv-dir-input"]'
+value = "/tmp/triq-e2e-cv-autostart"
+
+[[step]]
+name = "Commit the path by pressing Enter (blur)"
+action = "eval"
+script = """
+(() => {
+  const input = document.querySelector('[data-testid="cv-dir-input"]');
+  if (!input) throw new Error('cv-dir-input not found');
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  input.blur();
+  return 'enter-dispatched';
+})()
+"""
+
+[[step]]
+name = "Wait for the committed path to land in the input"
+action = "eval"
+script = """
+(async () => {
+  const deadline = Date.now() + 15000;
+  const expected = '/tmp/triq-e2e-cv-autostart';
+  while (Date.now() < deadline) {
+    const input = document.querySelector('[data-testid="cv-dir-input"]');
+    if (input && input.value === expected) return true;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return false;
+})()
+"""
+
+[[step]]
+name = "Path change is persisted in the input"
+action = "assert-value"
+target = '[data-testid="cv-dir-input"]'
+expected = "/tmp/triq-e2e-cv-autostart"
+
+[[step]]
+name = "No stale ranking button appears"
+action = "assert-count"
+selector = '[data-testid="run-ranking-btn"]'
+expected = 0
+
+[[step]]
+name = "No stale watch switch appears"
+action = "assert-count"
+selector = '[data-testid="watch-cv-dir-switch"]'
+expected = 0

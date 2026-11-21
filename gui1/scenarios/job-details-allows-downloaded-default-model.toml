@@ -1,0 +1,85 @@
+[scenario]
+name = "job-details-allows-downloaded-default-model"
+fail_fast = true
+global_timeout_ms = 120000
+
+[[step]]
+name = "Open Models page"
+action = "click"
+target = '[data-testid="activity-models"]'
+
+[[step]]
+name = "Open deep models tab"
+action = "click"
+target = '[data-testid="models-tab-deep"]'
+
+[[step]]
+name = "Wait for deep embedder cards"
+action = "wait"
+target = '[data-testid="models-content-deep"] [data-testid^="card-actions-"]'
+timeout_ms = 15000
+
+[[step]]
+name = "Make a downloaded deep model the default"
+action = "eval"
+script = """
+(async () => {
+  const cards = [...document.querySelectorAll('[data-testid^="card-actions-"]')];
+  const card = cards.find((c) =>
+    c.querySelector('[data-testid^="model-remove-"]') &&
+    c.querySelector('[data-testid^="model-set-default-"]')
+  );
+  if (!card) return false;
+  const button = card.querySelector('[data-testid^="model-set-default-"]');
+  const slug = button.getAttribute('data-testid').replace('model-set-default-', '');
+  button.click();
+  const deadline = Date.now() + 10000;
+  while (Date.now() < deadline) {
+    if (document.querySelector(`[data-testid="model-default-badge-${slug}"]`)) {
+      return slug;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return false;
+})()
+"""
+
+[[step]]
+name = "Click Jobs navigation item"
+action = "click"
+target = '[data-testid="activity-home"]'
+
+[[step]]
+name = "Wait for Jobs page"
+action = "wait"
+target = '[data-testid="job-list"], [data-testid="add-job-button-empty"]'
+timeout_ms = 15000
+
+[[step]]
+name = "Ensure at least one job exists"
+action = "eval"
+script = """
+(() => {
+  if (document.querySelector('[data-testid^="job-item-"]')) return 'exists';
+  const add = document.querySelector('[data-testid="add-job-button"], [data-testid="add-job-button-empty"]');
+  if (add) { add.click(); return 'created'; }
+  return false;
+})()
+"""
+
+[[step]]
+name = "Wait for a job item"
+action = "wait"
+target = '[data-testid^="job-item-"]'
+timeout_ms = 15000
+
+[[step]]
+name = "Open the first job"
+action = "click"
+target = '[data-testid^="job-item-"]'
+
+[[step]]
+name = "Workspace opens without a redirect"
+action = "wait"
+target = '[data-testid="workspace-page"]'
+timeout_ms = 20000

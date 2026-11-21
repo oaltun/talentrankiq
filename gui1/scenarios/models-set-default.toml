@@ -1,0 +1,134 @@
+[scenario]
+name = "models-set-default"
+fail_fast = true
+global_timeout_ms = 300000
+
+[[step]]
+name = "Open Models page"
+action = "click"
+target = '[data-testid="activity-models"]'
+
+[[step]]
+name = "Wait for deep embedder cards"
+action = "wait"
+target = '[data-testid="models-content-deep"] [data-testid^="card-actions-"]'
+timeout_ms = 15000
+
+[[step]]
+name = "Download the default model (Harrier 270M ONNX) if not present"
+action = "eval"
+script = """
+(async () => {
+  const removeBtn = document.querySelector('[data-testid="model-remove-harrier-oss-v1-270m-ONNX-q4f16"]');
+  if (removeBtn) return 'already-downloaded';
+  const downloadBtn = document.querySelector('[data-testid="model-download-harrier-oss-v1-270m-ONNX-q4f16"]');
+  if (!downloadBtn) throw new Error('download button not found for 270M model');
+  downloadBtn.click();
+  const deadline = Date.now() + 180000;
+  while (Date.now() < deadline) {
+    if (document.querySelector('[data-testid="model-remove-harrier-oss-v1-270m-ONNX-q4f16"]')) return 'downloaded';
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  throw new Error('download timed out');
+})()
+"""
+timeout_ms = 200000
+
+[[step]]
+name = "Exactly one default badge"
+action = "assert-count"
+selector = '[data-testid^="model-default-badge-"]'
+expected = 1
+
+[[step]]
+name = "Three set-default buttons on the non-default cards"
+action = "assert-count"
+selector = '[data-testid^="model-set-default-"]'
+expected = 3
+
+[[step]]
+name = "Normalize the default to Harrier 270M ONNX"
+action = "eval"
+script = """
+(() => {
+  const btn = document.querySelector('[data-testid="model-set-default-harrier-oss-v1-270m-ONNX-q4f16"]');
+  if (btn) btn.click();
+  return Boolean(btn);
+})()
+"""
+
+[[step]]
+name = "Wait for the default badge to settle on Harrier 270M ONNX"
+action = "wait"
+target = '[data-testid="model-default-badge-harrier-oss-v1-270m-ONNX-q4f16"]'
+timeout_ms = 10000
+
+[[step]]
+name = "Default badge is on Harrier 270M ONNX"
+action = "assert-count"
+selector = '[data-testid="model-default-badge-harrier-oss-v1-270m-ONNX-q4f16"]'
+expected = 1
+
+[[step]]
+name = "Default badge reads default"
+action = "assert-contains"
+target = '[data-testid="model-default-badge-harrier-oss-v1-270m-ONNX-q4f16"]'
+expected = "default"
+
+[[step]]
+name = "Default card has no set-default button"
+action = "assert-count"
+selector = '[data-testid="model-set-default-harrier-oss-v1-270m-ONNX-q4f16"]'
+expected = 0
+
+[[step]]
+name = "Set Harrier 600M ONNX as default"
+action = "click"
+target = '[data-testid="model-set-default-harrier-oss-v1-0.6b-ONNX-q4"]'
+
+[[step]]
+name = "Wait for the default badge to move to Harrier 600M ONNX"
+action = "wait"
+target = '[data-testid="model-default-badge-harrier-oss-v1-0.6b-ONNX-q4"]'
+timeout_ms = 10000
+
+[[step]]
+name = "Default badge is on Harrier 600M ONNX"
+action = "assert-count"
+selector = '[data-testid="model-default-badge-harrier-oss-v1-0.6b-ONNX-q4"]'
+expected = 1
+
+[[step]]
+name = "Old default lost its badge"
+action = "assert-count"
+selector = '[data-testid="model-default-badge-harrier-oss-v1-270m-ONNX-q4f16"]'
+expected = 0
+
+[[step]]
+name = "New default card has no set-default button"
+action = "assert-count"
+selector = '[data-testid="model-set-default-harrier-oss-v1-0.6b-ONNX-q4"]'
+expected = 0
+
+[[step]]
+name = "Previous default now has a set-default button"
+action = "assert-count"
+selector = '[data-testid="model-set-default-harrier-oss-v1-270m-ONNX-q4f16"]'
+expected = 1
+
+[[step]]
+name = "Still exactly three set-default buttons"
+action = "assert-count"
+selector = '[data-testid^="model-set-default-"]'
+expected = 3
+
+[[step]]
+name = "Restore Harrier 270M ONNX as the default"
+action = "click"
+target = '[data-testid="model-set-default-harrier-oss-v1-270m-ONNX-q4f16"]'
+
+[[step]]
+name = "Default badge restored to Harrier 270M ONNX"
+action = "wait"
+target = '[data-testid="model-default-badge-harrier-oss-v1-270m-ONNX-q4f16"]'
+timeout_ms = 10000

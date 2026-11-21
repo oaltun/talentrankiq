@@ -1,0 +1,60 @@
+[scenario]
+name = "models-quick-remove-default"
+fail_fast = true
+global_timeout_ms = 180000
+
+[[step]]
+name = "Wait for app sidebar"
+action = "wait"
+target = '[data-testid="app-sidebar-icon-and-appname"]'
+timeout_ms = 15000
+
+[[step]]
+name = "Open Models page"
+action = "click"
+target = '[data-testid="activity-models"]'
+
+[[step]]
+name = "Click quick tab"
+action = "click"
+target = '[data-testid="models-tab-quick"]'
+
+[[step]]
+name = "Quick tab is visible"
+action = "assert-visible"
+target = '[data-testid="models-tab-quick"]'
+
+[[step]]
+name = "Wait for quick model card"
+action = "wait"
+target = '[data-testid="models-content-quick"] [data-testid^="model-remove-"], [data-testid="models-content-quick"] [data-testid^="model-download-"]'
+timeout_ms = 15000
+
+[[step]]
+name = "Download quick model if needed"
+action = "eval"
+script = """
+(() => {
+  if (document.querySelector('[data-testid="models-content-quick"] [data-testid^="model-remove-"]')) return "already-downloaded";
+  const btn = document.querySelector('[data-testid="models-content-quick"] [data-testid^="model-download-"]');
+  if (btn) { btn.click(); return "downloading"; }
+  return false;
+})()
+"""
+
+[[step]]
+name = "Wait for quick model remove button"
+action = "wait"
+target = '[data-testid="models-content-quick"] [data-testid^="model-remove-"]'
+timeout_ms = 120000
+
+[[step]]
+name = "Remove quick model"
+action = "click"
+target = '[data-testid="models-content-quick"] [data-testid^="model-remove-"]'
+
+[[step]]
+name = "Wait for quick model download button"
+action = "wait"
+target = '[data-testid="models-content-quick"] [data-testid^="model-download-"]'
+timeout_ms = 15000

@@ -1,0 +1,31 @@
+- main [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e7]:
+      - list [ref=e9]:
+        - listitem [ref=e10]:
+          - link "TalentRankIQ" [ref=e11] [cursor=pointer]:
+            - /url: "#"
+      - generic [ref=e15]:
+        - list [ref=e18]:
+          - listitem [ref=e19]:
+            - button "Jobs" [ref=e20]
+          - listitem [ref=e26]:
+            - button "Models" [ref=e27]
+        - list [ref=e34]:
+          - listitem [ref=e35]:
+            - button "Settings" [ref=e36]
+          - listitem [ref=e41]:
+            - button "Get Help" [ref=e42]
+    - main [ref=e47]:
+      - generic [ref=e48]:
+        - generic [ref=e50]:
+          - button "Toggle Sidebar" [ref=e51]
+          - separator [ref=e53]
+          - generic [ref=e54]: Jobs
+        - generic [ref=e55]:
+          - generic [ref=e56]:
+            - generic [ref=e57]:
+              - heading "Jobs" [level=1] [ref=e58]
+              - paragraph [ref=e59]: Manage your TalentRankIQ jobs. Add a job to get started.
+            - button "Add Job" [ref=e60]
+          - generic [ref=e61]: Loading jobs...

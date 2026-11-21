@@ -1,0 +1,788 @@
+[
+  {
+    "scene": "home-empty",
+    "testid": "activity-home",
+    "status": "hover",
+    "path": "dark/activity-home-hover.png"
+  },
+  {
+    "scene": "home-empty",
+    "testid": "activity-home",
+    "status": "click",
+    "path": "dark/activity-home-click.png"
+  },
+  {
+    "scene": "home-empty",
+    "testid": "activity-home",
+    "status": "select",
+    "path": "dark/activity-home-select.png"
+  },
+  {
+    "scene": "home-empty",
+    "testid": "add-job-button",
+    "status": "hover",
+    "path": "dark/add-job-button-hover.png"
+  },
+  {
+    "scene": "home-empty",
+    "testid": "add-job-button",
+    "status": "click",
+    "path": "dark/add-job-button-click.png"
+  },
+  {
+    "scene": "home-empty",
+    "testid": "add-job-button",
+    "status": "select",
+    "path": "dark/add-job-button-select.png"
+  },
+  {
+    "scene": "home-empty",
+    "testid": "app-sidebar-icon-and-appname",
+    "status": "hover",
+    "path": "dark/app-sidebar-icon-and-appname-hover.png"
+  },
+  {
+    "scene": "home-empty",
+    "testid": "app-sidebar-icon-and-appname",
+    "status": "click",
+    "path": "dark/app-sidebar-icon-and-appname-click.png"
+  },
+  {
+    "scene": "home-empty",
+    "testid": "app-sidebar-icon-and-appname",
+    "status": "select",
+    "path": "dark/app-sidebar-icon-and-appname-select.png"
+  },
+  {
+    "scene": "home-empty",
+    "testid": "app-sidebar-title",
+    "status": "hover",
+    "path": "dark/app-sidebar-title-hover.png"
+  },
+  {
+    "scene": "home-empty",
+    "testid": "app-sidebar-title",
+    "status": "click",
+    "path": "dark/app-sidebar-title-click.png"
+  },
+  {
+    "scene": "home-empty",
+    "testid": "app-sidebar-title",
+    "status": "select",
+    "path": "dark/app-sidebar-title-select.png"
+  },
+  {
+    "scene": "home-empty",
+    "testid": "sidebar-trigger-btn",
+    "status": "hover",
+    "path": "dark/sidebar-trigger-btn-hover.png"
+  },
+  {
+    "scene": "home-empty",
+    "testid": "sidebar-trigger-btn",
+    "status": "click",
+    "path": "dark/sidebar-trigger-btn-click.png"
+  },
+  {
+    "scene": "home-empty",
+    "testid": "sidebar-trigger-btn",
+    "status": "select",
+    "path": "dark/sidebar-trigger-btn-select.png"
+  },
+  {
+    "scene": "models",
+    "testid": "card-actions-harrier-oss-v1-0.6b-MLX-4bit",
+    "status": "hover",
+    "path": "dark/card-actions-harrier-oss-v1-0.6b-MLX-4bit-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "card-actions-harrier-oss-v1-0.6b-MLX-4bit",
+    "status": "click",
+    "path": "dark/card-actions-harrier-oss-v1-0.6b-MLX-4bit-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "card-actions-harrier-oss-v1-0.6b-ONNX-q4",
+    "status": "hover",
+    "path": "dark/card-actions-harrier-oss-v1-0.6b-ONNX-q4-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "card-actions-harrier-oss-v1-0.6b-ONNX-q4",
+    "status": "click",
+    "path": "dark/card-actions-harrier-oss-v1-0.6b-ONNX-q4-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "card-actions-harrier-oss-v1-0.6b-ONNX-q4",
+    "status": "select",
+    "path": "dark/card-actions-harrier-oss-v1-0.6b-ONNX-q4-select.png"
+  },
+  {
+    "scene": "models",
+    "testid": "card-actions-harrier-oss-v1-270m-MLX-4bit",
+    "status": "hover",
+    "path": "dark/card-actions-harrier-oss-v1-270m-MLX-4bit-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "card-actions-harrier-oss-v1-270m-MLX-4bit",
+    "status": "click",
+    "path": "dark/card-actions-harrier-oss-v1-270m-MLX-4bit-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "card-actions-harrier-oss-v1-270m-MLX-4bit",
+    "status": "select",
+    "path": "dark/card-actions-harrier-oss-v1-270m-MLX-4bit-select.png"
+  },
+  {
+    "scene": "models",
+    "testid": "card-actions-harrier-oss-v1-270m-ONNX-q4f16",
+    "status": "hover",
+    "path": "dark/card-actions-harrier-oss-v1-270m-ONNX-q4f16-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "card-actions-harrier-oss-v1-270m-ONNX-q4f16",
+    "status": "click",
+    "path": "dark/card-actions-harrier-oss-v1-270m-ONNX-q4f16-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "card-actions-harrier-oss-v1-270m-ONNX-q4f16",
+    "status": "select",
+    "path": "dark/card-actions-harrier-oss-v1-270m-ONNX-q4f16-select.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-add-harrier-oss-v1-0.6b-MLX-4bit",
+    "status": "hover",
+    "path": "dark/comparator-add-harrier-oss-v1-0.6b-MLX-4bit-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-add-harrier-oss-v1-0.6b-MLX-4bit",
+    "status": "click",
+    "path": "dark/comparator-add-harrier-oss-v1-0.6b-MLX-4bit-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-add-harrier-oss-v1-0.6b-ONNX-q4",
+    "status": "hover",
+    "path": "dark/comparator-add-harrier-oss-v1-0.6b-ONNX-q4-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-add-harrier-oss-v1-0.6b-ONNX-q4",
+    "status": "click",
+    "path": "dark/comparator-add-harrier-oss-v1-0.6b-ONNX-q4-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-add-harrier-oss-v1-0.6b-ONNX-q4",
+    "status": "select",
+    "path": "dark/comparator-add-harrier-oss-v1-0.6b-ONNX-q4-select.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-add-harrier-oss-v1-270m-MLX-4bit",
+    "status": "hover",
+    "path": "dark/comparator-add-harrier-oss-v1-270m-MLX-4bit-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-add-harrier-oss-v1-270m-MLX-4bit",
+    "status": "click",
+    "path": "dark/comparator-add-harrier-oss-v1-270m-MLX-4bit-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-add-harrier-oss-v1-270m-MLX-4bit",
+    "status": "select",
+    "path": "dark/comparator-add-harrier-oss-v1-270m-MLX-4bit-select.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-add-harrier-oss-v1-270m-ONNX-q4f16",
+    "status": "hover",
+    "path": "dark/comparator-add-harrier-oss-v1-270m-ONNX-q4f16-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-add-harrier-oss-v1-270m-ONNX-q4f16",
+    "status": "click",
+    "path": "dark/comparator-add-harrier-oss-v1-270m-ONNX-q4f16-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-add-harrier-oss-v1-270m-ONNX-q4f16",
+    "status": "select",
+    "path": "dark/comparator-add-harrier-oss-v1-270m-ONNX-q4f16-select.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-cta-badge-harrier-oss-v1-0.6b-MLX-4bit",
+    "status": "hover",
+    "path": "dark/comparator-cta-badge-harrier-oss-v1-0.6b-MLX-4bit-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-cta-badge-harrier-oss-v1-0.6b-MLX-4bit",
+    "status": "click",
+    "path": "dark/comparator-cta-badge-harrier-oss-v1-0.6b-MLX-4bit-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-cta-badge-harrier-oss-v1-0.6b-ONNX-q4",
+    "status": "hover",
+    "path": "dark/comparator-cta-badge-harrier-oss-v1-0.6b-ONNX-q4-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-cta-badge-harrier-oss-v1-0.6b-ONNX-q4",
+    "status": "click",
+    "path": "dark/comparator-cta-badge-harrier-oss-v1-0.6b-ONNX-q4-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-cta-badge-harrier-oss-v1-0.6b-ONNX-q4",
+    "status": "select",
+    "path": "dark/comparator-cta-badge-harrier-oss-v1-0.6b-ONNX-q4-select.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-cta-badge-harrier-oss-v1-270m-MLX-4bit",
+    "status": "hover",
+    "path": "dark/comparator-cta-badge-harrier-oss-v1-270m-MLX-4bit-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-cta-badge-harrier-oss-v1-270m-MLX-4bit",
+    "status": "click",
+    "path": "dark/comparator-cta-badge-harrier-oss-v1-270m-MLX-4bit-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-cta-badge-harrier-oss-v1-270m-MLX-4bit",
+    "status": "select",
+    "path": "dark/comparator-cta-badge-harrier-oss-v1-270m-MLX-4bit-select.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-cta-badge-harrier-oss-v1-270m-ONNX-q4f16",
+    "status": "hover",
+    "path": "dark/comparator-cta-badge-harrier-oss-v1-270m-ONNX-q4f16-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-cta-badge-harrier-oss-v1-270m-ONNX-q4f16",
+    "status": "click",
+    "path": "dark/comparator-cta-badge-harrier-oss-v1-270m-ONNX-q4f16-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-cta-badge-harrier-oss-v1-270m-ONNX-q4f16",
+    "status": "select",
+    "path": "dark/comparator-cta-badge-harrier-oss-v1-270m-ONNX-q4f16-select.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-cta-sub-harrier-oss-v1-0.6b-MLX-4bit",
+    "status": "hover",
+    "path": "dark/comparator-cta-sub-harrier-oss-v1-0.6b-MLX-4bit-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-cta-sub-harrier-oss-v1-0.6b-MLX-4bit",
+    "status": "click",
+    "path": "dark/comparator-cta-sub-harrier-oss-v1-0.6b-MLX-4bit-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-cta-sub-harrier-oss-v1-0.6b-ONNX-q4",
+    "status": "hover",
+    "path": "dark/comparator-cta-sub-harrier-oss-v1-0.6b-ONNX-q4-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-cta-sub-harrier-oss-v1-0.6b-ONNX-q4",
+    "status": "click",
+    "path": "dark/comparator-cta-sub-harrier-oss-v1-0.6b-ONNX-q4-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-cta-sub-harrier-oss-v1-0.6b-ONNX-q4",
+    "status": "select",
+    "path": "dark/comparator-cta-sub-harrier-oss-v1-0.6b-ONNX-q4-select.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-cta-sub-harrier-oss-v1-270m-MLX-4bit",
+    "status": "hover",
+    "path": "dark/comparator-cta-sub-harrier-oss-v1-270m-MLX-4bit-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-cta-sub-harrier-oss-v1-270m-MLX-4bit",
+    "status": "click",
+    "path": "dark/comparator-cta-sub-harrier-oss-v1-270m-MLX-4bit-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-cta-sub-harrier-oss-v1-270m-MLX-4bit",
+    "status": "select",
+    "path": "dark/comparator-cta-sub-harrier-oss-v1-270m-MLX-4bit-select.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-cta-sub-harrier-oss-v1-270m-ONNX-q4f16",
+    "status": "hover",
+    "path": "dark/comparator-cta-sub-harrier-oss-v1-270m-ONNX-q4f16-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-cta-sub-harrier-oss-v1-270m-ONNX-q4f16",
+    "status": "click",
+    "path": "dark/comparator-cta-sub-harrier-oss-v1-270m-ONNX-q4f16-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-cta-sub-harrier-oss-v1-270m-ONNX-q4f16",
+    "status": "select",
+    "path": "dark/comparator-cta-sub-harrier-oss-v1-270m-ONNX-q4f16-select.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-cta-title-harrier-oss-v1-0.6b-MLX-4bit",
+    "status": "hover",
+    "path": "dark/comparator-cta-title-harrier-oss-v1-0.6b-MLX-4bit-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-cta-title-harrier-oss-v1-0.6b-MLX-4bit",
+    "status": "click",
+    "path": "dark/comparator-cta-title-harrier-oss-v1-0.6b-MLX-4bit-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-cta-title-harrier-oss-v1-0.6b-ONNX-q4",
+    "status": "hover",
+    "path": "dark/comparator-cta-title-harrier-oss-v1-0.6b-ONNX-q4-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-cta-title-harrier-oss-v1-0.6b-ONNX-q4",
+    "status": "click",
+    "path": "dark/comparator-cta-title-harrier-oss-v1-0.6b-ONNX-q4-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-cta-title-harrier-oss-v1-0.6b-ONNX-q4",
+    "status": "select",
+    "path": "dark/comparator-cta-title-harrier-oss-v1-0.6b-ONNX-q4-select.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-cta-title-harrier-oss-v1-270m-MLX-4bit",
+    "status": "hover",
+    "path": "dark/comparator-cta-title-harrier-oss-v1-270m-MLX-4bit-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-cta-title-harrier-oss-v1-270m-MLX-4bit",
+    "status": "click",
+    "path": "dark/comparator-cta-title-harrier-oss-v1-270m-MLX-4bit-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-cta-title-harrier-oss-v1-270m-MLX-4bit",
+    "status": "select",
+    "path": "dark/comparator-cta-title-harrier-oss-v1-270m-MLX-4bit-select.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-cta-title-harrier-oss-v1-270m-ONNX-q4f16",
+    "status": "hover",
+    "path": "dark/comparator-cta-title-harrier-oss-v1-270m-ONNX-q4f16-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-cta-title-harrier-oss-v1-270m-ONNX-q4f16",
+    "status": "click",
+    "path": "dark/comparator-cta-title-harrier-oss-v1-270m-ONNX-q4f16-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-cta-title-harrier-oss-v1-270m-ONNX-q4f16",
+    "status": "select",
+    "path": "dark/comparator-cta-title-harrier-oss-v1-270m-ONNX-q4f16-select.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-expected-harrier-oss-v1-0.6b-MLX-4bit",
+    "status": "hover",
+    "path": "dark/comparator-expected-harrier-oss-v1-0.6b-MLX-4bit-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-expected-harrier-oss-v1-0.6b-MLX-4bit",
+    "status": "click",
+    "path": "dark/comparator-expected-harrier-oss-v1-0.6b-MLX-4bit-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-expected-harrier-oss-v1-0.6b-ONNX-q4",
+    "status": "hover",
+    "path": "dark/comparator-expected-harrier-oss-v1-0.6b-ONNX-q4-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-expected-harrier-oss-v1-0.6b-ONNX-q4",
+    "status": "click",
+    "path": "dark/comparator-expected-harrier-oss-v1-0.6b-ONNX-q4-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-expected-harrier-oss-v1-0.6b-ONNX-q4",
+    "status": "select",
+    "path": "dark/comparator-expected-harrier-oss-v1-0.6b-ONNX-q4-select.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-expected-harrier-oss-v1-270m-MLX-4bit",
+    "status": "hover",
+    "path": "dark/comparator-expected-harrier-oss-v1-270m-MLX-4bit-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-expected-harrier-oss-v1-270m-MLX-4bit",
+    "status": "click",
+    "path": "dark/comparator-expected-harrier-oss-v1-270m-MLX-4bit-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-expected-harrier-oss-v1-270m-MLX-4bit",
+    "status": "select",
+    "path": "dark/comparator-expected-harrier-oss-v1-270m-MLX-4bit-select.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-expected-harrier-oss-v1-270m-ONNX-q4f16",
+    "status": "hover",
+    "path": "dark/comparator-expected-harrier-oss-v1-270m-ONNX-q4f16-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-expected-harrier-oss-v1-270m-ONNX-q4f16",
+    "status": "click",
+    "path": "dark/comparator-expected-harrier-oss-v1-270m-ONNX-q4f16-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-expected-harrier-oss-v1-270m-ONNX-q4f16",
+    "status": "select",
+    "path": "dark/comparator-expected-harrier-oss-v1-270m-ONNX-q4f16-select.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-row-harrier-oss-v1-0.6b-MLX-4bit",
+    "status": "hover",
+    "path": "dark/comparator-row-harrier-oss-v1-0.6b-MLX-4bit-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-row-harrier-oss-v1-0.6b-MLX-4bit",
+    "status": "click",
+    "path": "dark/comparator-row-harrier-oss-v1-0.6b-MLX-4bit-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-row-harrier-oss-v1-0.6b-ONNX-q4",
+    "status": "hover",
+    "path": "dark/comparator-row-harrier-oss-v1-0.6b-ONNX-q4-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-row-harrier-oss-v1-0.6b-ONNX-q4",
+    "status": "click",
+    "path": "dark/comparator-row-harrier-oss-v1-0.6b-ONNX-q4-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-row-harrier-oss-v1-0.6b-ONNX-q4",
+    "status": "select",
+    "path": "dark/comparator-row-harrier-oss-v1-0.6b-ONNX-q4-select.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-row-harrier-oss-v1-270m-MLX-4bit",
+    "status": "hover",
+    "path": "dark/comparator-row-harrier-oss-v1-270m-MLX-4bit-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-row-harrier-oss-v1-270m-MLX-4bit",
+    "status": "click",
+    "path": "dark/comparator-row-harrier-oss-v1-270m-MLX-4bit-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-row-harrier-oss-v1-270m-MLX-4bit",
+    "status": "select",
+    "path": "dark/comparator-row-harrier-oss-v1-270m-MLX-4bit-select.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-row-harrier-oss-v1-270m-ONNX-q4f16",
+    "status": "hover",
+    "path": "dark/comparator-row-harrier-oss-v1-270m-ONNX-q4f16-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-row-harrier-oss-v1-270m-ONNX-q4f16",
+    "status": "click",
+    "path": "dark/comparator-row-harrier-oss-v1-270m-ONNX-q4f16-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-row-harrier-oss-v1-270m-ONNX-q4f16",
+    "status": "select",
+    "path": "dark/comparator-row-harrier-oss-v1-270m-ONNX-q4f16-select.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-section-label-harrier-oss-v1-0.6b-MLX-4bit",
+    "status": "hover",
+    "path": "dark/comparator-section-label-harrier-oss-v1-0.6b-MLX-4bit-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-section-label-harrier-oss-v1-0.6b-MLX-4bit",
+    "status": "click",
+    "path": "dark/comparator-section-label-harrier-oss-v1-0.6b-MLX-4bit-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-section-label-harrier-oss-v1-0.6b-ONNX-q4",
+    "status": "hover",
+    "path": "dark/comparator-section-label-harrier-oss-v1-0.6b-ONNX-q4-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-section-label-harrier-oss-v1-0.6b-ONNX-q4",
+    "status": "click",
+    "path": "dark/comparator-section-label-harrier-oss-v1-0.6b-ONNX-q4-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-section-label-harrier-oss-v1-0.6b-ONNX-q4",
+    "status": "select",
+    "path": "dark/comparator-section-label-harrier-oss-v1-0.6b-ONNX-q4-select.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-section-label-harrier-oss-v1-270m-MLX-4bit",
+    "status": "hover",
+    "path": "dark/comparator-section-label-harrier-oss-v1-270m-MLX-4bit-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-section-label-harrier-oss-v1-270m-MLX-4bit",
+    "status": "click",
+    "path": "dark/comparator-section-label-harrier-oss-v1-270m-MLX-4bit-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-section-label-harrier-oss-v1-270m-MLX-4bit",
+    "status": "select",
+    "path": "dark/comparator-section-label-harrier-oss-v1-270m-MLX-4bit-select.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-section-label-harrier-oss-v1-270m-ONNX-q4f16",
+    "status": "hover",
+    "path": "dark/comparator-section-label-harrier-oss-v1-270m-ONNX-q4f16-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-section-label-harrier-oss-v1-270m-ONNX-q4f16",
+    "status": "click",
+    "path": "dark/comparator-section-label-harrier-oss-v1-270m-ONNX-q4f16-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "comparator-section-label-harrier-oss-v1-270m-ONNX-q4f16",
+    "status": "select",
+    "path": "dark/comparator-section-label-harrier-oss-v1-270m-ONNX-q4f16-select.png"
+  },
+  {
+    "scene": "models",
+    "testid": "model-download-harrier-oss-v1-0.6b-MLX-4bit",
+    "status": "hover",
+    "path": "dark/model-download-harrier-oss-v1-0.6b-MLX-4bit-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "model-download-harrier-oss-v1-0.6b-MLX-4bit",
+    "status": "click",
+    "path": "dark/model-download-harrier-oss-v1-0.6b-MLX-4bit-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "model-download-harrier-oss-v1-0.6b-ONNX-q4",
+    "status": "hover",
+    "path": "dark/model-download-harrier-oss-v1-0.6b-ONNX-q4-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "model-download-harrier-oss-v1-0.6b-ONNX-q4",
+    "status": "click",
+    "path": "dark/model-download-harrier-oss-v1-0.6b-ONNX-q4-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "model-download-harrier-oss-v1-0.6b-ONNX-q4",
+    "status": "select",
+    "path": "dark/model-download-harrier-oss-v1-0.6b-ONNX-q4-select.png"
+  },
+  {
+    "scene": "models",
+    "testid": "model-download-harrier-oss-v1-270m-MLX-4bit",
+    "status": "hover",
+    "path": "dark/model-download-harrier-oss-v1-270m-MLX-4bit-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "model-download-harrier-oss-v1-270m-MLX-4bit",
+    "status": "click",
+    "path": "dark/model-download-harrier-oss-v1-270m-MLX-4bit-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "model-download-harrier-oss-v1-270m-ONNX-q4f16",
+    "status": "hover",
+    "path": "dark/model-download-harrier-oss-v1-270m-ONNX-q4f16-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "model-download-harrier-oss-v1-270m-ONNX-q4f16",
+    "status": "click",
+    "path": "dark/model-download-harrier-oss-v1-270m-ONNX-q4f16-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "model-download-harrier-oss-v1-270m-ONNX-q4f16",
+    "status": "select",
+    "path": "dark/model-download-harrier-oss-v1-270m-ONNX-q4f16-select.png"
+  },
+  {
+    "scene": "models",
+    "testid": "models-content-deep",
+    "status": "hover",
+    "path": "dark/models-content-deep-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "models-content-deep",
+    "status": "click",
+    "path": "dark/models-content-deep-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "models-tab-deep",
+    "status": "hover",
+    "path": "dark/models-tab-deep-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "models-tab-deep",
+    "status": "click",
+    "path": "dark/models-tab-deep-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "models-tab-quick",
+    "status": "hover",
+    "path": "dark/models-tab-quick-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "models-tab-quick",
+    "status": "click",
+    "path": "dark/models-tab-quick-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "specs-grid-harrier-oss-v1-0.6b-MLX-4bit",
+    "status": "hover",
+    "path": "dark/specs-grid-harrier-oss-v1-0.6b-MLX-4bit-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "specs-grid-harrier-oss-v1-0.6b-MLX-4bit",
+    "status": "click",
+    "path": "dark/specs-grid-harrier-oss-v1-0.6b-MLX-4bit-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "specs-grid-harrier-oss-v1-0.6b-MLX-4bit",
+    "status": "select",
+    "path": "dark/specs-grid-harrier-oss-v1-0.6b-MLX-4bit-select.png"
+  },
+  {
+    "scene": "models",
+    "testid": "specs-grid-harrier-oss-v1-0.6b-ONNX-q4",
+    "status": "hover",
+    "path": "dark/specs-grid-harrier-oss-v1-0.6b-ONNX-q4-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "specs-grid-harrier-oss-v1-0.6b-ONNX-q4",
+    "status": "click",
+    "path": "dark/specs-grid-harrier-oss-v1-0.6b-ONNX-q4-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "specs-grid-harrier-oss-v1-0.6b-ONNX-q4",
+    "status": "select",
+    "path": "dark/specs-grid-harrier-oss-v1-0.6b-ONNX-q4-select.png"
+  },
+  {
+    "scene": "models",
+    "testid": "specs-grid-harrier-oss-v1-270m-MLX-4bit",
+    "status": "hover",
+    "path": "dark/specs-grid-harrier-oss-v1-270m-MLX-4bit-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "specs-grid-harrier-oss-v1-270m-MLX-4bit",
+    "status": "click",
+    "path": "dark/specs-grid-harrier-oss-v1-270m-MLX-4bit-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "specs-grid-harrier-oss-v1-270m-MLX-4bit",
+    "status": "select",
+    "path": "dark/specs-grid-harrier-oss-v1-270m-MLX-4bit-select.png"
+  },
+  {
+    "scene": "models",
+    "testid": "specs-grid-harrier-oss-v1-270m-ONNX-q4f16",
+    "status": "hover",
+    "path": "dark/specs-grid-harrier-oss-v1-270m-ONNX-q4f16-hover.png"
+  },
+  {
+    "scene": "models",
+    "testid": "specs-grid-harrier-oss-v1-270m-ONNX-q4f16",
+    "status": "click",
+    "path": "dark/specs-grid-harrier-oss-v1-270m-ONNX-q4f16-click.png"
+  },
+  {
+    "scene": "models",
+    "testid": "specs-grid-harrier-oss-v1-270m-ONNX-q4f16",
+    "status": "select",
+    "path": "dark/specs-grid-harrier-oss-v1-270m-ONNX-q4f16-select.png"
+  }
+]

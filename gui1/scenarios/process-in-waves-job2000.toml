@@ -1,0 +1,237 @@
+[scenario]
+name = "process-in-waves-job2000"
+fail_fast = true
+global_timeout_ms = 900000
+
+[[step]]
+name = "Wait for app sidebar"
+action = "wait"
+target = '[data-testid="app-sidebar-icon-and-appname"]'
+timeout_ms = 15000
+
+[[step]]
+name = "Open Models page"
+action = "click"
+target = '[data-testid="activity-models"]'
+
+[[step]]
+name = "Open deep models tab"
+action = "click"
+target = '[data-testid="models-tab-deep"]'
+
+[[step]]
+name = "Wait for deep embedder cards"
+action = "wait"
+target = '[data-testid="models-content-deep"] [data-testid^="card-actions-"]'
+timeout_ms = 15000
+
+[[step]]
+name = "Download a deep model (Harrier 270M ONNX) if not present"
+action = "eval"
+script = """
+(async () => {
+  const removeBtn = document.querySelector('[data-testid="model-remove-harrier-oss-v1-270m-ONNX-q4f16"]');
+  if (removeBtn) return 'already-downloaded';
+  const downloadBtn = document.querySelector('[data-testid="model-download-harrier-oss-v1-270m-ONNX-q4f16"]');
+  if (!downloadBtn) throw new Error('download button not found for 270M model');
+  downloadBtn.click();
+  const deadline = Date.now() + 180000;
+  while (Date.now() < deadline) {
+    if (document.querySelector('[data-testid="model-remove-harrier-oss-v1-270m-ONNX-q4f16"]')) return 'downloaded';
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  throw new Error('download timed out');
+})()
+"""
+timeout_ms = 200000
+
+[[step]]
+name = "Make a downloaded deep model the default"
+action = "eval"
+script = """
+(async () => {
+  const actions = [...document.querySelectorAll('[data-testid^="card-actions-"]')];
+  const downloaded = actions.filter((c) => c.querySelector('[data-testid^="model-remove-"]'));
+  if (downloaded.length === 0) {
+    throw new Error('no downloaded deep embedder on disk; download one in Models first');
+  }
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  // Prefer switching to a downloaded card that is not already the default.
+  const withSetDefault = downloaded.find((c) =>
+    c.querySelector('[data-testid^="model-set-default-"]')
+  );
+  if (withSetDefault) {
+    const button = withSetDefault.querySelector('[data-testid^="model-set-default-"]');
+    const slug = button.getAttribute('data-testid').replace('model-set-default-', '');
+    button.click();
+    const deadline = Date.now() + 20000;
+    while (Date.now() < deadline) {
+      if (document.querySelector(`[data-testid="model-default-badge-${slug}"]`)) return slug;
+      await sleep(100);
+    }
+    throw new Error('default badge never moved to ' + slug);
+  }
+  // No downloaded non-default card: the downloaded model must already be the
+  // default (its badge lives in the card header, not the actions row).
+  for (const c of downloaded) {
+    const slug = c.getAttribute('data-testid').replace('card-actions-', '');
+    if (document.querySelector(`[data-testid="model-default-badge-${slug}"]`)) return slug;
+  }
+  throw new Error('downloaded model is neither the default nor settable');
+})()
+"""
+
+[[step]]
+name = "Click Jobs navigation item"
+action = "click"
+target = '[data-testid="activity-home"]'
+
+[[step]]
+name = "Wait for Jobs page"
+action = "wait"
+target = '[data-testid="job-list"], [data-testid="add-job-button-empty"]'
+timeout_ms = 15000
+
+[[step]]
+name = "Create a fresh job"
+action = "eval"
+script = """
+(() => {
+  const add = document.querySelector('[data-testid="add-job-button"], [data-testid="add-job-button-empty"]');
+  if (!add) throw new Error('no add-job button found');
+  add.click();
+  return 'created';
+})()
+"""
+
+[[step]]
+name = "Wait for a job item"
+action = "wait"
+target = '[data-testid^="job-item-"]'
+timeout_ms = 15000
+
+[[step]]
+name = "Open the newest job"
+action = "click"
+target = '[data-testid^="job-item-"]'
+
+[[step]]
+name = "Wait for workspace page"
+action = "wait"
+target = '[data-testid="workspace-page"]'
+timeout_ms = 30000
+
+[[step]]
+name = "CV directory input is present"
+action = "assert-count"
+selector = '[data-testid="cv-dir-input"]'
+expected = 1
+
+[[step]]
+name = "Type the Job2000CVs CV directory path"
+action = "fill"
+target = '[data-testid="cv-dir-input"]'
+value = "/Users/apple1/Documents/repo/act/ik/activeik/talentrankiq_private/test-cv/Job2000CVs/cv"
+
+[[step]]
+name = "Commit the path by pressing Enter"
+action = "eval"
+script = """
+(() => {
+  const input = document.querySelector('[data-testid="cv-dir-input"]');
+  if (!input) throw new Error('cv-dir-input not found');
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  return 'enter-dispatched';
+})()
+"""
+
+[[step]]
+name = "Wait for the committed path to land in the input"
+action = "eval"
+script = """
+(async () => {
+  const expected = '/Users/apple1/Documents/repo/act/ik/activeik/talentrankiq_private/test-cv/Job2000CVs/cv';
+  const deadline = Date.now() + 20000;
+  while (Date.now() < deadline) {
+    const input = document.querySelector('[data-testid="cv-dir-input"]');
+    if (input && input.value === expected) return expected;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error('cv-dir-input never committed to ' + expected);
+})()
+"""
+
+[[step]]
+name = "Changing the CV path starts the import scan"
+action = "wait"
+target = '[data-testid="candidates-pane"] tbody tr'
+timeout_ms = 420000
+
+[[step]]
+name = "process_in_waves reports deep progress"
+action = "wait"
+target = '[data-testid="progress-deep-done"]'
+timeout_ms = 420000
+
+[[step]]
+name = "Progress card is the deep progress card"
+action = "assert-count"
+selector = '[data-testid="progress-card"]'
+expected = 1
+
+[[step]]
+name = "Progress shows quick embedded done"
+action = "assert-count"
+selector = '[data-testid="progress-quick-done"]'
+expected = 1
+
+[[step]]
+name = "Progress shows deep embedded done"
+action = "assert-count"
+selector = '[data-testid="progress-deep-done"]'
+expected = 1
+
+[[step]]
+name = "Progress shows compared pairs done"
+action = "assert-count"
+selector = '[data-testid="progress-compared-done"]'
+expected = 1
+
+[[step]]
+name = "Progress spinner is shown while running"
+action = "wait"
+target = '[data-testid="progress-spinner"]'
+timeout_ms = 60000
+
+[[step]]
+name = "Wait for deep embeddings to be created"
+action = "wait"
+target = '[data-testid="progress-deep-ready"]'
+timeout_ms = 300000
+
+[[step]]
+name = "GUI deep count agrees with the backend"
+action = "eval"
+script = """
+(async () => {
+  const el = document.querySelector('[data-testid="progress-deep-count"]');
+  if (!el) throw new Error('progress-deep-count is missing');
+  const dom = parseInt((el.textContent || '0').trim(), 10) || 0;
+  if (dom <= 0) throw new Error('progress-deep-count is not positive: ' + dom);
+  const ws = document.querySelector('[data-testid="workspace-page"]');
+  const jobId = ws ? ws.getAttribute('data-job-id') : null;
+  const internals = window.__TAURI_INTERNALS__;
+  if (jobId && internals && typeof internals.invoke === 'function') {
+    const res = await internals.invoke('triq_dispatch', {
+      cmd: 'get_rank_state',
+      params: { job_id: jobId },
+    });
+    const backend = res && (res.embedded_done ?? res.embeddedDone);
+    if (typeof backend === 'number' && backend <= 0) {
+      throw new Error('backend embedded_done is not positive: ' + backend + ' (gui ' + dom + ')');
+    }
+    return 'gui=' + dom + ' backend=' + backend;
+  }
+  return 'gui=' + dom;
+})()
+"""
