@@ -4,7 +4,8 @@ improvement.md
 openspec/
 tauri-pilot-failures/
 features/
-
+.kilom/
+.kilo/
 # Rust
 **/target
 
