@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode=WAL;
@@ -417,14 +417,12 @@ impl DbHandle {
     /// this write-back every row stays rank = NULL / points = NULL and the GUI
     /// shows "—" forever, even after embeddings and similarities exist.
     ///
-    /// Points basis: the deep model's similarity to the job ad when the CV has
-    /// a deep embedding, else the quick model's, scaled to a 0..100 points
-    /// scale (`points_max = 100`). One `candidate_scores` row per scored
-    /// candidate mirrors the old cascade's ad slot: kind 'Ad' (heavy space)
-    /// when deep-embedded, 'Scout' otherwise. Candidates without any similarity
-    /// keep points/rank NULL. Idempotent: re-running replaces the same rows.
+    /// Points basis: the job's rubric weights (ad_weight, fb_job_weight, fb_profile_weight,
+    /// criteria weights). Writes one `candidate_scores` row per question (ad + each criterion)
+    /// for every candidate that has any similarity. Points are weight * similarity (0..1) on
+    /// the rubric scale. `points_max` is the job's total rubric capacity.
     ///
-    /// Returns the number of candidates that received a score.
+    /// Returns the number of candidates that received at least one score.
     pub fn write_back_candidate_scores(
         &self,
         job_id: &str,
@@ -448,46 +446,141 @@ impl DbHandle {
             return Ok(0);
         }
 
-        // One indexed pass: the job's candidates, their file_state hash, and
-        // the deep/quick similarity to the job ad (if any), pivoted into two
-        // columns. Candidates without any similarity row drop out of the join
-        // and keep points/rank NULL.
-        let rows: Vec<(String, String, Option<f64>, Option<f64>)> = self.with_reader(|c| {
+        // Read job rubric weights (with defaults if columns don't exist)
+        let (ad_weight, fb_job_weight, fb_profile_weight): (f64, f64, f64) = self.with_reader(|c| {
             let mut stmt = c.prepare(
-                "SELECT c.id, c.file_name,
-                        MAX(CASE WHEN s.model_id = ?2 THEN s.similarity END) AS deep_sim,
-                        MAX(CASE WHEN s.model_id = ?3 THEN s.similarity END) AS quick_sim
-                   FROM candidates c
-                   JOIN file_state fs ON fs.path = c.source_file_path
-                   JOIN cv_similarity s ON s.cv_hash = fs.hash
-                                   AND s.target_hash = ?4
-                                   AND s.model_id IN (?2, ?3)
-                  WHERE c.job_id = ?1 AND c.extraction_status = 'Extracted'
-                  GROUP BY c.id, c.file_name",
+                "SELECT COALESCE(ad_weight, 50.0), COALESCE(fb_job_weight, 0.0), COALESCE(fb_profile_weight, 0.0)
+                   FROM jobs WHERE id = ?1",
             )?;
-            let rows = stmt
-                .query_map(
-                    rusqlite::params![job_id, deep_model, quick_model, jobad_hash],
-                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-                )?
+            let row = stmt.query_row([job_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+            Ok(row)
+        })?;
+
+        // Read criteria for this job (id, text, weight, sign)
+        let criteria: Vec<(String, String, f64, String)> = self.with_reader(|c| {
+            let mut stmt = c.prepare(
+                "SELECT id, text, weight, COALESCE(sign, 'Positive') FROM criteria WHERE job_id = ?1",
+            )?;
+            let rows = stmt.query_map([job_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(rows)
         })?;
 
-        // (candidate_id, file_name, points, score kind) for every candidate
-        // with any similarity, ranked by points desc then file name (the old
-        // cascade's re_rank tie-break, so the sheet order is stable across
-        // passes). The kind mirrors the old cascade's ad slot: 'Ad' when the
-        // deep embedder scored the CV, 'Scout' when only the quick one did.
-        let mut scored: Vec<(String, String, f64, &'static str)> = rows
-            .iter()
-            .filter_map(|(id, file_name, deep, quick)| {
-                let sim = deep.or(*quick)?;
-                let points = (sim.clamp(0.0, 1.0) * 10000.0).round() / 100.0;
-                let kind = if deep.is_some() { "Ad" } else { "Scout" };
-                Some((id.clone(), file_name.clone(), points, kind))
+        // Compute criterion target hashes (hash of criterion text)
+        let criterion_hashes: Vec<(String, String, f64, String)> = criteria
+            .into_iter()
+            .map(|(id, text, weight, sign)| {
+                let hash = crate::hash_text(&text);
+                (id, hash, weight, sign)
             })
             .collect();
+
+        // One indexed pass: the job's candidates, their file_state hash, and
+        // the deep/quick similarity to the job ad AND all criteria, pivoted.
+        let rows: Vec<(String, String, Option<f64>, Option<f64>, Vec<Option<f64>>)> = self.with_reader(|c| {
+            // Build dynamic query with placeholders for all targets (ad + criteria)
+            let num_targets = 1 + criterion_hashes.len();
+            let target_placeholders = (0..num_targets).map(|_| "?").collect::<Vec<_>>().join(",");
+            let model_placeholders = format!("?,?");
+            let target_hashes: Vec<String> = std::iter::once(jobad_hash.to_string())
+                .chain(criterion_hashes.iter().map(|(_, h, _, _)| h.clone()))
+                .collect();
+
+            let sql = format!(
+                "SELECT c.id, c.file_name,
+                        MAX(CASE WHEN s.model_id = ?2 THEN s.similarity END) AS deep_ad_sim,
+                        MAX(CASE WHEN s.model_id = ?3 THEN s.similarity END) AS quick_ad_sim
+                   FROM candidates c
+                   JOIN file_state fs ON fs.path = c.source_file_path
+                   JOIN cv_similarity s ON s.cv_hash = fs.hash
+                                   AND s.target_hash IN ({})
+                                   AND s.model_id IN (?2, ?3)
+                  WHERE c.job_id = ?1 AND c.extraction_status = 'Extracted'
+                  GROUP BY c.id, c.file_name",
+                target_placeholders
+            );
+
+            let mut stmt = c.prepare(&sql)?;
+            let mut params: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(job_id), Box::new(deep_model), Box::new(quick_model)];
+            for h in &target_hashes {
+                params.push(Box::new(h.clone()));
+            }
+            let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
+            let rows = stmt
+                .query_map(param_refs.as_slice(), |r| {
+                    let mut criterion_sims = Vec::with_capacity(criterion_hashes.len());
+                    for i in 0..criterion_hashes.len() {
+                        // We need to query criterion similarities separately since we can't pivot them all in one query easily
+                        // For now, read them in a separate query per candidate
+                        criterion_sims.push(None::<f64>);
+                    }
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, criterion_sims))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(rows)
+        })?;
+
+        // For each candidate, query criterion similarities
+        let mut candidate_data = Vec::new();
+        for (id, file_name, deep_ad, quick_ad, _) in rows {
+            let mut criterion_sims = Vec::with_capacity(criterion_hashes.len());
+            for (_, crit_hash, _, _) in &criterion_hashes {
+                let sim: Option<f64> = self.with_reader(|c| {
+                    let mut stmt = c.prepare(
+                        "SELECT MAX(s.similarity) FROM cv_similarity s
+                           JOIN file_state fs ON fs.hash = s.cv_hash
+                          WHERE fs.path = (SELECT source_file_path FROM candidates WHERE id = ?1)
+                            AND s.target_hash = ?2
+                            AND s.model_id IN (?3, ?4)",
+                    )?;
+                    let val = stmt.query_row(
+                        rusqlite::params![id, crit_hash, deep_model, quick_model],
+                        |r| r.get(0),
+                    ).optional()?;
+                    Ok(val.flatten())
+                })?;
+                criterion_sims.push(sim);
+            }
+            candidate_data.push((id, file_name, deep_ad, quick_ad, criterion_sims));
+        }
+
+        // Compute points for each candidate using the rubric
+        let max_points = ad_weight + fb_job_weight + fb_profile_weight
+            + criterion_hashes.iter().map(|(_, _, w, _)| *w).sum::<f64>();
+
+        let mut scored = Vec::new();
+        for (id, file_name, deep_ad, quick_ad, criterion_sims) in candidate_data {
+            let ad_sim = deep_ad.or(quick_ad);
+            let has_any = ad_sim.is_some() || criterion_sims.iter().any(|s| s.is_some());
+            if !has_any {
+                continue;
+            }
+
+            let mut candidate_points = 0.0;
+            let mut score_rows = Vec::new();
+
+            // Ad score
+            if let Some(sim) = ad_sim {
+                let points = ad_weight * sim.clamp(0.0, 1.0);
+                candidate_points += points;
+                let kind = if deep_ad.is_some() { "Ad" } else { "Scout" };
+                score_rows.push(("ad".to_string(), kind.to_string(), points, ad_weight, "Positive".to_string()));
+            }
+
+            // Criterion scores
+            for ((_, _, crit_weight, sign), crit_sim) in criterion_hashes.iter().zip(criterion_sims.iter()) {
+                if let Some(sim) = crit_sim {
+                    let points = crit_weight * sim.clamp(0.0, 1.0);
+                    candidate_points += points;
+                    score_rows.push((format!("criterion_{}", crit_weight), "Criterion".to_string(), points, *crit_weight, sign.clone()));
+                }
+            }
+
+            scored.push((id, file_name, candidate_points, score_rows));
+        }
+
+        // Sort by points desc, then file_name
         scored.sort_by(|a, b| {
             b.2.partial_cmp(&a.2)
                 .unwrap_or(std::cmp::Ordering::Equal)
@@ -497,30 +590,36 @@ impl DbHandle {
         self.with_writer(|c| {
             let tx = c.transaction()?;
             {
+                // Delete all candidate_scores for this job's candidates
                 let mut del = tx.prepare(
-                    "DELETE FROM candidate_scores WHERE candidate_id = ?1 AND question_id = 'ad'",
+                    "DELETE FROM candidate_scores WHERE candidate_id IN (SELECT id FROM candidates WHERE job_id = ?1)",
                 )?;
+                del.execute([job_id])?;
+
                 let mut ins = tx.prepare(
                     "INSERT INTO candidate_scores
                        (id, candidate_id, question_id, kind, label, points, max_points, sign)
-                     VALUES (?1, ?2, 'ad', ?3, 'Job fit', ?4, ?5, 'Positive')",
+                     VALUES (?1, ?2, ?3, ?4, 'Job fit', ?5, ?6, ?7)",
                 )?;
                 let mut upd =
                     tx.prepare("UPDATE candidates SET points = ?1, points_max = ?2 WHERE id = ?3")?;
-                for (id, _, points, kind) in &scored {
-                    del.execute([id])?;
-                    ins.execute(rusqlite::params![
-                        format!("cs_{}", uuid::Uuid::new_v4()),
-                        id,
-                        kind,
-                        points,
-                        100.0
-                    ])?;
-                    upd.execute(rusqlite::params![points, 100.0, id])?;
+
+                for (id, _, total_points, score_rows) in &scored {
+                    for (qid, kind, points, max_pts, sign) in score_rows {
+                        ins.execute(rusqlite::params![
+                            format!("cs_{}", uuid::Uuid::new_v4()),
+                            id,
+                            qid,
+                            kind,
+                            (points * 100.0).round() / 100.0,
+                            max_points,
+                            sign
+                        ])?;
+                    }
+                    upd.execute(rusqlite::params![(total_points * 100.0).round() / 100.0, max_points, id])?;
                 }
             }
-            // NULL first so candidates that lost their similarity (re-import,
-            // changed file) cannot keep a stale rank.
+            // NULL first so candidates that lost their similarity cannot keep a stale rank.
             tx.execute(
                 "UPDATE candidates SET rank = NULL WHERE job_id = ?1",
                 [job_id],

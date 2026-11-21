@@ -894,7 +894,7 @@ pub fn get_rank_state(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Pr
 
     // The latest report is the most recent wave, and it is the one that says
     // whether the run converged.
-    let (running, converged, cancelled, stage, reports) = match &rs {
+    let (running0, converged, cancelled, stage, reports) = match &rs {
         Some(rs) => {
             let reports: Vec<SortReport> =
                 serde_json::from_str(&rs.sort_reports_json).unwrap_or_default();
@@ -908,6 +908,18 @@ pub fn get_rank_state(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Pr
         }
         None => (false, false, false, None, Vec::new()),
     };
+    // The process_in_waves pipeline keeps its own running flag in
+    // waves_rank_state. Fold it in so get_rank_state agrees with the pipeline
+    // that is actually executing (bug.md root cause 3).
+    let waves_running: bool = conn
+        .query_row(
+            "SELECT COALESCE((SELECT running FROM waves_rank_state WHERE job_id = ?1), 0)",
+            rusqlite::params![job_id],
+            |r| r.get::<_, i64>(0),
+        )
+        .map(|v| v != 0)
+        .unwrap_or(false);
+    let running = running0 || waves_running;
     // The import auto-start deliberately runs ad-less jobs as an embed-prefill
     // cascade (spawn_cascade's doc), which is status-bar activity — not a
     // ranking in progress. `ranking` is the button-facing flag: in flight AND
