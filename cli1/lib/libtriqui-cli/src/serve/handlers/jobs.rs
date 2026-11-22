@@ -11,11 +11,11 @@ use uuid::Uuid;
 use chrono;
 use libtriqui_client::protocol::ProtocolError;
 use libtriqui_client::types::{
-    DomainError, ExtractionStatus, FileType, Job, JobUiState, RankState, TriqiItem,
+    DomainError, ExtractionStatus, FileType, Job, JobSummary, JobUiState, RankState, TriqiItem,
 };
 use libtriqui_core::app_config;
 
-use crate::serve::handlers::{domain, lock_err, ok_json};
+use crate::serve::handlers::{domain, lock_err, ok_json, string_err};
 use crate::serve::{watch, ServeState};
 
 pub const JOB_COLS: &str = "id, title, job_ad_text, import_directory_path, triqui_size, archived, created_at, updated_at, last_ranked_at, inputs_updated_at, ad_weight, fb_job_weight, fb_profile_weight, job_ad_path";
@@ -164,7 +164,7 @@ pub fn create_job(state: &Arc<ServeState>) -> Result<Value, ProtocolError> {
         ad_weight: job.ad_weight,
         fb_job_weight: job.fb_job_weight,
         fb_profile_weight: job.fb_profile_weight,
-        import_directory_path: job.import_directory_path.clone(),
+        import_directory_path: job.import_directory_path.clone().unwrap_or_default(),
         created_at: job.created_at.clone(),
     });
     log::info!("created job {id} with cv dir {cv_dir}");
@@ -173,8 +173,60 @@ pub fn create_job(state: &Arc<ServeState>) -> Result<Value, ProtocolError> {
 
 pub fn list_job_summaries(state: &Arc<ServeState>) -> Result<Value, ProtocolError> {
     let importing = state.import_state.0.lock().map_err(lock_err)?.clone();
-    let cv_state = state.cv_state.lock().map_err(lock_err)?.clone();
-    let summaries = libcv_state::projections::compute_job_summaries(&cv_state, &importing);
+    let conn = state.db.read_conn();
+    let mut stmt = conn
+        .prepare("SELECT id, title, triqui_size, archived, created_at, last_ranked_at, job_ad_text FROM jobs ORDER BY created_at")
+        .map_err(db_err)?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i32>(2)?,
+                r.get::<_, i64>(3)? != 0,
+                r.get::<_, String>(4)?,
+                r.get::<_, Option<String>>(5)?,
+                r.get::<_, Option<String>>(6)?,
+            ))
+        })
+        .map_err(db_err)?;
+    let mut summaries = Vec::new();
+    for row in rows {
+        let (id, title, triqui_size, archived, created_at, last_ranked_at, job_ad_text) =
+            row.map_err(db_err)?;
+        let cv_imported: i32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM candidates WHERE job_id = ?1",
+                rusqlite::params![id],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap_or(0) as i32;
+        let cv_failed: i32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM candidates WHERE job_id = ?1 AND extraction_status = 'Failed'",
+                rusqlite::params![id],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap_or(0) as i32;
+        let ad_set = job_ad_text
+            .as_deref()
+            .map(|t| !t.trim().is_empty())
+            .unwrap_or(false);
+        summaries.push(JobSummary {
+            id: id.clone(),
+            title,
+            triqui_size,
+            archived,
+            cv_imported,
+            cv_failed,
+            want_count: 0,
+            avoid_count: 0,
+            ad_set,
+            importing: importing.contains(&id),
+            last_ranked_at,
+            created_at,
+        });
+    }
     ok_json(summaries)
 }
 
@@ -186,7 +238,7 @@ pub fn get_job_detail(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Pr
         .map_err(lock_err)?
         .contains(job_id);
     let cv_state = state.cv_state.lock().map_err(lock_err)?.clone();
-    let conn = state.db.read().map_err(lock_err)?;
+    let conn = state.db.read_conn();
     match libcv_state::projections::compute_job_detail(&cv_state, &conn, job_id) {
         Some(mut detail) => {
             detail.importing = importing;
@@ -272,7 +324,8 @@ pub fn update_job(
     if inputs_changed {
         let ad_edited = !ad_lands_first_time;
         let invalidation =
-            libtriqui_core::rescore::inputs_changed(&state.runtime, job_id, ad_edited)?;
+            libtriqui_core::rescore::inputs_changed(&state.runtime, job_id, ad_edited)
+                .map_err(string_err)?;
         log::info!(
             "update_job: {job_id} re-projected — {} candidates, {} rubric vector(s) embedded{}",
             invalidation.rescored,
@@ -304,11 +357,8 @@ pub fn update_job(
         .map_err(db_err)?;
     drop(conn);
     if start_cascade {
-        match crate::serve::handlers::rank::spawn_cascade(state, job_id) {
-            Ok(true) => log::info!("rank: inputs changed for {job_id} — cascade started"),
-            Ok(false) => log::info!("rank: cascade already running for {job_id}"),
-            Err(e) => log::warn!("rank: could not start cascade for {job_id}: {e}"),
-        }
+        state.request_rank(job_id);
+        log::info!("rank: inputs changed for {job_id} — rank requested");
     }
     state.dispatch_event(libcv_state::Event::JobUpdated {
         job_id: job_id.to_string(),
@@ -367,12 +417,15 @@ pub fn update_job_weights(
     // Weights are rubric too, so they go down the same path as text: re-project,
     // nothing cancelled. The comparator never read a weight — its grade is a win-rate
     // and `ad_weight` only scales it — so every memoized verdict still holds.
-    let invalidation = libtriqui_core::rescore::inputs_changed(&state.runtime, job_id, false)?;
+    let invalidation = libtriqui_core::rescore::inputs_changed(&state.runtime, job_id, false)
+        .map_err(string_err)?;
     log::info!(
         "update_job_weights: {job_id} re-projected ({} candidates, capacity now {:.1})",
         invalidation.rescored,
         invalidation.rescored as f64,
     );
+    // Request a rank after weights change.
+    state.request_rank(job_id);
     ok_json(job)
 }
 
@@ -488,7 +541,7 @@ pub fn set_job_cv_dir(
 /// files added while the job was not viewed are imported too. Returns the job
 /// so callers can refresh state.
 pub fn watch_job(state: &Arc<ServeState>, job_id: &str) -> Result<Value, ProtocolError> {
-    let conn = state.db.read().map_err(lock_err)?;
+    let conn = state.db.read_conn();
     let job = conn
         .query_row(
             &format!("SELECT {JOB_COLS} FROM jobs WHERE id = ?1"),
@@ -512,7 +565,7 @@ pub fn watch_job(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Protoco
 /// `inputs_version != ranked_version` — so an edit landing in the same second
 /// as a rank still reads as dirty.
 pub fn job_ui_state(state: &Arc<ServeState>, job_id: &str) -> Result<Value, ProtocolError> {
-    let conn = state.db.read().map_err(lock_err)?;
+    let conn = state.db.read_conn();
     let (cv_imported, ad_set, inputs_version, ranked_version): (i64, bool, i64, Option<i64>) = conn
         .query_row(
             "SELECT (SELECT COUNT(*) FROM candidates
@@ -530,42 +583,65 @@ pub fn job_ui_state(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Prot
             }),
             e => domain(&db_err(e)),
         })?;
+    // Get the real rank state from rank_state table (includes blocked reasons).
+    let rank_row = libtriqui_core::db::rank_state_for_job(&conn, job_id).ok();
+    let (running, ranking, complete, cancelled, wave, blocked_reason, embedded_total, embedded_done, candidates) = match &rank_row {
+        Some(r) => {
+            // Get candidate counts
+            let (cands, emb_total, emb_done): (u32, u32, u32) = conn
+                .query_row(
+                    "SELECT
+                        (SELECT COUNT(*) FROM candidates WHERE job_id = ?1 AND extraction_status = 'Extracted' AND deleted = 0),
+                        (SELECT COUNT(*) FROM candidates WHERE job_id = ?1 AND extraction_status = 'Extracted' AND deleted = 0 AND extracted_text IS NOT NULL),
+                        (SELECT COUNT(*) FROM candidates WHERE job_id = ?1 AND extraction_status = 'Extracted' AND deleted = 0 AND vector IS NOT NULL)
+                     FROM jobs WHERE id = ?1",
+                    rusqlite::params![job_id],
+                    |r| Ok((r.get::<_, i64>(0)? as u32, r.get::<_, i64>(1)? as u32, r.get::<_, i64>(2)? as u32)),
+                )
+                .unwrap_or((0, 0, 0));
+            (!r.complete && !r.cancelled, !r.complete && !r.cancelled, r.complete, r.cancelled, None, r.blocked.clone(), emb_total, emb_done, cands)
+        }
+        None => (false, false, false, false, None, None, 0, 0, 0),
+    };
+    drop(conn);
+
     // The right-moment nudge, backend-decided (the gui only maps the code):
     // an ad-less job whose embed-prefill cascade has converged has finished
     // every piece of ad-independent work — embedding won't get them closer
     // to a ranking, so the job ad is the one thing missing. Not while a run
     // is still going (the StatusBar shows that activity) and not for a
     // cancelled one (the user stopped it deliberately).
-    let prefill_converged: bool = conn
-        .query_row(
-            "SELECT complete <> 0 AND cancelled = 0 FROM rank_state WHERE job_id = ?1",
-            rusqlite::params![job_id],
-            |r| r.get::<_, bool>(0),
-        )
-        .unwrap_or(false);
+    let prefill_converged = rank_row.as_ref().map(|r| r.complete && !r.cancelled).unwrap_or(false);
     let nudge = if !ad_set && cv_imported >= 1 && prefill_converged {
         Some("add-job-ad".to_string())
     } else {
         None
     };
-    drop(conn);
     let engine_ready = state.runtime.status_info().status == "Running";
     // Both blockers are backend-owned: no CVs is meaningless, and no job ad
     // has nothing to score against (the old behaviour ranked anyway and
     // produced all-zero totals — read as "broken" and spun forever).
     let sort_allowed = cv_imported >= 1 && ad_set;
     let rerank_dirty = ranked_version.is_none() || ranked_version != Some(inputs_version);
+    // Clone blocked_reason for later use in rank.reason
+    let blocked_reason_clone = blocked_reason.clone();
+    // Reason precedence: no-cvs → no-jobad → engine-not-ready → blocked:<code> → stale → clean
     let reason = if cv_imported < 1 {
         Some("no-cvs".to_string())
     } else if !ad_set {
         Some("no-jobad".to_string())
     } else if !engine_ready {
         Some("engine-not-ready".to_string())
+    } else if let Some(blocked) = blocked_reason {
+        Some(format!("blocked:{}", blocked))
     } else if rerank_dirty {
         Some("stale".to_string())
     } else {
         Some("clean".to_string())
     };
+    // Determine converged from rank state
+    let clean = ranked_version.is_some() && ranked_version == Some(inputs_version);
+    let converged = complete && clean && candidates > 0 && embedded_done == embedded_total && embedded_total > 0;
     ok_json(JobUiState {
         engine_ready,
         sort_allowed,
@@ -573,23 +649,29 @@ pub fn job_ui_state(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Prot
         reason,
         nudge,
         rank: RankState {
-            running: false,
-            ranking: false,
-            stage: None,
-            wave: None,
-            embedded_total: 0,
-            embedded_done: 0,
+            running,
+            ranking,
+            stage: if running { Some("sort".to_string()) } else { None },
+            wave,
+            embedded_total,
+            embedded_done,
             compared: 0,
-            candidates: 0,
-            converged: false,
-            reason: None,
+            candidates,
+            converged,
+            reason: blocked_reason_clone.map(|b| format!("blocked:{}", b)).or_else(|| {
+                if running { Some("running".to_string()) }
+                else if cancelled { Some("cancelled".to_string()) }
+                else if rerank_dirty { Some("stale".to_string()) }
+                else if converged { Some("converged".to_string()) }
+                else { Some("partial".to_string()) }
+            }),
         },
     })
 }
 
 pub fn get_sort_report(state: &Arc<ServeState>, job_id: &str) -> Result<Value, ProtocolError> {
     let cv_state = state.cv_state.lock().map_err(lock_err)?.clone();
-    let conn = state.db.read().map_err(lock_err)?;
+    let conn = state.db.read_conn();
     match libcv_state::projections::compute_sort_report(&cv_state, &conn, job_id) {
         Some(report) => ok_json(report),
         None => Err(domain(&DomainError::NotFound {

@@ -1,0 +1,23 @@
+[package]
+name = "libcv-pipeline"
+version = "0.1.0"
+description = "Workers + effect runner for the CV pipeline."
+authors = ["oaltun"]
+edition = "2021"
+rust-version = "1.82"
+
+[lib]
+name = "libcv_pipeline"
+
+[dependencies]
+libcv-state = { path = "../libcv-state" }
+libcv-comparator-order = { path = "../libcv-comparator-order" }
+libcv-match = { path = "../libcv-match" }
+libcvparser = { path = "../libcvparser" }
+libcomparator = { path = "../libcomparator" }
+libsyscap = { path = "../libsyscap" }
+libtriqui-core = { path = "../libtriqui-core" }
+uuid = { version = "1", features = ["v4", "serde"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+log = "0.4"
+chrono = { version = "0.4", features = ["serde"] }

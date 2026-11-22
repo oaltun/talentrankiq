@@ -6,6 +6,7 @@ members = [
     "lib/libcv-deep",
     "lib/libcv-match",
     "lib/libcv-store",
+    "lib/libcv-entitlements",
     "cli",
     "lib/libcv-pipeline",
     "lib/libcv-state",

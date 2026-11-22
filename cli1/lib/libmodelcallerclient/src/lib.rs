@@ -253,15 +253,12 @@ impl ModelCallerClient {
     /// down on `shutdown` (which also ends the in-process ORT wrapper).
     #[cfg(feature = "inprocess")]
     pub fn spawn_inprocess(
-        config_path: &Path,
+        _config_path: &Path,
         verbose: bool,
         logfile: Option<&str>,
     ) -> Result<Self, ModelCallerError> {
-        let cfg = libconfigreader::load(config_path, &libconfigreader::CliOverrides::new())
-            .map_err(|e| {
-                ModelCallerError::Spawn("in-process".into(), format!("load config: {e}"))
-            })?;
-        Self::spawn_inprocess_with_engine(config_path, cfg.engine.clone(), verbose, logfile)
+        let cfg = libconfigreader::Config::load();
+        Self::spawn_inprocess_with_engine_from_config(cfg.clone(), cfg.engine.clone(), verbose, logfile)
     }
 
     /// [`spawn_inprocess`] with explicit engine caps instead of the config's
@@ -271,15 +268,21 @@ impl ModelCallerClient {
     /// registry/model_dir still resolve from `config_path`.
     #[cfg(feature = "inprocess")]
     pub fn spawn_inprocess_with_engine(
-        config_path: &Path,
+        _config_path: &Path,
         engine: libconfigreader::EngineSection,
         verbose: bool,
         logfile: Option<&str>,
     ) -> Result<Self, ModelCallerError> {
-        let cfg = libconfigreader::load(config_path, &libconfigreader::CliOverrides::new())
-            .map_err(|e| {
-                ModelCallerError::Spawn("in-process".into(), format!("load config: {e}"))
-            })?;
+        Self::spawn_inprocess_with_engine_from_config(libconfigreader::Config::load(), engine, verbose, logfile)
+    }
+
+    #[cfg(feature = "inprocess")]
+    pub fn spawn_inprocess_with_engine_from_config(
+        cfg: libconfigreader::Config,
+        engine: libconfigreader::EngineSection,
+        verbose: bool,
+        logfile: Option<&str>,
+    ) -> Result<Self, ModelCallerError> {
         let registry = libmodelcaller::Registry::from_config(&cfg);
         let (backend, exec_provider) = effective_engine_io(&engine, &cfg);
         let model_dir = expand_home(cfg.model_dir.to_str().unwrap_or(""));

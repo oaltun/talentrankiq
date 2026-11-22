@@ -215,7 +215,7 @@ pub fn stop_watching(state: &Arc<ServeState>, job_id: &str) {
 /// import.
 pub fn watch_job(state: &Arc<ServeState>, job_id: &str) {
     let (dir, ad_path) = {
-        let conn = state.db.read().expect("db read failed");
+        let conn = state.db.read_conn();
         let dir: Option<String> = conn.query_row(
             "SELECT import_directory_path FROM jobs WHERE id = ?1",
             rusqlite::params![job_id],

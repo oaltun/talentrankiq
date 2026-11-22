@@ -1,0 +1,15 @@
+[package]
+name = "libcv-state"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "libcv_state"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+chrono = { version = "0.4", features = ["serde"] }
+libcv-comparator-order = { path = "../libcv-comparator-order" }
+libcv-entitlements = { path = "../libcv-entitlements" }
+libtriqui-client = { path = "../libtriqui-client" }
+rusqlite = { version = "0.32", features = ["bundled"] }

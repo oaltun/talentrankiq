@@ -431,7 +431,7 @@ pub fn model_variants(
     let registry = app_config::registry_ctx();
     let status = app_config::variant_status(
         &registry.registry,
-        registry.backend,
+        &registry.backend,
         &model_dir,
         registry.revision.as_str(),
         &params.model,
@@ -885,15 +885,16 @@ fn benchmark_cvs(state: &ServeState) -> Result<Vec<(String, String)>, String> {
 }
 
 struct TryModelLibEmbedder {
-    client: libmodelcallerclient::ModelCallerClient,
+    client: Arc<dyn libtriqui_core::runtime::ModelClient>,
     model: String,
 }
 
 impl libembedrank::Embedder for TryModelLibEmbedder {
     fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f64>>, libembedrank::EmbedRankError> {
-        self.client
+        let vs = self.client
             .embed(&self.model, texts, None)
-            .map_err(|e| libembedrank::EmbedRankError::Embed(e.to_string()))
+            .map_err(|e| libembedrank::EmbedRankError::Embed(e.to_string()))?;
+        Ok(vs.into_iter().map(|v| v.into_iter().map(|x| x as f64).collect()).collect())
     }
 }
 
@@ -966,6 +967,9 @@ pub fn try_model(state: &Arc<ServeState>, slug: &str) -> Result<serde_json::Valu
                 .into_iter()
                 .next()
                 .unwrap_or_default()
+                .into_iter()
+                .map(|x| x as f64)
+                .collect()
         };
         let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
         per_cv_ms.push(elapsed_ms);
@@ -1026,11 +1030,18 @@ pub fn set_default_model(
 }
 
 /// Set the embedder as the default embedding model (persisted to preferences).
+/// When the engine is running, routes through set_embedding_model to trigger re-embedding and re-ranking.
 pub fn make_default_embedder(
     state: &Arc<ServeState>,
     slug: &str,
 ) -> Result<(), ProtocolError> {
-    set_default_model(state, ModelKind::Embedding, slug)
+    // If the engine is running, route through set_embedding_model to handle
+    // re-embedding and re-ranking. Otherwise just persist the preference.
+    if state.runtime.status_info().status == "Running" {
+        set_embedding_model(state, slug)
+    } else {
+        set_default_model(state, ModelKind::Embedding, slug)
+    }
 }
 
 /// Switch the embedding model: persists the choice, wipes every stored vector
@@ -1122,7 +1133,15 @@ pub fn set_embedding_model(state: &Arc<ServeState>, slug: &str) -> Result<(), Pr
         }
     }
     let deadline = std::time::Instant::now() + CASCADE_RETIRE_WAIT;
-    while job_ids.iter().any(|id| state.cascade_gens.is_live(id)) {
+    while job_ids.iter().any(|id| {
+        let conn = state.db.read_conn();
+        conn.query_row(
+            "SELECT complete = 0 AND cancelled = 0 FROM rank_state WHERE job_id = ?1",
+            rusqlite::params![id],
+            |r| r.get::<_, bool>(0),
+        )
+        .unwrap_or(false)
+    }) {
         if std::time::Instant::now() >= deadline {
             log::warn!(
                 "models: cascade runners still alive {}s after the embedder switch — \
@@ -1166,9 +1185,17 @@ pub fn set_embedding_model(state: &Arc<ServeState>, slug: &str) -> Result<(), Pr
     .map_err(|e| string_err(format!("failed to reset job vectors: {e}")))?;
     conn.execute("UPDATE criteria SET vector = NULL, vector_model = NULL", [])
         .map_err(|e| string_err(format!("failed to reset criterion vectors: {e}")))?;
-    // Re-embed every job's ad + criteria with the new model in the background
-    // (sequential, on one thread; prewarm waits for the engine).
-    libtriqui_core::embeddings::prewarm_all_rubric_inputs(&state.runtime, job_ids);
+    // Re-embed every job's ad + criteria and rebuild candidate centroids from
+    // their stored text with the new model (sequential, on this thread). The
+    // barrier is a no-op for candidates that already hold a centroid in the
+    // new space, but every centroid was just wiped, so all are rebuilt here.
+    for job_id in &job_ids {
+        if let Err(e) = libtriqui_core::ensure::ensure_inputs(&state.runtime, job_id) {
+            log::warn!("models: ensure_inputs after switch for {job_id} failed: {e}");
+        }
+        // Request a rank for each job after re-embedding.
+        state.request_rank(job_id);
+    }
     Ok(())
 }
 

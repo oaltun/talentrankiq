@@ -26,9 +26,10 @@ pub mod handlers;
 pub mod watch;
 
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::io::{BufRead, Write};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use libtriqui_client::protocol::{Request, MAX_LINE_BYTES};
@@ -86,6 +87,87 @@ impl EventSink {
     }
 }
 
+/// Request for the rank scheduler.
+struct RankRequest {
+    job_id: String,
+}
+
+/// Rank request scheduler: coalesces rank requests per job and runs them
+/// sequentially with a ~500ms tick.
+pub struct RankScheduler {
+    sender: std::sync::mpsc::Sender<RankRequest>,
+    handle: Option<std::thread::JoinHandle<()>>,
+}
+
+impl RankScheduler {
+    pub fn new(state: Arc<ServeState>) -> Self {
+        let (sender, receiver) = std::sync::mpsc::channel::<RankRequest>();
+        let state_clone = Arc::clone(&state);
+
+        let handle = std::thread::Builder::new()
+            .name("rank-scheduler".into())
+            .spawn(move || {
+                // Coalesce requests using a HashSet
+                let mut pending: HashSet<String> = HashSet::new();
+
+                loop {
+                    // Wait for requests with a timeout to allow periodic processing
+                    let timeout = std::time::Duration::from_millis(500);
+                    match receiver.recv_timeout(timeout) {
+                        Ok(req) => {
+                            pending.insert(req.job_id);
+                            // Drain any additional ready requests
+                            while let Ok(req) = receiver.try_recv() {
+                                pending.insert(req.job_id);
+                            }
+                        }
+                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                            // Timeout - process pending
+                        }
+                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                            // Channel closed - process remaining and exit
+                            break;
+                        }
+                    }
+
+                    // Process all pending jobs
+                    for job_id in pending.drain() {
+                        let should_rank = {
+                            let conn = state_clone.db.read_conn();
+                            conn.query_row(
+                                "SELECT 1 FROM jobs WHERE id = ?1",
+                                rusqlite::params![&job_id],
+                                |_| Ok(true),
+                            )
+                            .unwrap_or(false)
+                        };
+
+                        if should_rank {
+                            let _ = crate::serve::handlers::rank::spawn_cascade(&state_clone, &job_id);
+                        }
+                    }
+                }
+            })
+            .ok();
+
+        Self { sender, handle }
+    }
+
+    /// Request a rank for a job. Coalesces multiple requests for the same job.
+    pub fn request(&self, job_id: &str) {
+        let _ = self.sender.send(RankRequest { job_id: job_id.to_string() });
+    }
+
+    /// Shutdown the scheduler thread.
+    pub fn shutdown(&mut self) {
+        // Drop sender to close channel
+        drop(self.sender.clone());
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
 /// Shared serve state. Immutable after construction; all fields are handles
 /// with interior mutability.
 pub struct ServeState {
@@ -104,6 +186,8 @@ pub struct ServeState {
     pub config: CascadeConfig,
     /// Live cascade runners per job (see [`handlers::rank::CascadeGens`]).
     pub cascade_gens: Arc<crate::serve::handlers::rank::CascadeGens>,
+    /// Rank request scheduler: coalesces rank requests and runs them sequentially per job.
+    pub rank_scheduler: OnceLock<RankScheduler>,
     /// Per-model download progress for polling (keyed by slug).
     pub download_progress: Arc<Mutex<HashMap<String, DownloadProgressState>>>,
     /// Shadow cv_state reducer for drift detection.
@@ -113,10 +197,55 @@ pub struct ServeState {
 }
 
 impl ServeState {
+    /// Initialize the rank scheduler (must be called once after construction).
+    pub fn init_rank_scheduler(&self, state: Arc<ServeState>) {
+        let _ = self.rank_scheduler.set(RankScheduler::new(state));
+    }
+
+    /// Request a rank for a job via the scheduler.
+    pub fn request_rank(&self, job_id: &str) {
+        if let Some(scheduler) = self.rank_scheduler.get() {
+            scheduler.request(job_id);
+        }
+    }
+}
+
+impl ServeState {
     /// Dispatch an event to the shadow cv_state reducer (drift detection).
     pub fn dispatch_event(&self, event: libcv_state::Event) {
         if let Ok(mut s) = self.cv_state.lock() {
             *s = libcv_state::reduce(s.clone(), &event);
+
+            // Persist pipeline output to SQLite so the ranking read model
+            // survives restarts and never depends on in-memory state.
+            let job_id = match &event {
+                libcv_state::Event::CvAdded { job_id, .. } => Some(job_id.clone()),
+                libcv_state::Event::TextExtracted { cv_id, .. } => s.cvs.get(cv_id).map(|c| c.job_id.clone()),
+                libcv_state::Event::ScoutCompleted { cv_id, .. } => s.cvs.get(cv_id).map(|c| c.job_id.clone()),
+                libcv_state::Event::HeavyCompleted { cv_id, .. } => s.cvs.get(cv_id).map(|c| c.job_id.clone()),
+                _ => None,
+            };
+            match &event {
+                libcv_state::Event::TextExtracted { cv_id, text, status } => {
+                    if let Some(job_id) = job_id.as_ref() {
+                        let _ = persist_text_extracted(&self.db, cv_id, text, status, job_id);
+                    }
+                }
+                libcv_state::Event::ScoutCompleted { cv_id, vector, .. } => {
+                    if let Some(job_id) = job_id.as_ref() {
+                        let model = scout_model_for_db(&self.db).unwrap_or_else(|_| "static-similarity-mrl-multilingual-v1".to_string());
+                        let _ = persist_scout_completed(&self.db, cv_id, vector, job_id, &model);
+                    }
+                }
+                libcv_state::Event::HeavyCompleted { cv_id, vector, .. } => {
+                    if let Some(job_id) = job_id.as_ref() {
+                        let model = self.runtime.embedder().map(|e| e.model_id().to_string()).unwrap_or_else(|_| runtime_active_model(&self.db));
+                        let _ = persist_heavy_completed(&self.db, cv_id, vector, job_id, &model);
+                    }
+                }
+                _ => {}
+            }
+
             let progress_job_id = match &event {
                 libcv_state::Event::CvAdded { job_id, .. } => Some(job_id.clone()),
                 libcv_state::Event::TextExtracted { cv_id, .. } => s.cvs.get(cv_id).map(|c| c.job_id.clone()),
@@ -179,6 +308,21 @@ impl ServeState {
                 }
                 _ => {}
             }
+            // Request a rank when CVs become rankable (HeavyCompleted) or when text extraction completes
+            // as a fallback for pipelines that skip deep embedding.
+            if let Some(job_id) = job_id.as_ref() {
+                match &event {
+                    libcv_state::Event::HeavyCompleted { .. } => {
+                        self.request_rank(job_id);
+                    }
+                    libcv_state::Event::TextExtracted { status, .. } => {
+                        if matches!(status, libcv_state::ExtractionStatus::Extracted) {
+                            self.request_rank(job_id);
+                        }
+                    }
+                    _ => {}
+                }
+            }
             if let Some(job_id) = progress_job_id {
                 self.emit_cv_watch_progress(&job_id, &s);
             }
@@ -196,17 +340,14 @@ impl ServeState {
         let total = {
             let dir: Option<String> = self
                 .db
-                .read()
+                .read_conn()
+                .query_row(
+                    "SELECT import_directory_path FROM jobs WHERE id = ?1",
+                    rusqlite::params![job_id],
+                    |r| r.get(0),
+                )
                 .ok()
-                .and_then(|conn| {
-                    conn.query_row(
-                        "SELECT import_directory_path FROM jobs WHERE id = ?1",
-                        rusqlite::params![job_id],
-                        |r| r.get(0),
-                    )
-                    .ok()
-                    .flatten()
-                });
+                .flatten();
             if let Some(dir) = dir.filter(|d: &String| !d.is_empty()) {
                 let mut file_count: i64 = 0;
                 if let Ok(entries) = std::fs::read_dir(&dir) {
@@ -329,22 +470,20 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
     // Clean up stale temp download directories from previous interrupted downloads
     crate::serve::handlers::models::cleanup_temp_dirs();
     let db_path = app_dir.join("triqui.db");
-    let conn = db::open_connection_at(&db_path)?;
+    let db = db::open_connection_at(&db_path)?;
 
     // No cascade thread exists yet, so a rank_state row still claiming a run in
     // flight is a leftover from a previous process (quit/crash mid-cascade).
     // Recover it before anything reads the state, or the job reports running
     // forever and refuses every new cascade (the wedged-job bug).
-    match db::recover_stale_running_cascades(&conn) {
-        Ok(0) => {}
-        Ok(n) => log::info!("serve: recovered {n} stale running cascade(s) from a previous run"),
-        Err(e) => log::warn!("serve: could not recover stale cascade states: {e}"),
+    {
+        let conn = db.writer();
+        match db::recover_stale_running_cascades(&conn) {
+            Ok(0) => {}
+            Ok(n) => log::info!("serve: recovered {n} stale running cascade(s) from a previous run"),
+            Err(e) => log::warn!("serve: could not recover stale cascade states: {e}"),
+        }
     }
-
-    let db = DbConnection {
-        writer: Mutex::new(conn),
-        db_path: db_path.clone(),
-    };
 
     // User preference overrides from AppPreferences.
     let user_overrides = user_overrides_from_prefs(&app_dir);
@@ -406,10 +545,14 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
         watch: WatchHandle::new(ad_tx),
         config: libtriqui_core::app_config::cascade_config(),
         cascade_gens: Arc::new(crate::serve::handlers::rank::CascadeGens::new()),
+        rank_scheduler: OnceLock::new(),
         download_progress: Arc::new(Mutex::new(HashMap::new())),
         cv_state: Arc::new(Mutex::new(CvState::default())),
         pipeline: Arc::clone(&pipeline),
     });
+
+    // Initialize the rank scheduler (must be done after state creation).
+    state.init_rank_scheduler(Arc::clone(&state));
 
     pipeline.configure(
         Arc::new({
@@ -423,6 +566,26 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
             db_path: Some(state.db_path.clone()),
         },
     );
+
+    // Startup: request a rank for every job with rerank_dirty (inputs_version != ranked_version)
+    {
+        let conn = state.db.read_conn();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id FROM jobs
+                 WHERE ranked_version IS NULL OR ranked_version != inputs_version",
+            )
+            .unwrap();
+        let dirty_jobs: Vec<String> = stmt
+            .query_map([], |r| r.get::<_, String>(0))
+            .unwrap()
+            .filter_map(Result::ok)
+            .collect();
+        for job_id in dirty_jobs {
+            log::info!("serve: requesting startup rank for dirty job {job_id}");
+            state.request_rank(&job_id);
+        }
+    }
 
     log::info!("serve: ready");
 
@@ -539,6 +702,83 @@ fn load_app_preferences(app_dir: &std::path::Path) -> libtriqui_client::types::A
         Some(c) => serde_json::from_str(&c).unwrap_or_default(),
         None => libtriqui_client::types::AppPreferences::default(),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Pipeline persistence helpers (task 2.1)
+// ---------------------------------------------------------------------------
+
+fn persist_text_extracted(
+    db: &libtriqui_core::db::DbConnection,
+    cv_id: &str,
+    text: &str,
+    status: &libcv_state::ExtractionStatus,
+    job_id: &str,
+) -> Result<(), String> {
+    let status_str = match status {
+        libcv_state::ExtractionStatus::Extracted => "Extracted",
+        libcv_state::ExtractionStatus::Failed => "Failed",
+        _ => "Queued",
+    };
+    let mut conn = db.writer();
+    conn.execute(
+        "UPDATE candidates SET extracted_text = ?1, extraction_status = ?2 WHERE id = ?3",
+        rusqlite::params![text, status_str, cv_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn persist_scout_completed(
+    db: &libtriqui_core::db::DbConnection,
+    cv_id: &str,
+    vector: &[f32],
+    job_id: &str,
+    model: &str,
+) -> Result<(), String> {
+    let mut conn = db.writer();
+    conn.execute(
+        "UPDATE candidates SET vector = ?1, vector_model = ?2 WHERE id = ?3 AND job_id = ?4",
+        rusqlite::params![libtriqui_core::embed::vector_to_bytes(vector), model, cv_id, job_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn persist_heavy_completed(
+    db: &libtriqui_core::db::DbConnection,
+    cv_id: &str,
+    vector: &[f32],
+    job_id: &str,
+    model: &str,
+) -> Result<(), String> {
+    let mut conn = db.writer();
+    conn.execute(
+        "UPDATE candidates SET vector = ?1, vector_model = ?2 WHERE id = ?3 AND job_id = ?4",
+        rusqlite::params![libtriqui_core::embed::vector_to_bytes(vector), model, cv_id, job_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn scout_model_for_db(db: &libtriqui_core::db::DbConnection) -> Result<String, String> {
+    let conn = db.read_conn();
+    let cfg = libtriqui_core::app_config::load_triq();
+    let scout_slug = cfg.cascade.quick().unwrap_or("static-similarity-mrl-multilingual-v1");
+    Ok(scout_slug.to_string())
+}
+
+fn runtime_active_model(db: &libtriqui_core::db::DbConnection) -> String {
+    // Fall back to reading the stored vector_model from the candidates table
+    // if no active model is known yet; this avoids needing the runtime here.
+    let conn = db.read_conn();
+    conn.query_row(
+        "SELECT vector_model FROM candidates WHERE vector_model IS NOT NULL LIMIT 1",
+        [],
+        |r| r.get::<_, String>(0),
+    )
+    .ok()
+    .unwrap_or_default()
 }
 
 // ---------------------------------------------------------------------------

@@ -177,6 +177,31 @@ test.describe.serial("bug.md: feedback and criteria affect ranking", () => {
       const fbJobScore = cvBScores.find((s) => s.question_id === "fb_job")
       expect(fbJobScore).toBeDefined()
       expect(fbJobScore!.points).toBeGreaterThan(0)
+
+      // Reset feedback: the learned fb_job vector must be removed, the liked
+      // candidate's fb_job points must fall to zero, totals/rank are recomputed,
+      // and no candidate remains liked.
+      await invoke("reset_feedback", { job_id: jobId })
+
+      const afterReset = await listCandidates()
+      const cvBAfterReset = afterReset.items.find((c) => c.file_name === "cv-b.txt")!
+      expect(cvBAfterReset).toBeDefined()
+
+      const fbJobAfterReset = cvBAfterReset.scores.find(
+        (s) => s.question_id === "fb_job"
+      )
+      expect(fbJobAfterReset).toBeDefined()
+      expect(fbJobAfterReset!.points).toBe(0)
+
+      // The feedback contribution is gone, so the total drops back below the
+      // liked value and rank is recomputed.
+      expect(cvBAfterReset.points).toBeLessThan(cvBAfter.points)
+      expect(cvBAfterReset.rank).not.toBeNull()
+
+      const likedAfterReset = (await invoke("list_liked_candidate_ids", {
+        job_id: jobId,
+      })) as string[]
+      expect(likedAfterReset.length).toBe(0)
     } finally {
       rmSync(appDir, { recursive: true, force: true })
       rmSync(modelDir, { recursive: true, force: true })

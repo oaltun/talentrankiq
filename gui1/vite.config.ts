@@ -12,8 +12,8 @@ function resolveTriqBin(): string {
   if (process.env.TRIQ_BIN) return process.env.TRIQ_BIN
   const here = dirname(fileURLToPath(import.meta.url))
   const candidates = [
-    join(here, "..", "talentrankiq_cli", "target", "debug", "triq"),
-    join(here, "..", "talentrankiq_cli", "target", "release", "triq"),
+    join(here, "..", "cli1", "target", "debug", "triq"),
+    join(here, "..", "cli1", "target", "release", "triq"),
   ]
   for (const candidate of candidates) {
     if (existsSync(candidate)) return candidate

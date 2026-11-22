@@ -15,15 +15,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
-name = "adobe-cmap-parser"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae8abfa9a4688de8fc9f42b3f013b6fffec18ed8a554f5f113577e0b9b3212a3"
-dependencies = [
- "pom",
-]
-
-[[package]]
 name = "aes"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -154,7 +145,7 @@ dependencies = [
  "flate2",
  "log",
  "pdf-inspector",
- "quick-xml 0.41.0",
+ "quick-xml",
  "zip 8.6.0",
 ]
 
@@ -1170,15 +1161,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "euclid"
-version = "0.20.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2bb7ef65b3777a325d1eeefefab5b6d4959da54747e33bd6258e789640f307ad"
-dependencies = [
- "num-traits",
-]
-
-[[package]]
 name = "fallible-iterator"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1918,12 +1900,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lazycell"
-version = "1.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "830d08ce1d1d941e6b30645f1a0eb5643013d835ce3779a5fc208261dbe10f55"
-
-[[package]]
 name = "libbenchresults"
 version = "0.1.0"
 dependencies = [
@@ -1994,8 +1970,6 @@ dependencies = [
 name = "libcv-comparator-order"
 version = "0.1.0"
 dependencies = [
- "libcomparator",
- "libcv-core",
  "serde",
 ]
 
@@ -2012,18 +1986,17 @@ dependencies = [
 [[package]]
 name = "libcv-deep"
 version = "0.1.0"
+
+[[package]]
+name = "libcv-entitlements"
+version = "0.1.0"
 dependencies = [
- "libcv-core",
- "libmodelcallerclient",
- "sha2 0.10.9",
+ "serde",
 ]
 
 [[package]]
 name = "libcv-match"
 version = "0.1.0"
-dependencies = [
- "libembedrank",
-]
 
 [[package]]
 name = "libcv-pipeline"
@@ -2045,31 +2018,22 @@ dependencies = [
 [[package]]
 name = "libcv-quick"
 version = "0.1.0"
-dependencies = [
- "libtriqui-core",
-]
 
 [[package]]
 name = "libcv-state"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "libcomparator",
- "libcv-core",
+ "libcv-comparator-order",
+ "libcv-entitlements",
  "libtriqui-client",
- "libtriqui-core",
  "rusqlite",
  "serde",
- "serde_json",
- "specta",
 ]
 
 [[package]]
 name = "libcv-store"
 version = "0.1.0"
-dependencies = [
- "libtriqui-core",
-]
 
 [[package]]
 name = "libcvevidence"
@@ -2214,14 +2178,6 @@ dependencies = [
 [[package]]
 name = "libsyscap"
 version = "0.1.0"
-dependencies = [
- "libc",
- "libconfigreader",
- "log",
- "serde",
- "starship-battery",
- "sysinfo",
-]
 
 [[package]]
 name = "libtokenizer"
@@ -2276,30 +2232,15 @@ name = "libtriqui-core"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "env_logger",
- "libcomparator",
+ "dirs 6.0.0",
  "libconfigreader",
- "libcv-core",
- "libcv-deep",
- "libcvparser",
- "libembedrank",
- "libmodelcaller",
  "libmodelcallerclient",
- "libmodelstorage",
- "libsyscap",
- "libtokenizer",
  "libtriqui-client",
- "libtriqui-license",
  "log",
- "pdf-extract",
- "regex",
  "rusqlite",
  "serde",
  "serde_json",
- "sha2 0.10.9",
- "specta",
  "uuid",
- "zip 2.4.2",
 ]
 
 [[package]]
@@ -2370,24 +2311,6 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
 name = "lopdf"
-version = "0.34.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c5c8ecfc6c72051981c0459f75ccc585e7ff67c70829560cda8e647882a9abff"
-dependencies = [
- "encoding_rs",
- "flate2",
- "indexmap",
- "itoa",
- "log",
- "md-5 0.10.6",
- "nom 7.1.3",
- "rangemap",
- "time",
- "weezl 0.1.12",
-]
-
-[[package]]
-name = "lopdf"
 version = "0.45.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bfffda0fe1ab0157e1a13c14bebd3f28671f2fccb7922f0722ec53926e6922d3"
@@ -2404,7 +2327,7 @@ dependencies = [
  "indexmap",
  "itoa",
  "log",
- "md-5 0.11.0",
+ "md-5",
  "nom 8.0.0",
  "rand 0.10.3",
  "rangemap",
@@ -2412,7 +2335,7 @@ dependencies = [
  "sha2 0.11.0",
  "stringprep",
  "thiserror 2.0.21",
- "weezl 0.2.1",
+ "weezl",
 ]
 
 [[package]]
@@ -2449,15 +2372,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mach2"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a1b95cd5421ec55b445b5ae102f5ea0e768de1f82bd3001e11f426c269c3aea"
-dependencies = [
- "libc",
-]
-
-[[package]]
 name = "macro_rules_attribute"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2481,16 +2395,6 @@ checksum = "3f607c237553f086e7043417a51df26b2eb899d3caff94e6a67592ff992fedc7"
 dependencies = [
  "autocfg",
  "rawpointer",
-]
-
-[[package]]
-name = "md-5"
-version = "0.10.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d89e7ee0cfbedfc4da3340218492196241d89eefb6dab27de5df917a6d2e78cf"
-dependencies = [
- "cfg-if",
- "digest 0.10.7",
 ]
 
 [[package]]
@@ -2623,18 +2527,6 @@ dependencies = [
  "portable-atomic",
  "portable-atomic-util",
  "rawpointer",
-]
-
-[[package]]
-name = "nix"
-version = "0.30.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "74523f3a35e05aba87a1d978330aef40f67b0304ac79c1c00b294c9830543db6"
-dependencies = [
- "bitflags 2.13.2",
- "cfg-if",
- "cfg_aliases",
- "libc",
 ]
 
 [[package]]
@@ -2893,21 +2785,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pdf-extract"
-version = "0.7.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cbb3a5387b94b9053c1e69d8abfd4dd6dae7afda65a5c5279bc1f42ab39df575"
-dependencies = [
- "adobe-cmap-parser",
- "encoding_rs",
- "euclid",
- "lopdf 0.34.0",
- "postscript",
- "type1-encoding-parser",
- "unicode-normalization",
-]
-
-[[package]]
 name = "pdf-inspector"
 version = "1.25.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2916,7 +2793,7 @@ dependencies = [
  "env_logger",
  "include_dir",
  "log",
- "lopdf 0.45.0",
+ "lopdf",
  "once_cell",
  "rayon",
  "regex",
@@ -2964,25 +2841,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 
 [[package]]
-name = "plist"
-version = "1.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "740ebea15c5d1428f910cd1a5f52cebf8d25006245ed8ade92702f4943d91e07"
-dependencies = [
- "base64 0.22.1",
- "indexmap",
- "quick-xml 0.38.4",
- "serde",
- "time",
-]
-
-[[package]]
-name = "pom"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60f6ce597ecdcc9a098e7fddacb1065093a3d66446fa16c675e7e71d1b5c28e6"
-
-[[package]]
 name = "portable-atomic"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3009,12 +2867,6 @@ dependencies = [
  "heapless",
  "serde",
 ]
-
-[[package]]
-name = "postscript"
-version = "0.14.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "78451badbdaebaf17f053fd9152b3ffb33b516104eacb45e7864aaa9c712f306"
 
 [[package]]
 name = "potential_utf"
@@ -3047,15 +2899,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9"
 dependencies = [
  "unicode-ident",
-]
-
-[[package]]
-name = "quick-xml"
-version = "0.38.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b66c2058c55a409d601666cffe35f04333cf1013010882cec174a7467cd4e21c"
-dependencies = [
- "memchr",
 ]
 
 [[package]]
@@ -3800,24 +3643,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
-name = "starship-battery"
-version = "0.10.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd0efc2c44c92705be724265a0c758e3b7c120ea63817d2d684bab86fbeced9a"
-dependencies = [
- "cfg-if",
- "core-foundation 0.10.1",
- "lazycell",
- "libc",
- "mach2",
- "nix",
- "num-traits",
- "plist",
- "uom",
- "windows-sys 0.61.2",
-]
-
-[[package]]
 name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4006,7 +3831,6 @@ dependencies = [
  "powerfmt",
  "serde_core",
  "time-core",
- "time-macros",
 ]
 
 [[package]]
@@ -4014,16 +3838,6 @@ name = "time-core"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e1c906769ad99c88eaa54e728060edef082f8e358ff32030cb7c7d315e81109"
-
-[[package]]
-name = "time-macros"
-version = "0.2.32"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e689342a48d2ea927c87ea50cabf8594854bf940e9310208848d680d668ed85"
-dependencies = [
- "num-conv",
- "time-core",
-]
 
 [[package]]
 name = "tinystr"
@@ -4258,15 +4072,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2df906b07856748fa3f6e0ad0cbaa047052d4a7dd609e231c4f72cee8c36f31"
 
 [[package]]
-name = "type1-encoding-parser"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa10c302f5a53b7ad27fd42a3996e23d096ba39b5b8dd6d9e683a05b01bee749"
-dependencies = [
- "pom",
-]
-
-[[package]]
 name = "typed-path"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4355,16 +4160,6 @@ name = "untrusted"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
-
-[[package]]
-name = "uom"
-version = "0.37.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd5cfe7d84f6774726717f358a37f5bca8fca273bed4de40604ad129d1107b49"
-dependencies = [
- "num-traits",
- "typenum",
-]
 
 [[package]]
 name = "ureq"
@@ -4580,12 +4375,6 @@ checksum = "7dcd9d09a39985f5344844e66b0c530a33843579125f23e21e9f0f220850f22a"
 dependencies = [
  "rustls-pki-types",
 ]
-
-[[package]]
-name = "weezl"
-version = "0.1.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
 
 [[package]]
 name = "weezl"

@@ -184,6 +184,10 @@ fn dispatch(state: &Arc<ServeState>, cmd: &str, params: &Value) -> Result<Value,
             let p: StartRankParams = from_params(params)?;
             rank::start_rank(state, &p.job_id)
         }
+        "process_in_waves" => {
+            let p: GetJobDetailParams = from_params(params)?;
+            rank::process_in_waves(state, &p.job_id)
+        }
         "cancel_rank" => {
             let p: CancelRankParams = from_params(params)?;
             rank::cancel_rank(state, &p.job_id)
@@ -200,6 +204,18 @@ fn dispatch(state: &Arc<ServeState>, cmd: &str, params: &Value) -> Result<Value,
         "get_candidate" => {
             let p: GetCandidateParams = from_params(params)?;
             candidates::get_candidate(state, &p.candidate_id)
+        }
+        "list_candidates" => {
+            let p: ListCandidatesParams = from_params(params)?;
+            candidates::list_candidates(
+                state,
+                &p.job_id,
+                p.offset,
+                p.limit,
+                p.query,
+                p.sort_by,
+                p.sort_dir,
+            )
         }
         "soft_delete_cv" => {
             let p: SoftDeleteCvParams = from_params(params)?;

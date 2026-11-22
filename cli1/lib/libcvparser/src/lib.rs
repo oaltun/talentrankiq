@@ -117,11 +117,25 @@ fn strip_inline_markdown(s: &str) -> String {
 }
 
 pub fn extract_text(path: &Path) -> Result<String, CvParseError> {
+    // Plain-text CVs (.txt) carry no container signature anydoc can detect, so
+    // read them directly as UTF-8 instead of failing as an unsupported format.
+    if path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("txt"))
+    {
+        let text = std::fs::read_to_string(path)?;
+        return Ok(strip_markdown_to_text(&text));
+    }
     let md = anydoc::to_markdown(path).map_err(map_anydoc_err)?;
     Ok(strip_markdown_to_text(&md))
 }
 
 pub fn extract_text_from_bytes(bytes: &[u8], format_hint: Option<&str>) -> Result<String, CvParseError> {
+    if format_hint.is_some_and(|h| h.eq_ignore_ascii_case("txt")) {
+        let text = String::from_utf8_lossy(bytes);
+        return Ok(strip_markdown_to_text(&text));
+    }
     let format = match format_hint {
         Some(hint) => anydoc::Format::from_extension(hint),
         None => anydoc::Format::from_bytes(bytes),
@@ -179,5 +193,27 @@ mod tests {
         assert!(anydoc::Format::from_extension("docx").is_some());
         assert!(anydoc::Format::from_extension("doc").is_some());
         assert!(anydoc::Format::from_extension("xyz").is_none());
+    }
+
+    #[test]
+    fn test_extract_text_reads_plain_txt() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("cvparser-txt-{nanos}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("cv.txt");
+        std::fs::write(&path, "Senior Platform Engineer. Kubernetes, Go, AWS.").unwrap();
+        let text = extract_text(&path).unwrap();
+        assert!(text.contains("Kubernetes"));
+        assert!(text.contains("Go"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_extract_text_from_bytes_reads_txt_hint() {
+        let text = extract_text_from_bytes(b"Plain text CV body", Some("txt")).unwrap();
+        assert_eq!(text.trim(), "Plain text CV body");
     }
 }

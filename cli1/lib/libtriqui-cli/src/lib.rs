@@ -68,7 +68,7 @@ pub fn run(db_path: Option<PathBuf>, model: Option<String>, cmd: Cmd) {
 }
 
 pub fn open(db_path: &std::path::Path) -> rusqlite::Connection {
-    match db::open_connection_at(db_path) {
+    match db::open_single_connection_at(db_path) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("error: {e}");
@@ -146,26 +146,12 @@ fn truncate(s: &str, max_chars: usize) -> String {
 
 fn cmd_rank(db_path: &std::path::Path, model: &Option<String>, job_id: &str) {
     let rt = start_engine(model, db_path);
-    let triqui = match sort::sort_job_blocking(&rt, job_id, &|_, _, _, _| {}) {
-        Ok(s) => s,
+    match sort::sort_job(&rt, job_id) {
+        Ok(outcome) => println!("ranked {} candidates (skipped: {}, rubric: {})", outcome.ranked, outcome.skipped, outcome.rubric_questions),
         Err(e) => {
             eprintln!("error: {e}");
             std::process::exit(1);
         }
-    };
-    println!(
-        "{:>5}  {:>10}  {:>10}  candidate",
-        "rank", "points", "of max"
-    );
-    for item in &triqui {
-        println!(
-            "{:>5}  {:>10.2}  {:>10.2}  {} ({})",
-            item.rank,
-            item.points.unwrap_or(0.0),
-            item.points_max.unwrap_or(0.0),
-            item.file_name,
-            item.id
-        );
     }
 }
 

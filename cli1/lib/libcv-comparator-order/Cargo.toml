@@ -1,0 +1,10 @@
+[package]
+name = "libcv-comparator-order"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "libcv_comparator_order"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }

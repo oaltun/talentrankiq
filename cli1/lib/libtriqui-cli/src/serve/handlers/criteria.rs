@@ -84,6 +84,8 @@ pub fn add_criterion(
     // and a criterion edit touches nothing a running cascade is computing (the comparator
     // never read a criterion).
     reproject(state, job_id)?;
+    // Request a rank after criterion change.
+    state.request_rank(job_id);
     ok_json(criterion)
 }
 
@@ -143,6 +145,7 @@ pub fn update_criterion(
     });
     if let Some(jid) = jid {
         reproject(state, &jid)?;
+        state.request_rank(&jid);
     }
     ok_json(criterion)
 }
@@ -158,6 +161,7 @@ pub fn delete_criterion(state: &Arc<ServeState>, id: &str) -> Result<(), Protoco
     });
     if let Some(jid) = jid {
         reproject(state, &jid)?;
+        state.request_rank(&jid);
     }
     Ok(())
 }
