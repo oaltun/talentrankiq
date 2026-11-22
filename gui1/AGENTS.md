@@ -2,7 +2,7 @@ there are multiple repos here:
 
 gui_old: ./talentrankiq_gui_tauri2/gui_tauri2 (./talentrankiq_gui_tauri2 has ai agent support for gui_tauri2)
 gui: ./talentrankiq_gui
-cli: ./talentrankiq_cli
+cli: ./cli1
 oculix: for smoke testing
 git: for git actions that work on both gui and cli
 
@@ -14,7 +14,7 @@ i wanna see how effective ai agents can be in developing this gui using tauri te
 
  ## how gui will use cli (triq)?
 
-`cli` creates a binary called triq (talentrankiq/target/release/triq). that is the cli gui will spawn as subprocess and control/monitor through stdin/stdout jsonl. triq can tell you how to use its stdin/stdout jsonl.
+`cli` creates a binary called triq (cli1/target/release/triq). that is the cli gui will spawn as subprocess and control/monitor through stdin/stdout jsonl. triq can tell you how to use its stdin/stdout jsonl.
 
 JSON Schema (for validation, codegen, docs):
 triq protocol-schema > protocol-schema.json
@@ -56,7 +56,7 @@ as we add / remove / change features, the code becomes a mess. if you are replac
 
 
 ## test jobad and cvs
-talentrankiq_cli/test-cv/Job2000CVs/ has actual CVs in cv/ and a jobad description in jobad.txt . you can select those and try the progress bars, etc. quick and deep embedding vectors may be cached, which will change the progress bar behavior. you may want to turn caching on / off and try in both cases.
+cli1/test-cv/Job2000CVs/ has actual CVs in cv/ and a jobad description in jobad.txt . you can select those and try the progress bars, etc. quick and deep embedding vectors may be cached, which will change the progress bar behavior. you may want to turn caching on / off and try in both cases.
 
 ## Database Concurrency (CLI)
 
@@ -74,8 +74,8 @@ This blocks `get_job_detail` (and other readers) for 10–30s, preventing worksp
 4. **WAL + busy_timeout**: Enable WAL mode (`PRAGMA journal_mode=WAL`) and set `PRAGMA busy_timeout=5000` so readers don't block writers and vice versa.
 
 **Files to change**:
-- `talentrankiq_cli/lib/libtriqui-cli/src/serve/mod.rs` — `DbConnection` type, `open_connection_at`
-- `talentrankiq_cli/lib/libcv-pipeline/src/lib.rs` — `ScanWorker::scan` loop granularity
+- `cli1/lib/libtriqui-cli/src/serve/mod.rs` — `DbConnection` type, `open_connection_at`
+- `cli1/lib/libcv-pipeline/src/lib.rs` — `ScanWorker::scan` loop granularity
 
 ## Comparator artifacts
 

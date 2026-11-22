@@ -122,17 +122,17 @@ impl Read for DuplexReader {
         if out.is_empty() {
             return Ok(0);
         }
-        loop {
-            self.refill_scratch()?;
-            if self.scratch_pos < self.scratch.len() {
-                let n = out.len().min(self.scratch.len() - self.scratch_pos);
-                out[..n].copy_from_slice(&self.scratch[self.scratch_pos..self.scratch_pos + n]);
-                self.scratch_pos += n;
-                return Ok(n);
-            }
-            // EOF (refill found an empty, closed buffer).
-            return Ok(0);
+        // `refill_scratch` blocks until it either fills `scratch` with data or
+        // observes EOF (empty, closed buffer), so a single pass suffices.
+        self.refill_scratch()?;
+        if self.scratch_pos < self.scratch.len() {
+            let n = out.len().min(self.scratch.len() - self.scratch_pos);
+            out[..n].copy_from_slice(&self.scratch[self.scratch_pos..self.scratch_pos + n]);
+            self.scratch_pos += n;
+            return Ok(n);
         }
+        // EOF (refill found an empty, closed buffer).
+        Ok(0)
     }
 }
 

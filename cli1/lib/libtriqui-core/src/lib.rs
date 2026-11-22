@@ -8,6 +8,7 @@
 
 pub mod app_config;
 pub mod cascade;
+pub mod chunks;
 pub mod config;
 pub mod db;
 pub mod embed;

@@ -2235,6 +2235,7 @@ dependencies = [
  "dirs 6.0.0",
  "libconfigreader",
  "libmodelcallerclient",
+ "libtokenizer",
  "libtriqui-client",
  "log",
  "rusqlite",

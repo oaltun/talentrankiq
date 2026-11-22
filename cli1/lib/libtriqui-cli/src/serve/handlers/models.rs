@@ -1436,3 +1436,105 @@ pub fn cleanup_temp_dirs() {
         let _ = fs::remove_dir(&temp_base);
     }
 }
+
+#[cfg(test)]
+mod content_hash_switch_tests {
+    use super::*;
+    use libtriqui_core::db::{open_connection_at, open_single_connection_at};
+    use libtriqui_core::chunks::hash_bytes;
+    use std::path::PathBuf;
+
+    /// The wipe SQL executed by `set_embedding_model` when switching embedders.
+    /// Extracted here for direct unit testing against a real SQLite DB.
+    pub(crate) fn wipe_vectors_for_model_switch(
+        conn: &rusqlite::Connection,
+        job_id: &str,
+    ) -> Result<(), String> {
+        conn.execute("DELETE FROM candidate_chunks", [])
+            .map_err(|e| format!("failed to clear chunk vectors: {e}"))?;
+        conn.execute("DELETE FROM candidate_scores", [])
+            .map_err(|e| format!("failed to clear rubric scores: {e}"))?;
+        conn.execute("DELETE FROM rubric_vectors", [])
+            .map_err(|e| format!("failed to clear rubric vectors: {e}"))?;
+        conn.execute("DELETE FROM stage_scores", [])
+            .map_err(|e| format!("failed to clear stage scores: {e}"))?;
+        conn.execute("DELETE FROM comparator_pool", [])
+            .map_err(|e| format!("failed to clear the comparator pool: {e}"))?;
+        conn.execute(
+            "UPDATE candidates SET vector = NULL, vector_model = NULL,
+             rank = NULL, ranked_at = NULL, points = NULL, points_max = NULL",
+            [],
+        )
+        .map_err(|e| format!("failed to reset candidate vectors: {e}"))?;
+        conn.execute(
+            "UPDATE jobs SET ead = NULL, ead_model = NULL, last_ranked_at = NULL,
+             inputs_updated_at = datetime('now'), updated_at = datetime('now'), inputs_version = inputs_version + 1",
+            [],
+        )
+        .map_err(|e| format!("failed to reset job vectors: {e}"))?;
+        conn.execute("UPDATE criteria SET vector = NULL, vector_model = NULL", [])
+            .map_err(|e| format!("failed to reset criterion vectors: {e}"))?;
+        Ok(())
+    }
+
+    fn temp_db() -> PathBuf {
+        let mut p = std::env::temp_dir();
+        p.push(format!("triq-wipe-test-{}.db", uuid::Uuid::new_v4()));
+        p
+    }
+
+    fn setup_db(db_path: &PathBuf) -> rusqlite::Connection {
+        let conn = open_single_connection_at(db_path).unwrap();
+        let job_id = "job1";
+        conn.execute(
+            "INSERT INTO jobs (id, title, job_ad_text, ad_weight)
+             VALUES (?1, 'Job', 'Senior engineer.', 10.0)",
+            rusqlite::params![job_id],
+        )
+        .unwrap();
+        for i in 0..2 {
+            let text = format!("Candidate {}. Skills: Rust and Go. Experience: {} years.", i + 1, i + 2);
+            let id = format!("c{i}");
+            let h = hash_bytes(text.as_bytes());
+            conn.execute(
+                "INSERT INTO candidates
+                    (id, job_id, source_file_path, file_name, file_type,
+                     extraction_status, extracted_text, vector, vector_model, content_hash)
+                 VALUES (?1, ?2, ?3, ?4, 'txt', 'Extracted', ?5, X'0102', 'model-a', ?6)",
+                rusqlite::params![&id, job_id, format!("/tmp/{id}.txt"), format!("{id}.txt"), &text, &h],
+            )
+            .unwrap();
+        }
+        conn
+    }
+
+    #[test]
+    fn content_hash_survives_model_switch_wipe() {
+        let db_path = temp_db();
+        let conn = setup_db(&db_path);
+
+        // Record hashes before wipe.
+        let before: Vec<String> = {
+            let mut stmt = conn
+                .prepare("SELECT content_hash FROM candidates WHERE job_id = 'job1' ORDER BY id")
+                .unwrap();
+            let rows = stmt.query_map([], |r| r.get(0)).unwrap();
+            rows.map(|r| r.unwrap()).collect()
+        };
+        assert_eq!(before.len(), 2);
+        assert!(!before.iter().any(|h| h.is_empty()));
+
+        // Run the exact wipe SQL used by `set_embedding_model`.
+        wipe_vectors_for_model_switch(&conn, "job1").unwrap();
+
+        // Content hashes must be identical (the wipe does not touch content_hash).
+        let after: Vec<String> = {
+            let mut stmt = conn
+                .prepare("SELECT content_hash FROM candidates WHERE job_id = 'job1' ORDER BY id")
+                .unwrap();
+            let rows = stmt.query_map([], |r| r.get(0)).unwrap();
+            rows.map(|r| r.unwrap()).collect()
+        };
+        assert_eq!(after, before, "content_hash must not change on model-switch wipe");
+    }
+}

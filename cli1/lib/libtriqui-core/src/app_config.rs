@@ -116,7 +116,21 @@ pub fn chunk_size_for_model(_slug: &str) -> usize {
 }
 
 /// Path to a model's tokenizer file, if present.
+///
+/// The downloader stores ONNX models under `<model_dir>/<slug>/repo/`, with the
+/// tokenizer remapped next to the `.onnx` file (so usually
+/// `<slug>/repo/onnx/tokenizer.json`). Older/manual layouts keep it at the slug
+/// root, so probe every known location and return the first that exists.
 pub fn tokenizer_path(model_dir: &std::path::Path, slug: &str) -> Option<PathBuf> {
-    let p = model_dir.join(slug).join("tokenizer.json");
-    if p.exists() { Some(p) } else { None }
+    for candidate in [
+        model_dir.join(slug).join("tokenizer.json"),
+        model_dir.join(slug).join("repo").join("tokenizer.json"),
+        model_dir.join(slug).join("repo").join("onnx").join("tokenizer.json"),
+        model_dir.join(slug).join("onnx").join("tokenizer.json"),
+    ] {
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    None
 }

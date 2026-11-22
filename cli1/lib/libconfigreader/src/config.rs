@@ -57,6 +57,20 @@ impl Config {
     /// Cheap to call but not free (allocates a few `Vec`s). Cache the result
     /// in a `OnceLock<Config>` if you want a true singleton.
     pub fn load() -> Self {
+        let mut cfg = Self::load_static();
+        // Test/isolation hook: the e2e harness points `TRIQI_MODEL_DIR` at a
+        // throwaway cache so a run cannot see (or pollute) the developer's real
+        // models. Unset in normal use, so production resolution is unchanged.
+        if let Ok(dir) = std::env::var("TRIQI_MODEL_DIR") {
+            if !dir.is_empty() {
+                cfg.model_dir = PathBuf::from(dir);
+            }
+        }
+        cfg
+    }
+
+    /// Static configuration data, before any environment overrides.
+    fn load_static() -> Self {
         Self {
             model_dir: PathBuf::from("~/.cache/ik/models"),
             verbose: false,

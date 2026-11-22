@@ -447,6 +447,17 @@ pub struct ChunkExplanation {
     pub text: String,
     /// Cosine similarity of this chunk against the question vector.
     pub similarity: f64,
+    /// The rubric chunk (requirement text) this candidate chunk best matched.
+    /// Present only for coverage-scored questions that have persisted rubric
+    /// chunks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rubric_text: Option<String>,
+    /// Char index of the matched rubric chunk start in the question text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rubric_char_start: Option<usize>,
+    /// Char index one past the matched rubric chunk end in the question text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rubric_char_end: Option<usize>,
 }
 
 /// Which text the CV chunks are compared against in the Match Lens
@@ -470,6 +481,16 @@ pub struct ChunkSim {
     pub char_end: usize,
     /// Cosine similarity of the chunk embedding against the target embedding.
     pub similarity: f64,
+    /// For `JobAd`, the ad chunk whose embedding gave this chunk's similarity.
+    /// Present only for the job-ad target when ad rubric chunks exist.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub matched_target_text: Option<String>,
+    /// Char index of the matched ad chunk start in the job ad text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub matched_target_char_start: Option<usize>,
+    /// Char index one past the matched ad chunk end in the job ad text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub matched_target_char_end: Option<usize>,
 }
 
 /// Match Lens response: EVERY chunk of the candidate at the requested size,
@@ -673,8 +694,10 @@ pub struct JobUiState {
     pub sort_allowed: bool,
     /// Ranking inputs changed since the last rank (or never ranked).
     pub rerank_dirty: bool,
-    /// Stable reason code for the current state, precedence:
-    /// `no-cvs` > `no-jobad` > `engine-not-ready` > `stale` > `clean`.
+    /// Stable reason code for the current state. Blockers are always
+    /// `blocked:`-prefixed and shared with `RankState.reason`, precedence:
+    /// `blocked:no-cvs` > `blocked:no-jobad` > `blocked:no-active-embedder` >
+    /// `blocked:engine-not-ready` > `blocked:<cascade-code>` > `stale` > `clean`.
     pub reason: Option<String>,
     /// One-shot guidance code, backend-decided.
     #[serde(default)]
@@ -745,8 +768,11 @@ pub struct RankState {
     pub candidates: u32,
     /// The last completed rank covers every candidate and inputs are clean.
     pub converged: bool,
-    /// Stable reason code for the cascade state, precedence:
-    /// `running` > `cancelled` > `stale` > `converged` > `partial`.
+    /// Stable reason code for the cascade state. Blockers are always
+    /// `blocked:`-prefixed and identical to `JobUiState.reason`, precedence:
+    /// `running` > `cancelled` > `blocked:no-cvs` > `blocked:no-jobad` >
+    /// `blocked:no-active-embedder` > `blocked:engine-not-ready` >
+    /// `blocked:<cascade-code>` > `stale` > `converged` > `partial`.
     pub reason: Option<String>,
 }
 

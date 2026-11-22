@@ -7,7 +7,7 @@ set -euo pipefail
 
 GUI_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$GUI_DIR/.." && pwd)"
-CLI_DIR="$REPO_ROOT/talentrankiq_cli"
+CLI_DIR="$REPO_ROOT/cli1"
 
 # Build triq CLI (debug + release)
 echo "Building triq CLI (debug + release)..."

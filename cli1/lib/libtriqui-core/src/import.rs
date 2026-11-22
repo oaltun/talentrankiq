@@ -10,6 +10,17 @@ pub fn is_supported(path: &Path) -> bool {
     )
 }
 
+/// Durable content fingerprint of a CV file's bytes, or `None` when the file
+/// cannot be read (e.g. it was removed between enumeration and hashing).
+///
+/// Used by the directory scan to detect edits: a stored hash that differs from
+/// this value means the file changed and the candidate must be re-imported.
+pub fn hash_file(path: &Path) -> Option<String> {
+    std::fs::read(path)
+        .ok()
+        .map(|bytes| crate::chunks::hash_bytes(&bytes))
+}
+
 /// Recursively collect all supported CV files under `dir`, sorted for
 /// deterministic ordering. Pure filesystem I/O — holds no DB lock.
 pub fn collect_supported_files(dir: &str) -> Result<Vec<PathBuf>, String> {

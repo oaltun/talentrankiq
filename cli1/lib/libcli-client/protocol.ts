@@ -250,7 +250,21 @@ text: string;
 /**
  * Cosine similarity of this chunk against the question vector.
  */
-similarity: number }
+similarity: number; 
+/**
+ * The rubric chunk (requirement text) this candidate chunk best matched.
+ * Present only for coverage-scored questions that have persisted rubric
+ * chunks.
+ */
+rubric_text?: string | null; 
+/**
+ * Char index of the matched rubric chunk start in the question text.
+ */
+rubric_char_start?: number | null; 
+/**
+ * Char index one past the matched rubric chunk end in the question text.
+ */
+rubric_char_end?: number | null }
 
 /**
  * Parameters for `chunk_match` command.
@@ -303,7 +317,20 @@ char_end: number;
 /**
  * Cosine similarity of the chunk embedding against the target embedding.
  */
-similarity: number }
+similarity: number; 
+/**
+ * For `JobAd`, the ad chunk whose embedding gave this chunk's similarity.
+ * Present only for the job-ad target when ad rubric chunks exist.
+ */
+matched_target_text?: string | null; 
+/**
+ * Char index of the matched ad chunk start in the job ad text.
+ */
+matched_target_char_start?: number | null; 
+/**
+ * Char index one past the matched ad chunk end in the job ad text.
+ */
+matched_target_char_end?: number | null }
 
 /**
  * Comparator artifact info exposed to the GUI.
@@ -635,8 +662,10 @@ sort_allowed: boolean;
  */
 rerank_dirty: boolean; 
 /**
- * Stable reason code for the current state, precedence:
- * `no-cvs` > `no-jobad` > `engine-not-ready` > `stale` > `clean`.
+ * Stable reason code for the current state. Blockers are always
+ * `blocked:`-prefixed and shared with `RankState.reason`, precedence:
+ * `blocked:no-cvs` > `blocked:no-jobad` > `blocked:no-active-embedder` >
+ * `blocked:engine-not-ready` > `blocked:<cascade-code>` > `stale` > `clean`.
  */
 reason: string | null; 
 /**
@@ -790,8 +819,11 @@ candidates: number;
  */
 converged: boolean; 
 /**
- * Stable reason code for the cascade state, precedence:
- * `running` > `cancelled` > `stale` > `converged` > `partial`.
+ * Stable reason code for the cascade state. Blockers are always
+ * `blocked:`-prefixed and identical to `JobUiState.reason`, precedence:
+ * `running` > `cancelled` > `blocked:no-cvs` > `blocked:no-jobad` >
+ * `blocked:no-active-embedder` > `blocked:engine-not-ready` >
+ * `blocked:<cascade-code>` > `stale` > `converged` > `partial`.
  */
 reason: string | null }
 

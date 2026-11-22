@@ -4,6 +4,7 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Event {
     CvAdded { cv_id: String, job_id: String, file_path: String, file_name: String, file_type: String, imported_at: String },
+    CvDeleted { cv_id: String, job_id: String },
     TextExtracted { cv_id: String, text: String, status: ExtractionStatus },
     ScoutCompleted { cv_id: String, vector: Vec<f32>, model_bundle_version: u32 },
     HeavyCompleted { cv_id: String, vector: Vec<f32>, model_bundle_version: u32 },
@@ -100,6 +101,19 @@ pub fn reduce(mut state: State, event: &Event) -> State {
                 text: None,
                 deleted: false,
             });
+        }
+        Event::CvDeleted { cv_id, .. } => {
+            // Retire the in-memory record: it must leave the ranked set and
+            // comparator scheduling. Derived data is dropped so no stale
+            // vector/text can be served for a file that no longer exists.
+            if let Some(cv) = state.cvs.get_mut(cv_id) {
+                cv.deleted = true;
+                cv.extracted_text = None;
+                cv.scout_vector = None;
+                cv.heavy_vector = None;
+                cv.heavy_similarity = None;
+                cv.text = None;
+            }
         }
         Event::TextExtracted { cv_id, text, status } => {
             if let Some(cv) = state.cvs.get_mut(cv_id) {

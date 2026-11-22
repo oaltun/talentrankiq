@@ -7,12 +7,38 @@ use std::sync::Arc;
 use libtriqui_client::protocol::ProtocolError;
 use libtriqui_client::types::DomainError;
 use libtriqui_client::types::{
-    AdSource, CandidateDetail, CandidateNeighbors, CandidatePage, CandidateSummary, ExtractionStatus,
-    FileType, GradeSpace, QuestionKind, RubricScore,
+    AdSource, CandidateDetail, CandidateNeighbors, CandidatePage, CandidateSummary, ChunkExplanation,
+    ExtractionStatus, FileType, GradeSpace, QuestionKind, RubricScore,
 };
 
 use crate::serve::handlers::{domain, ok_json, string_err};
 use crate::serve::ServeState;
+
+fn chunk_explanations(
+    stored: Option<String>,
+    points: f32,
+    max_points: f32,
+    rubric: Option<(Option<String>, Option<i64>, Option<i64>)>,
+) -> Vec<ChunkExplanation> {
+    match stored {
+        Some(text) if !text.is_empty() => {
+            let similarity = if max_points > 0.0 {
+                (points / max_points) as f64
+            } else {
+                0.0
+            };
+            let (rtext, rstart, rend) = rubric.unwrap_or((None, None, None));
+            vec![ChunkExplanation {
+                text,
+                similarity,
+                rubric_text: rtext.filter(|t| !t.is_empty()),
+                rubric_char_start: rstart.map(|v| v as usize),
+                rubric_char_end: rend.map(|v| v as usize),
+            }]
+        }
+        _ => Vec::new(),
+    }
+}
 
 fn load_candidates(
     conn: &rusqlite::Connection,
@@ -77,7 +103,9 @@ fn load_candidates(
 
         let mut score_stmt = conn
             .prepare(
-                "SELECT question_id, kind, label, points, max_points FROM candidate_scores WHERE candidate_id = ?1",
+                "SELECT question_id, kind, label, points, max_points, chunk_texts, \
+                        rubric_chunk_text, rubric_char_start, rubric_char_end \
+                 FROM candidate_scores WHERE candidate_id = ?1",
             )
             .map_err(|e| e.to_string())?;
         let score_rows = score_stmt
@@ -88,20 +116,30 @@ fn load_candidates(
                     r.get::<_, String>(2)?,
                     r.get::<_, f32>(3)?,
                     r.get::<_, f32>(4)?,
+                    r.get::<_, Option<String>>(5)?,
+                    r.get::<_, Option<String>>(6)?,
+                    r.get::<_, Option<i64>>(7)?,
+                    r.get::<_, Option<i64>>(8)?,
                 ))
             })
             .map_err(|e| e.to_string())?;
 
         let mut scores = Vec::new();
         for sr in score_rows {
-            let (qid, kind, label, pts, max_pts) = sr.map_err(|e| e.to_string())?;
+            let (qid, kind, label, pts, max_pts, chunk_texts, rtext, rstart, rend) =
+                sr.map_err(|e| e.to_string())?;
             scores.push(RubricScore {
                 question_id: qid,
                 label,
                 kind: QuestionKind::from_str(&kind),
                 points: pts,
                 max_points: max_pts,
-                chunk_explanations: Vec::new(),
+                chunk_explanations: chunk_explanations(
+                    chunk_texts,
+                    pts,
+                    max_pts,
+                    Some((rtext, rstart, rend)),
+                ),
             });
         }
 
@@ -273,7 +311,9 @@ pub fn get_candidate(state: &Arc<ServeState>, candidate_id: &str) -> Result<Valu
         .map_err(|e| string_err(e.to_string()))?;
 
     let mut score_stmt = conn
-        .prepare("SELECT question_id, kind, label, points, max_points FROM candidate_scores WHERE candidate_id = ?1")
+        .prepare("SELECT question_id, kind, label, points, max_points, chunk_texts, \
+                        rubric_chunk_text, rubric_char_start, rubric_char_end \
+                  FROM candidate_scores WHERE candidate_id = ?1")
         .map_err(|e| string_err(e.to_string()))?;
     let score_rows = score_stmt
         .query_map(rusqlite::params![id], |r| {
@@ -283,20 +323,30 @@ pub fn get_candidate(state: &Arc<ServeState>, candidate_id: &str) -> Result<Valu
                 r.get::<_, String>(2)?,
                 r.get::<_, f32>(3)?,
                 r.get::<_, f32>(4)?,
+                r.get::<_, Option<String>>(5)?,
+                r.get::<_, Option<String>>(6)?,
+                r.get::<_, Option<i64>>(7)?,
+                r.get::<_, Option<i64>>(8)?,
             ))
         })
         .map_err(|e| string_err(e.to_string()))?;
 
     let mut rubric_scores = Vec::new();
     for sr in score_rows {
-        let (qid, kind, label, pts, max_pts) = sr.map_err(|e| string_err(e.to_string()))?;
+        let (qid, kind, label, pts, max_pts, chunk_texts, rtext, rstart, rend) =
+            sr.map_err(|e| string_err(e.to_string()))?;
         rubric_scores.push(RubricScore {
             question_id: qid,
             label,
             kind: QuestionKind::from_str(&kind),
             points: pts,
             max_points: max_pts,
-            chunk_explanations: Vec::new(),
+            chunk_explanations: chunk_explanations(
+                chunk_texts,
+                pts,
+                max_pts,
+                Some((rtext, rstart, rend)),
+            ),
         });
     }
 

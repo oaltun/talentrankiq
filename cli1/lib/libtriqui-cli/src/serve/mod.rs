@@ -71,6 +71,14 @@ pub struct DownloadProgressState {
 }
 
 impl EventSink {
+    /// A sink plus the receiving half, for in-process tests that observe the
+    /// real event stream without a transport.
+    #[cfg(test)]
+    pub(crate) fn for_test() -> (Self, std::sync::mpsc::Receiver<String>) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        (Self(tx), rx)
+    }
+
     pub fn emit<D: Serialize>(&self, name: &str, data: &D) {
         let event = libtriqui_client::Event {
             event: name.to_string(),
@@ -130,8 +138,10 @@ impl RankScheduler {
                         }
                     }
 
-                    // Process all pending jobs
-                    for job_id in pending.drain() {
+                    // Process all pending jobs. Drain into a snapshot first so a
+                    // deferred job can be re-queued while we iterate.
+                    let batch: Vec<String> = pending.drain().collect();
+                    for job_id in batch {
                         let should_rank = {
                             let conn = state_clone.db.read_conn();
                             conn.query_row(
@@ -143,7 +153,18 @@ impl RankScheduler {
                         };
 
                         if should_rank {
-                            let _ = crate::serve::handlers::rank::spawn_cascade(&state_clone, &job_id);
+                            // `Ok(false)` means a run is already in flight for
+                            // this job. Keep the request so the next tick retries
+                            // once that run finishes — dropping it here is how a
+                            // mid-run input change used to be lost. Requests for
+                            // the same job coalesce through this set.
+                            match crate::serve::handlers::rank::spawn_cascade(&state_clone, &job_id) {
+                                Ok(true) => {}
+                                Ok(false) => {
+                                    pending.insert(job_id);
+                                }
+                                Err(e) => log::warn!("rank scheduler: spawn failed for {job_id}: {e}"),
+                            }
                         }
                     }
                 }
@@ -176,7 +197,7 @@ pub struct ServeState {
     pub app_dir: PathBuf,
     /// Host app version (the gui's), reported in exported job bundles.
     pub app_version: String,
-    pub db: DbConnection,
+    pub db: Arc<DbConnection>,
     pub db_path: PathBuf,
     pub import_state: ImportState,
     pub runtime: Arc<EngineRuntime>,
@@ -220,6 +241,7 @@ impl ServeState {
             // survives restarts and never depends on in-memory state.
             let job_id = match &event {
                 libcv_state::Event::CvAdded { job_id, .. } => Some(job_id.clone()),
+                libcv_state::Event::CvDeleted { job_id, .. } => Some(job_id.clone()),
                 libcv_state::Event::TextExtracted { cv_id, .. } => s.cvs.get(cv_id).map(|c| c.job_id.clone()),
                 libcv_state::Event::ScoutCompleted { cv_id, .. } => s.cvs.get(cv_id).map(|c| c.job_id.clone()),
                 libcv_state::Event::HeavyCompleted { cv_id, .. } => s.cvs.get(cv_id).map(|c| c.job_id.clone()),
@@ -248,6 +270,7 @@ impl ServeState {
 
             let progress_job_id = match &event {
                 libcv_state::Event::CvAdded { job_id, .. } => Some(job_id.clone()),
+                libcv_state::Event::CvDeleted { job_id, .. } => Some(job_id.clone()),
                 libcv_state::Event::TextExtracted { cv_id, .. } => s.cvs.get(cv_id).map(|c| c.job_id.clone()),
                 libcv_state::Event::ScoutCompleted { cv_id, .. } => s.cvs.get(cv_id).map(|c| c.job_id.clone()),
                 libcv_state::Event::HeavyCompleted { cv_id, .. } => s.cvs.get(cv_id).map(|c| c.job_id.clone()),
@@ -313,6 +336,11 @@ impl ServeState {
             if let Some(job_id) = job_id.as_ref() {
                 match &event {
                     libcv_state::Event::HeavyCompleted { .. } => {
+                        self.request_rank(job_id);
+                    }
+                    // A retired candidate is a ranking-input change: re-run so
+                    // its scores leave the ranked set.
+                    libcv_state::Event::CvDeleted { .. } => {
                         self.request_rank(job_id);
                     }
                     libcv_state::Event::TextExtracted { status, .. } => {
@@ -537,7 +565,7 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
     let state = Arc::new(ServeState {
         app_dir,
         app_version,
-        db,
+        db: Arc::new(db),
         db_path,
         import_state: ImportState::new(),
         runtime,
@@ -564,6 +592,7 @@ pub fn run_over<R: BufRead, W: Write + Send + 'static>(
             runtime: Some(Arc::clone(&state.runtime)),
             scout_model: libconfigreader::Config::load().cascade.quick().map(str::to_string),
             db_path: Some(state.db_path.clone()),
+            db: Some(Arc::clone(&state.db)),
         },
     );
 

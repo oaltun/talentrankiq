@@ -247,6 +247,8 @@ CREATE TABLE IF NOT EXISTS candidate_chunks (
   candidate_id TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
   chunk_index  INTEGER NOT NULL,
   chunk_text   TEXT NOT NULL,
+  char_start   INTEGER NOT NULL DEFAULT 0,
+  char_end     INTEGER NOT NULL DEFAULT 0,
   content_hash TEXT NOT NULL,
   vector       BLOB NOT NULL,
   vector_model TEXT NOT NULL,
@@ -255,6 +257,26 @@ CREATE TABLE IF NOT EXISTS candidate_chunks (
 );
 CREATE INDEX IF NOT EXISTS idx_cc_candidate ON candidate_chunks(candidate_id);
 CREATE INDEX IF NOT EXISTS idx_cc_candidate_model ON candidate_chunks(candidate_id, vector_model);
+
+-- Rubric-side per-chunk embeddings (job ad + each criterion), mirroring
+-- `candidate_chunks` but keyed by (job, question, model, chunk_index). Used for
+-- coverage-based scoring: each rubric chunk becomes its own query.
+CREATE TABLE IF NOT EXISTS rubric_chunks (
+  id           TEXT PRIMARY KEY,
+  job_id       TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  question_id  TEXT NOT NULL,
+  chunk_index  INTEGER NOT NULL,
+  chunk_text   TEXT NOT NULL,
+  char_start   INTEGER NOT NULL DEFAULT 0,
+  char_end     INTEGER NOT NULL DEFAULT 0,
+  content_hash TEXT NOT NULL,
+  vector       BLOB NOT NULL,
+  vector_model TEXT NOT NULL,
+  source_hash  TEXT,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (job_id, question_id, vector_model, chunk_index)
+);
+CREATE INDEX IF NOT EXISTS idx_rc_job_question_model ON rubric_chunks(job_id, question_id, vector_model);
 
 -- Learned feedback vectors, one row per (job | profile) x embedding model.
 -- Different models' vectors are not comparable, so each model learns and ranks
@@ -619,6 +641,8 @@ fn migrate_candidate_chunks_multimodel(conn: &Connection) -> Result<(), String> 
            candidate_id TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
            chunk_index  INTEGER NOT NULL,
            chunk_text   TEXT NOT NULL,
+           char_start   INTEGER NOT NULL DEFAULT 0,
+           char_end     INTEGER NOT NULL DEFAULT 0,
            content_hash TEXT NOT NULL,
            vector       BLOB NOT NULL,
            vector_model TEXT NOT NULL,
@@ -626,8 +650,8 @@ fn migrate_candidate_chunks_multimodel(conn: &Connection) -> Result<(), String> 
            UNIQUE (candidate_id, vector_model, chunk_index)
          );
          INSERT INTO candidate_chunks_new
-           (id, candidate_id, chunk_index, chunk_text, content_hash, vector, vector_model, created_at)
-         SELECT id, candidate_id, chunk_index, chunk_text, content_hash, vector, vector_model, created_at
+           (id, candidate_id, chunk_index, chunk_text, char_start, char_end, content_hash, vector, vector_model, created_at)
+         SELECT id, candidate_id, chunk_index, chunk_text, char_start, char_end, content_hash, vector, vector_model, created_at
            FROM candidate_chunks;
          DROP TABLE candidate_chunks;
          ALTER TABLE candidate_chunks_new RENAME TO candidate_chunks;
@@ -764,6 +788,17 @@ pub fn migrate(conn: &Connection) -> Result<(), String> {
     add_column_if_missing(conn, "profiles", "eprofile_model", "TEXT")?;
     // Maxsim chunk explanation texts (JSON array) per rubric score row.
     add_column_if_missing(conn, "candidate_scores", "chunk_texts", "TEXT")?;
+    // Coverage scoring: the rubric chunk (requirement) each candidate's winning
+    // chunk matched, with its char range in the question text.
+    add_column_if_missing(conn, "candidate_scores", "rubric_chunk_text", "TEXT")?;
+    add_column_if_missing(conn, "candidate_scores", "rubric_char_start", "INTEGER")?;
+    add_column_if_missing(conn, "candidate_scores", "rubric_char_end", "INTEGER")?;
+    // Stable hash of a rubric question's source text, so unchanged questions
+    // skip re-tokenizing on the idempotent ensure barrier.
+    add_column_if_missing(conn, "rubric_chunks", "source_hash", "TEXT")?;
+    // Char ranges for persisted candidate chunks, indexing `candidates.extracted_text`.
+    add_column_if_missing(conn, "candidate_chunks", "char_start", "INTEGER NOT NULL DEFAULT 0")?;
+    add_column_if_missing(conn, "candidate_chunks", "char_end", "INTEGER NOT NULL DEFAULT 0")?;
     // Read/unread marking (CV Inspector opened) — progressive-ranking design §13.
     add_column_if_missing(conn, "candidates", "deleted", "INTEGER NOT NULL DEFAULT 0")?;
     add_column_if_missing(conn, "candidates", "viewed_at", "TEXT")?;

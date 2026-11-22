@@ -30,6 +30,7 @@ import { useI18n } from "../../../i18n"
 interface CandidatesPaneProps {
   jobId: string
   jobDetail: JobDetail | null
+  refreshToken?: number
 }
 
 const SORT_OPTIONS = [
@@ -47,7 +48,7 @@ interface SortConfig {
   dir: "asc" | "desc"
 }
 
-export function CandidatesPane({ jobId, jobDetail }: CandidatesPaneProps) {
+export function CandidatesPane({ jobId, jobDetail, refreshToken }: CandidatesPaneProps) {
   const { t } = useI18n()
   const [candidates, setCandidates] = useState<CandidateSummary[]>([])
   const [total, setTotal] = useState(0)
@@ -103,7 +104,7 @@ export function CandidatesPane({ jobId, jobDetail }: CandidatesPaneProps) {
       setIsLoading(false)
       setHasLoadedOnce(true)
     }
-  }, [jobId, page, pageSize, searchQuery, sortConfig])
+  }, [jobId, page, pageSize, searchQuery, sortConfig, refreshToken])
 
   useEffect(() => {
     loadCandidates()
@@ -140,7 +141,7 @@ export function CandidatesPane({ jobId, jobDetail }: CandidatesPaneProps) {
       }
     }, 2500)
     return () => clearInterval(interval)
-  }, [jobId, page, pageSize, searchQuery, sortConfig, total, candidates])
+  }, [jobId, page, pageSize, searchQuery, sortConfig, total, candidates, refreshToken])
 
   const handleSort = (key: SortKey) => {
     setSortConfig((prev) => ({

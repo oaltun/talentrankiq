@@ -37,6 +37,8 @@ pub fn ensure_inputs(runtime: &Arc<EngineRuntime>, job_id: &str) -> Result<(), S
     if let Some(embedder) = &embedder {
         crate::embeddings::prewarm_job_blocking(runtime, job_id)?;
         reembed_missing_candidates(&conn, job_id, embedder.as_ref(), embedder.model_id())?;
+        persist_chunks_for_candidates(&conn, job_id, embedder.as_ref(), embedder.model_id())?;
+        persist_rubric_chunks_for_job(&conn, job_id, embedder.as_ref(), embedder.model_id())?;
     }
 
     if let Some(model) = &model {
@@ -95,6 +97,147 @@ fn reembed_missing_candidates(
             ],
         )
         .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+/// Persist per-chunk embeddings for every extracted candidate in `model`.
+///
+/// Each candidate is chunked with the model's tokenizer at the canonical size
+/// (256 tokens) when one is available, otherwise stored as a single whole-text
+/// chunk. `chunks::ensure_candidate_chunks` is idempotent, so candidates that
+/// already hold chunks for this model are left untouched and re-runs are cheap.
+fn persist_chunks_for_candidates(
+    conn: &rusqlite::Connection,
+    job_id: &str,
+    embedder: &dyn Embedder,
+    model: &str,
+) -> Result<(), String> {
+    // Only candidates without chunks for this model need work. Selecting them
+    // up front lets an unchanged job skip loading the (expensive) tokenizer.
+    let pending: Vec<(String, String)> = {
+        let mut stmt = conn
+            .prepare(
+                "SELECT c.id, c.extracted_text FROM candidates c
+                 WHERE c.job_id = ?1 AND c.extraction_status = 'Extracted' AND c.deleted = 0
+                   AND c.extracted_text IS NOT NULL AND TRIM(c.extracted_text) <> ''
+                   AND NOT EXISTS (
+                       SELECT 1 FROM candidate_chunks cc
+                       WHERE cc.candidate_id = c.id AND cc.vector_model = ?2
+                   )
+                 ORDER BY c.imported_at, c.id",
+            )
+            .map_err(|e| e.to_string())?;
+        let mut iter = stmt
+            .query_map(rusqlite::params![job_id, model], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })
+            .map_err(|e| e.to_string())?;
+        let mut v = Vec::new();
+        while let Some(r) = iter.next().transpose().map_err(|e| e.to_string())? {
+            v.push(r);
+        }
+        v
+    };
+    if pending.is_empty() {
+        return Ok(());
+    }
+
+    let tokenizer = {
+        let model_dir = crate::app_config::model_dir();
+        crate::app_config::tokenizer_path(&model_dir, model)
+            .and_then(|p| libtokenizer::TokenizerHandle::from_file(&p).ok())
+    };
+
+    for (candidate_id, text) in pending {
+        if let Err(e) = crate::chunks::ensure_candidate_chunks(
+            conn,
+            &candidate_id,
+            &text,
+            embedder,
+            model,
+            tokenizer.as_ref(),
+        ) {
+            log::warn!("ensure: failed to persist chunks for candidate {candidate_id}: {e}");
+        }
+    }
+
+    Ok(())
+}
+
+/// Persist per-chunk embeddings for the job's rubric questions (ad + criteria).
+fn persist_rubric_chunks_for_job(
+    conn: &rusqlite::Connection,
+    job_id: &str,
+    embedder: &dyn Embedder,
+    model: &str,
+) -> Result<(), String> {
+    let ad_text: Option<String> = conn
+        .query_row(
+            "SELECT job_ad_text FROM jobs WHERE id = ?1",
+            rusqlite::params![job_id],
+            |r| r.get::<_, Option<String>>(0),
+        )
+        .ok()
+        .flatten();
+
+    let crits: Vec<(String, String)> = {
+        let mut stmt = conn
+            .prepare("SELECT id, text FROM criteria WHERE job_id = ?1")
+            .map_err(|e| e.to_string())?;
+        let mut iter = stmt
+            .query_map(rusqlite::params![job_id], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })
+            .map_err(|e| e.to_string())?;
+        let mut v = Vec::new();
+        while let Some(r) = iter.next().transpose().map_err(|e| e.to_string())? {
+            v.push(r);
+        }
+        v
+    };
+
+    // Collect only questions whose persisted chunks are missing or stale, so an
+    // unchanged job skips loading the tokenizer entirely.
+    let mut pending: Vec<(String, String)> = Vec::new();
+    if let Some(text) = ad_text {
+        if !text.trim().is_empty()
+            && !crate::chunks::rubric_chunks_current(conn, job_id, "ad", model, &text)?
+        {
+            pending.push(("ad".to_string(), text));
+        }
+    }
+    for (cid, text) in crits {
+        if text.trim().is_empty() {
+            continue;
+        }
+        if !crate::chunks::rubric_chunks_current(conn, job_id, &cid, model, &text)? {
+            pending.push((cid, text));
+        }
+    }
+    if pending.is_empty() {
+        return Ok(());
+    }
+
+    let tokenizer = {
+        let model_dir = crate::app_config::model_dir();
+        crate::app_config::tokenizer_path(&model_dir, model)
+            .and_then(|p| libtokenizer::TokenizerHandle::from_file(&p).ok())
+    };
+
+    for (question_id, text) in pending {
+        if let Err(e) = crate::chunks::ensure_rubric_chunks(
+            conn,
+            job_id,
+            &question_id,
+            &text,
+            embedder,
+            model,
+            tokenizer.as_ref(),
+        ) {
+            log::warn!("ensure: failed to persist rubric chunks for {question_id}: {e}");
+        }
     }
 
     Ok(())
@@ -313,6 +456,195 @@ use std::sync::Arc;
         assert!(
             (max_points - 50.0).abs() < 1e-9,
             "points_max should equal the ad capacity (50.0), got {max_points}"
+        );
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    // 3.x / 4.1 — a long CV with one strongly matching buried passage must
+    // outrank a short, topically similar CV, and the winning chunk text must be
+    // persisted for the inspector. Exercises the real cascade + real embedder +
+    // tokenizer-backed chunk persistence end to end.
+    #[test]
+    fn cascade_maxsim_buried_passage_outranks_topical_match() {
+        let slug = "harrier-oss-v1-270m-ONNX-q4f16";
+        let path = temp_db();
+        let db_path = path.clone();
+        {
+            let conn = open_single_connection_at(&path).unwrap();
+            conn.execute(
+                "INSERT INTO jobs (id, title, job_ad_text, ad_weight)
+                 VALUES ('job1', 'Job',
+                         'Rust systems engineer. Required: Rust, Tokio, async runtimes, memory safety, zero-cost abstractions.',
+                         50.0)",
+                [],
+            )
+            .unwrap();
+            let filler = "I enjoy gardening, cooking, and traveling on weekends. ".repeat(300);
+            let long_cv = format!(
+                "{filler} Expert in Rust, Tokio, async runtimes, memory safety, and zero-cost abstractions."
+            );
+            for (cid, text) in [
+                ("c1", long_cv.as_str()),
+                (
+                    "c2",
+                    "Backend developer with Python, Java, SQL, Docker, and Kubernetes.",
+                ),
+            ] {
+                conn.execute(
+                    "INSERT INTO candidates
+                       (id, job_id, source_file_path, file_name, file_type,
+                        extraction_status, extracted_text)
+                     VALUES (?1, 'job1', ?2, ?3, 'txt', 'Extracted', ?4)",
+                    rusqlite::params![cid, format!("/tmp/{cid}.txt"), format!("{cid}.txt"), text],
+                )
+                .unwrap();
+            }
+        }
+
+        let rt = EngineRuntime::new(
+            RuntimeConfig::discover(Some(slug.to_string()), None),
+            db_path.clone(),
+        );
+        rt.switch_model(slug.to_string()).unwrap();
+
+        let cfg = crate::cascade::WaveConfig::default();
+        let outcome = crate::cascade::run(&rt, "job1", &cfg, &|| false, &|_, _, _| {}).unwrap();
+        assert!(!outcome.cancelled);
+
+        let conn = open_single_connection_at(&path).unwrap();
+        let (c1_points, c2_points): (f64, f64) = conn
+            .query_row(
+                "SELECT
+                   (SELECT points FROM candidate_scores WHERE candidate_id = 'c1' AND question_id = 'ad'),
+                   (SELECT points FROM candidate_scores WHERE candidate_id = 'c2' AND question_id = 'ad')",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert!(
+            c1_points > c2_points,
+            "buried Rust passage should outscore the topical CV: c1={c1_points}, c2={c2_points}"
+        );
+
+        let c1_rank: i64 = conn
+            .query_row("SELECT rank FROM candidates WHERE id = 'c1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(c1_rank, 1);
+
+        let chunk_text: Option<String> = conn
+            .query_row(
+                "SELECT chunk_texts FROM candidate_scores WHERE candidate_id = 'c1' AND question_id = 'ad'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let chunk_text = chunk_text.expect("c1 ad score must carry a winning chunk text");
+        assert!(
+            chunk_text.to_lowercase().contains("rust"),
+            "winning chunk should be the Rust passage, got: {chunk_text}"
+        );
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    // 5.1 — a multi-requirement ad where candidate A evidences every
+    // requirement in separate passages must outrank candidate B, whose one
+    // strong passage covers only one requirement. Coverage scoring averages the
+    // best match per ad chunk, so breadth wins over a single strong match. The
+    // ad score fraction must equal the coverage score and the explanation must
+    // name the matched rubric chunk.
+    #[test]
+    fn cascade_multi_requirement_coverage_prefers_broad_candidate() {
+        let slug = "harrier-oss-v1-270m-ONNX-q4f16";
+        let path = temp_db();
+        let db_path = path.clone();
+        {
+            let conn = open_single_connection_at(&path).unwrap();
+            let rust = "Required: expert Rust programming, ownership, borrowing, memory safety, and async runtimes with Tokio. ".repeat(15);
+            let k8s = "Required: Kubernetes, Docker, AWS, cloud infrastructure, and container orchestration at scale. ".repeat(15);
+            let comm = "Required: excellent communication, mentorship, and technical leadership across distributed teams. ".repeat(15);
+            let ad = format!("{rust}{k8s}{comm}");
+            conn.execute(
+                "INSERT INTO jobs (id, title, job_ad_text, ad_weight)
+                 VALUES ('job1', 'Job', ?1, 50.0)",
+                rusqlite::params![ad],
+            )
+            .unwrap();
+
+            let cv_a = format!(
+                "{}{}",
+                "I am an expert Rust programmer with deep knowledge of ownership, borrowing, memory safety, and async runtimes using Tokio. ".repeat(15),
+                "I have extensive experience with Kubernetes, Docker, AWS, cloud infrastructure, and container orchestration at scale. I communicate clearly, mentor engineers, and provide technical leadership across distributed teams. ".repeat(15),
+            );
+            let cv_b = "I am an expert Rust programmer with deep knowledge of ownership, borrowing, memory safety, and async runtimes using Tokio. ".repeat(30);
+
+            for (cid, text) in [("c1", cv_a.as_str()), ("c2", cv_b.as_str())] {
+                conn.execute(
+                    "INSERT INTO candidates
+                       (id, job_id, source_file_path, file_name, file_type,
+                        extraction_status, extracted_text)
+                     VALUES (?1, 'job1', ?2, ?3, 'txt', 'Extracted', ?4)",
+                    rusqlite::params![cid, format!("/tmp/{cid}.txt"), format!("{cid}.txt"), text],
+                )
+                .unwrap();
+            }
+        }
+
+        let rt = EngineRuntime::new(
+            RuntimeConfig::discover(Some(slug.to_string()), None),
+            db_path.clone(),
+        );
+        rt.switch_model(slug.to_string()).unwrap();
+
+        let cfg = crate::cascade::WaveConfig::default();
+        let outcome = crate::cascade::run(&rt, "job1", &cfg, &|| false, &|_, _, _| {}).unwrap();
+        assert!(!outcome.cancelled);
+
+        let conn = open_single_connection_at(&path).unwrap();
+        // The ad must have chunked into more than one rubric chunk for coverage
+        // to differ from single-vector maxsim.
+        let ad_chunks: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM rubric_chunks WHERE job_id = 'job1' AND question_id = 'ad'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(ad_chunks > 1, "ad must split into multiple rubric chunks, got {ad_chunks}");
+
+        let (a_points, a_max, b_points): (f64, f64, f64) = conn
+            .query_row(
+                "SELECT
+                   (SELECT points FROM candidate_scores WHERE candidate_id = 'c1' AND question_id = 'ad'),
+                   (SELECT max_points FROM candidate_scores WHERE candidate_id = 'c1' AND question_id = 'ad'),
+                   (SELECT points FROM candidate_scores WHERE candidate_id = 'c2' AND question_id = 'ad')",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert!(
+            a_points > b_points,
+            "broad candidate must outscore the single-requirement candidate: A={a_points}, B={b_points}"
+        );
+        // The ad row's point fraction is the coverage score.
+        assert!(a_points > 0.0 && a_max > 0.0);
+        let fraction = a_points / a_max;
+        assert!(fraction > 0.0 && fraction <= 1.0);
+
+        // The explanation names the matched rubric chunk (requirement text).
+        let rubric_text: Option<String> = conn
+            .query_row(
+                "SELECT rubric_chunk_text FROM candidate_scores
+                 WHERE candidate_id = 'c1' AND question_id = 'ad'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let rubric_text = rubric_text.expect("ad score must name the matched rubric chunk");
+        assert!(
+            rubric_text.to_lowercase().contains("required"),
+            "matched rubric chunk should be a requirement, got: {rubric_text}"
         );
 
         let _ = std::fs::remove_file(&path);

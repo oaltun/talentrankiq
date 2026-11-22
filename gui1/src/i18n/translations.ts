@@ -642,6 +642,14 @@ export const translations = {
     en: "Loading job ad...",
     tr: "İş ilanı yükleniyor...",
   },
+  "workspace.rankStatus": {
+    en: "Rank Status",
+    tr: "Sıralama Durumu",
+  },
+  "workspace.rerank": {
+    en: "Re-rank",
+    tr: "Yeniden Sırala",
+  },
   "workspace.failedToLoadJobAd": {
     en: "Failed to load job ad",
     tr: "İş ilanı yüklenemedi",
@@ -705,5 +713,65 @@ export const translations = {
   "settings.languageDescription": {
     en: "Choose the language used across the application.",
     tr: "Uygulamanın her yerinde kullanılacak dili seçin.",
+  },
+  "rank.status.running": {
+    en: "Running",
+    tr: "Çalışıyor",
+  },
+  "rank.status.stale": {
+    en: "Stale",
+    tr: "Eski",
+  },
+  "rank.status.converged": {
+    en: "Converged",
+    tr: "Yakındı",
+  },
+  "rank.status.cancelled": {
+    en: "Cancelled",
+    tr: "İptal edildi",
+  },
+  "rank.status.partial": {
+    en: "Partial",
+    tr: "Kısmi",
+  },
+  "rank.status.clean": {
+    en: "Clean",
+    tr: "Temiz",
+  },
+  "rank.reason.no-cvs": {
+    en: "No CVs imported",
+    tr: "CV içe aktarılmadı",
+  },
+  "rank.reason.no-jobad": {
+    en: "No job ad set",
+    tr: "İş ilanı ayarlanmadı",
+  },
+  "rank.reason.engine-not-ready": {
+    en: "Engine not ready",
+    tr: "Motor hazır değil",
+  },
+  "rank.reason.missing-rubric-vectors": {
+    en: "Missing rubric vectors",
+    tr: "Değerlendirme vektörleri eksik",
+  },
+  "rank.reason.candidate-embedding-failed": {
+    en: "Candidate embedding failed",
+    tr: "Aday gömme başarısız",
+  },
+  "rank.reason.no-scoreable-candidates": {
+    en: "No scoreable candidates",
+    tr: "Puanlanabilir aday yok",
+  },
+  "rank.reason.no-active-embedder": {
+    en: "No active embedder",
+    tr: "Aktif gömme modeli yok",
+  },
+  "rank.reason.stale": {
+    en: "Ranking is stale",
+    tr: "Sıralama eski",
+  },
+  "rank.reason.clean": {
+    en: "Ready to rank",
+    tr: "Sıralamaya hazır",
   },
 } as const

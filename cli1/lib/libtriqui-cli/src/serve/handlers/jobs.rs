@@ -599,7 +599,12 @@ pub fn job_ui_state(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Prot
                     |r| Ok((r.get::<_, i64>(0)? as u32, r.get::<_, i64>(1)? as u32, r.get::<_, i64>(2)? as u32)),
                 )
                 .unwrap_or((0, 0, 0));
-            (!r.complete && !r.cancelled, !r.complete && !r.cancelled, r.complete, r.cancelled, None, r.blocked.clone(), emb_total, emb_done, cands)
+            // A blocked run is terminal, not in flight: `blocked` is `Some`
+            // exactly when `sort = 'Blocked'`, so `running`/`ranking` must be
+            // false for it and the GUI re-enables Re-rank. Shared with
+            // `get_rank_state` via `rank::rank_row_running`.
+            let running = super::rank::rank_row_running(r);
+            (running, running, r.complete, r.cancelled, None, r.blocked.clone(), emb_total, emb_done, cands)
         }
         None => (false, false, false, false, None, None, 0, 0, 0),
     };
@@ -618,30 +623,28 @@ pub fn job_ui_state(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Prot
         None
     };
     let engine_ready = state.runtime.status_info().status == "Running";
+    let embedder_ok = state.runtime.embedder().is_ok();
     // Both blockers are backend-owned: no CVs is meaningless, and no job ad
     // has nothing to score against (the old behaviour ranked anyway and
     // produced all-zero totals — read as "broken" and spun forever).
     let sort_allowed = cv_imported >= 1 && ad_set;
     let rerank_dirty = ranked_version.is_none() || ranked_version != Some(inputs_version);
-    // Clone blocked_reason for later use in rank.reason
-    let blocked_reason_clone = blocked_reason.clone();
-    // Reason precedence: no-cvs → no-jobad → engine-not-ready → blocked:<code> → stale → clean
-    let reason = if cv_imported < 1 {
-        Some("no-cvs".to_string())
-    } else if !ad_set {
-        Some("no-jobad".to_string())
-    } else if !engine_ready {
-        Some("engine-not-ready".to_string())
-    } else if let Some(blocked) = blocked_reason {
-        Some(format!("blocked:{}", blocked))
+    let clean = ranked_version.is_some() && ranked_version == Some(inputs_version);
+    let converged = complete && clean && candidates > 0 && embedded_done == embedded_total && embedded_total > 0;
+    // Reason precedence (identical to `get_rank_state`, sharing the same
+    // pre-cascade helper): blocked pre-cascade → blocked cascade code → stale
+    // → clean. One vocabulary; the GUI never translates between endpoints.
+    let pre_cascade =
+        super::rank::pre_cascade_blocked_reason(cv_imported >= 1, ad_set, embedder_ok, engine_ready);
+    let reason = if let Some(code) = pre_cascade {
+        Some(format!("blocked:{code}"))
+    } else if let Some(blocked) = &blocked_reason {
+        Some(format!("blocked:{blocked}"))
     } else if rerank_dirty {
         Some("stale".to_string())
     } else {
         Some("clean".to_string())
     };
-    // Determine converged from rank state
-    let clean = ranked_version.is_some() && ranked_version == Some(inputs_version);
-    let converged = complete && clean && candidates > 0 && embedded_done == embedded_total && embedded_total > 0;
     ok_json(JobUiState {
         engine_ready,
         sort_allowed,
@@ -658,13 +661,21 @@ pub fn job_ui_state(state: &Arc<ServeState>, job_id: &str) -> Result<Value, Prot
             compared: 0,
             candidates,
             converged,
-            reason: blocked_reason_clone.map(|b| format!("blocked:{}", b)).or_else(|| {
-                if running { Some("running".to_string()) }
-                else if cancelled { Some("cancelled".to_string()) }
-                else if rerank_dirty { Some("stale".to_string()) }
-                else if converged { Some("converged".to_string()) }
-                else { Some("partial".to_string()) }
-            }),
+            reason: if running {
+                Some("running".to_string())
+            } else if cancelled {
+                Some("cancelled".to_string())
+            } else if let Some(code) = pre_cascade {
+                Some(format!("blocked:{code}"))
+            } else if let Some(blocked) = &blocked_reason {
+                Some(format!("blocked:{blocked}"))
+            } else if rerank_dirty {
+                Some("stale".to_string())
+            } else if converged {
+                Some("converged".to_string())
+            } else {
+                Some("partial".to_string())
+            },
         },
     })
 }

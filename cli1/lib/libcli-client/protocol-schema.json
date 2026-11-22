@@ -653,6 +653,31 @@
         "text"
       ],
       "properties": {
+        "rubric_char_end": {
+          "description": "Char index one past the matched rubric chunk end in the question text.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "rubric_char_start": {
+          "description": "Char index of the matched rubric chunk start in the question text.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "rubric_text": {
+          "description": "The rubric chunk (requirement text) this candidate chunk best matched. Present only for coverage-scored questions that have persisted rubric chunks.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "similarity": {
           "description": "Cosine similarity of this chunk against the question vector.",
           "type": "number",
@@ -762,6 +787,31 @@
           "type": "integer",
           "format": "uint",
           "minimum": 0.0
+        },
+        "matched_target_char_end": {
+          "description": "Char index one past the matched ad chunk end in the job ad text.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "matched_target_char_start": {
+          "description": "Char index of the matched ad chunk start in the job ad text.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "matched_target_text": {
+          "description": "For `JobAd`, the ad chunk whose embedding gave this chunk's similarity. Present only for the job-ad target when ad rubric chunks exist.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "similarity": {
           "description": "Cosine similarity of the chunk embedding against the target embedding.",
@@ -1744,7 +1794,7 @@
           ]
         },
         "reason": {
-          "description": "Stable reason code for the current state, precedence: `no-cvs` > `no-jobad` > `engine-not-ready` > `stale` > `clean`.",
+          "description": "Stable reason code for the current state. Blockers are always `blocked:`-prefixed and shared with `RankState.reason`, precedence: `blocked:no-cvs` > `blocked:no-jobad` > `blocked:no-active-embedder` > `blocked:engine-not-ready` > `blocked:<cascade-code>` > `stale` > `clean`.",
           "type": [
             "string",
             "null"
@@ -2204,7 +2254,7 @@
           "type": "boolean"
         },
         "reason": {
-          "description": "Stable reason code for the cascade state, precedence: `running` > `cancelled` > `stale` > `converged` > `partial`.",
+          "description": "Stable reason code for the cascade state. Blockers are always `blocked:`-prefixed and identical to `JobUiState.reason`, precedence: `running` > `cancelled` > `blocked:no-cvs` > `blocked:no-jobad` > `blocked:no-active-embedder` > `blocked:engine-not-ready` > `blocked:<cascade-code>` > `stale` > `converged` > `partial`.",
           "type": [
             "string",
             "null"

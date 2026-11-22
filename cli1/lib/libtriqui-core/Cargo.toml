@@ -22,3 +22,4 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 libtriqui-client = { path = "../libtriqui-client" }
 libconfigreader = { path = "../libconfigreader" }
 libmodelcallerclient = { path = "../libmodelcallerclient", features = ["inprocess"] }
+libtokenizer = { path = "../libtokenizer" }

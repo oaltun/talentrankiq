@@ -24,6 +24,7 @@ import {
   RubricDialog,
   ExportView,
   CvInspectorDialog,
+  RankControl,
 } from "./workspace"
 import { InfoBar } from "../layout"
 import { Button } from "../ui/button"
@@ -44,6 +45,7 @@ export function WorkspaceActivity({ jobId }: { jobId: string | null }) {
   } | null>(null)
   const [showComparatorInfobar, setShowComparatorInfobar] = useState(false)
   const [jobNotFound, setJobNotFound] = useState(false)
+  const [rankRevision, setRankRevision] = useState(0)
   const { navigate } = useHashRouter()
   const { t } = useI18n()
 
@@ -155,6 +157,10 @@ export function WorkspaceActivity({ jobId }: { jobId: string | null }) {
     setSelectedCandidate(null)
     setCandidateNeighbors(null)
   }
+
+  const handleRankRunFinished = useCallback(() => {
+    setRankRevision((prev) => prev + 1)
+  }, [])
 
   const handleNavigateCandidate = (direction: "prev" | "next") => {
     if (!candidateNeighbors) return
@@ -274,6 +280,11 @@ export function WorkspaceActivity({ jobId }: { jobId: string | null }) {
           data-testid="workspace-page"
           data-job-id={job.id}
         >
+          {/* Rank Control */}
+          <div className="lg:col-span-3" data-testid="rank-control-wrapper">
+            <RankControl jobId={job.id} onRunFinished={handleRankRunFinished} />
+          </div>
+
           {/* Left column - Setup */}
           <div className="lg:col-span-1" data-testid="workspace-left-pane">
             <SetupPane
@@ -286,7 +297,7 @@ export function WorkspaceActivity({ jobId }: { jobId: string | null }) {
 
           {/* Right column - Candidates */}
           <div className="lg:col-span-2" data-testid="workspace-right-pane">
-            <CandidatesPane jobId={job.id} jobDetail={jobDetail} />
+            <CandidatesPane jobId={job.id} jobDetail={jobDetail} refreshToken={rankRevision} />
           </div>
         </div>
       )}
